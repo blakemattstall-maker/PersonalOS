@@ -19,6 +19,9 @@
   },
   "homepage": "https://github.com/blakemattstall-maker/PersonalOS#readme",
   "dependencies": {
+    "@supabase/supabase-js": "^2.111.0",
+    "chrono-node": "^2.10.1",
+    "googleapis": "^173.0.0",
     "openai": "^7.3.0"
   }
 }
