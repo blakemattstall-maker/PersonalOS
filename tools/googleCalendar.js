@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { getGoogleClient } from "../lib/google.js";
 import * as chrono from "chrono-node";
+import { DateTime } from "luxon";
 
 export async function createEvent(
   title,
@@ -16,11 +17,22 @@ export async function createEvent(
     auth
   });
 
-  const userTimeZone =
-    "America/Chicago"; // temporary until user settings are added
+  // TODO: Later, load this from the user's profile in Supabase.
+  // For now, match your Google Calendar setting.
+  const userTimeZone = "America/Los_Angeles";
+
+  const input = `${date ?? ""} ${time ?? ""}`.trim();
+
+  console.log("=== GOOGLE CALENDAR V5 ===");
+  console.log({
+    title,
+    input,
+    durationMinutes,
+    userTimeZone
+  });
 
   const parsed = chrono.parse(
-    `${date} ${time}`,
+    input,
     new Date(),
     {
       forwardDate: true
@@ -31,51 +43,65 @@ export async function createEvent(
     throw new Error("Could not understand event date/time");
   }
 
-  const start = parsed[0];
+  const result = parsed[0];
 
-  const year = start.start.get("year");
-  const month = start.start.get("month");
-  const day = start.start.get("day");
-  const hour = start.start.get("hour") ?? 9;
-  const minute = start.start.get("minute") ?? 0;
+  const year = result.start.get("year");
+  const month = result.start.get("month");
+  const day = result.start.get("day");
+  const hour = result.start.get("hour") ?? 9;
+  const minute = result.start.get("minute") ?? 0;
 
-  const parsedStart = new Date(
+  const start = DateTime.fromObject(
+    {
+      year,
+      month,
+      day,
+      hour,
+      minute
+    },
+    {
+      zone: userTimeZone
+    }
+  );
+
+  const end = start.plus({
+    minutes: durationMinutes
+  });
+
+  console.log("Chrono fields:");
+  console.log({
     year,
-    month - 1,
+    month,
     day,
     hour,
     minute
-  );
-
-  const end = new Date(
-    parsedStart.getTime() + durationMinutes * 60000
-  );
-
-  console.log({
-    title,
-    chronoResult: start.text,
-    parsedStart,
-    local: parsedStart.toString()
   });
 
+  console.log("Luxon:");
+  console.log({
+    startISO: start.toISO(),
+    endISO: end.toISO()
+  });
+
+  const requestBody = {
+    summary: title,
+    start: {
+      dateTime: start.toISO(),
+      timeZone: userTimeZone
+    },
+    end: {
+      dateTime: end.toISO(),
+      timeZone: userTimeZone
+    }
+  };
+
+  console.log("REQUEST BODY");
+  console.log(JSON.stringify(requestBody, null, 2));
 
   const response = await calendar.events.insert({
     calendarId: "primary",
-    requestBody: {
-      summary: title,
-
-      start: {
-        dateTime: parsedStart.toISOString(),
-        timeZone: userTimeZone
-      },
-
-      end: {
-        dateTime: end.toISOString(),
-        timeZone: userTimeZone
-      }
-    }
+    requestBody
   });
-
 
   return {
     success: true,
