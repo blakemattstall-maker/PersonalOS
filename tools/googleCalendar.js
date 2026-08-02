@@ -56,15 +56,26 @@ const parsedDate = chrono.parseDate(
     );
   }
 
+  const chronoResult = chrono.parse(
+  when,
+  now,
+  {
+    forwardDate: true
+  }
+)[0];
 
-
-  const start = DateTime.fromJSDate(
-    parsedDate,
-    {
-      zone: userTimeZone
-    }
-  );
-
+const start = DateTime.fromObject(
+  {
+    year: chronoResult.start.get("year"),
+    month: chronoResult.start.get("month"),
+    day: chronoResult.start.get("day"),
+    hour: chronoResult.start.get("hour") ?? 9,
+    minute: chronoResult.start.get("minute") ?? 0
+  },
+  {
+    zone: userTimeZone
+  }
+);
 
   const end = start.plus({
     minutes: durationMinutes
