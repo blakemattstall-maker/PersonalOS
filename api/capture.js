@@ -1,4 +1,5 @@
 import openai from "../lib/openai.js";
+import { executeTool } from "../lib/router.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -52,5 +53,7 @@ Output:
     response.choices[0].message.content
   );
 
-  res.status(200).json(result);
+  const toolResult = await executeTool(result);
+
+  res.status(200).json(toolResult);
 }
