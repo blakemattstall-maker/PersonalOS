@@ -1,5 +1,5 @@
 import openai from "../lib/openai.js";
-import { executeTool } from "../router.js";
+import { executeTool } from "../lib/router.js";
 
 export default async function handler(req, res) {
 
