@@ -41,6 +41,13 @@ Important:
 - Preserve relative dates exactly as the user said them.
 - Return natural language dates like "tomorrow", "Friday", or "next week".
 
+If the user gives only a time:
+
+- If the time is still in the future today, use today.
+- Otherwise use tomorrow.
+
+Never assume next week unless the user explicitly says so.
+
 Available tools:
 
 create_task:

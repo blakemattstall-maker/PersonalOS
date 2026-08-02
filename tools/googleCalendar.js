@@ -21,7 +21,10 @@ export async function createEvent(
   // For now, match your Google Calendar setting.
   const userTimeZone = "America/Los_Angeles";
 
-  const input = `${date ?? ""} ${time ?? ""}`.trim();
+  const input =
+  date && time
+    ? `${date} at ${time}`
+    : date || time || "";
 
   console.log("=== GOOGLE CALENDAR V5 ===");
   console.log({
