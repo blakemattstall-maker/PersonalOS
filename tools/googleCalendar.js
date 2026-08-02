@@ -17,11 +17,9 @@ export async function createEvent(
   });
 
   const userTimeZone =
-    Intl.DateTimeFormat().resolvedOptions().timeZone;
+    "America/Chicago"; // temporary until user settings are added
 
-  console.log("Detected timezone:", userTimeZone);
-
-  const parsedStart = chrono.parseDate(
+  const parsed = chrono.parse(
     `${date} ${time}`,
     new Date(),
     {
@@ -29,9 +27,25 @@ export async function createEvent(
     }
   );
 
-  if (!parsedStart) {
+  if (!parsed.length) {
     throw new Error("Could not understand event date/time");
   }
+
+  const start = parsed[0];
+
+  const year = start.start.get("year");
+  const month = start.start.get("month");
+  const day = start.start.get("day");
+  const hour = start.start.get("hour") ?? 9;
+  const minute = start.start.get("minute") ?? 0;
+
+  const parsedStart = new Date(
+    year,
+    month - 1,
+    day,
+    hour,
+    minute
+  );
 
   const end = new Date(
     parsedStart.getTime() + durationMinutes * 60000
@@ -39,10 +53,11 @@ export async function createEvent(
 
   console.log({
     title,
+    chronoResult: start.text,
     parsedStart,
-    localStart: parsedStart.toString(),
-    timezone: userTimeZone
+    local: parsedStart.toString()
   });
+
 
   const response = await calendar.events.insert({
     calendarId: "primary",
@@ -50,14 +65,17 @@ export async function createEvent(
       summary: title,
 
       start: {
-        dateTime: parsedStart.toISOString()
+        dateTime: parsedStart.toISOString(),
+        timeZone: userTimeZone
       },
 
       end: {
-        dateTime: end.toISOString()
+        dateTime: end.toISOString(),
+        timeZone: userTimeZone
       }
     }
   });
+
 
   return {
     success: true,
