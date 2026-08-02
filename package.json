@@ -17,5 +17,8 @@
   "bugs": {
     "url": "https://github.com/blakemattstall-maker/PersonalOS/issues"
   },
-  "homepage": "https://github.com/blakemattstall-maker/PersonalOS#readme"
+  "homepage": "https://github.com/blakemattstall-maker/PersonalOS#readme",
+  "dependencies": {
+    "openai": "^7.3.0"
+  }
 }
