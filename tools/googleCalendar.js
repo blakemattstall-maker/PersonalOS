@@ -16,6 +16,11 @@ export async function createEvent(
     auth
   });
 
+  const userTimeZone =
+    Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  console.log("Detected timezone:", userTimeZone);
+
   const parsedStart = chrono.parseDate(
     `${date} ${time}`,
     new Date(),
@@ -33,38 +38,26 @@ export async function createEvent(
   );
 
   console.log({
-  title,
-  parsedStart,
-  localStart: parsedStart.toLocaleString("en-US", {
-    timeZone: "America/Los_Angeles"
-  }),
-  localEnd: end.toLocaleString("en-US", {
-    timeZone: "America/Los_Angeles"
-  })
-});
+    title,
+    parsedStart,
+    localStart: parsedStart.toString(),
+    timezone: userTimeZone
+  });
 
-  const formatLocalDateTime = (date) => {
-  return date
-    .toLocaleString("sv-SE", {
-      timeZone: "America/Los_Angeles"
-    })
-    .replace(" ", "T");
-};
+  const response = await calendar.events.insert({
+    calendarId: "primary",
+    requestBody: {
+      summary: title,
 
-const response = await calendar.events.insert({
-  calendarId: "primary",
-  requestBody: {
-    summary: title,
-    start: {
-      dateTime: formatLocalDateTime(parsedStart),
-      timeZone: "America/Los_Angeles"
-    },
-    end: {
-      dateTime: formatLocalDateTime(end),
-      timeZone: "America/Los_Angeles"
+      start: {
+        dateTime: parsedStart.toISOString()
+      },
+
+      end: {
+        dateTime: end.toISOString()
+      }
     }
-  }
-});
+  });
 
   return {
     success: true,
