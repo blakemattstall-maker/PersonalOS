@@ -17,8 +17,7 @@ export async function executeTool(data) {
 
       return await createEvent(
         data.title,
-        data.date,
-        data.time,
+        data.when,
         data.durationMinutes
       );
 
@@ -26,8 +25,8 @@ export async function executeTool(data) {
     default:
 
       return {
-        success:false,
-        message:"Unknown tool."
+        success: false,
+        message: "Unknown tool."
       };
   }
 }

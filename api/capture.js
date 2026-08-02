@@ -2,6 +2,7 @@ import openai from "../lib/openai.js";
 import { executeTool } from "../router.js";
 
 export default async function handler(req, res) {
+
   if (req.method !== "POST") {
     return res.status(405).json({
       error: "Method not allowed"
@@ -9,6 +10,7 @@ export default async function handler(req, res) {
   }
 
   try {
+
     const { text } = req.body;
 
     if (!text) {
@@ -20,7 +22,9 @@ export default async function handler(req, res) {
     const today = new Date().toISOString();
 
     const response = await openai.chat.completions.create({
+
       model: "gpt-4o-mini",
+
       messages: [
         {
           role: "system",
@@ -32,51 +36,64 @@ User timezone: America/Los_Angeles.
 
 Return ONLY valid JSON.
 
-Your job is to determine which tool should run and extract the required information.
+Your job:
+1. Determine the correct tool.
+2. Extract the required information.
+3. Preserve scheduling language exactly.
 
-Important:
-- Understand dates and times from user requests.
+Important date rules:
+
 - Do NOT calculate dates.
 - Do NOT convert dates into timestamps.
-- Preserve relative dates exactly as the user said them.
-- Return natural language dates like "tomorrow", "Friday", or "next week".
+- Do NOT invent dates.
+- Preserve the user's natural date language.
 
 If the user gives only a time:
+- If that time is still ahead today, assume today.
+- Otherwise assume tomorrow.
+- Never assume next week unless explicitly stated.
 
-- If the time is still in the future today, use today.
-- Otherwise use tomorrow.
-
-Never assume next week unless the user explicitly says so.
+For calendar events:
+- Combine all date and time information into ONE "when" field.
+- Preserve natural language.
+- Include phrases like "at", "on", "next", etc.
 
 Available tools:
 
 create_task:
+
 {
   "tool": "create_task",
   "title": "",
   "due": ""
 }
 
+
 create_event:
+
 {
   "tool": "create_event",
   "title": "",
-  "date": "",
-  "time": "",
+  "when": "",
   "durationMinutes": 60
 }
 
+
 save_memory:
+
 {
   "tool": "save_memory",
   "text": ""
 }
 
+
 general_question:
+
 {
   "tool": "general_question",
   "question": ""
 }
+
 
 
 Examples:
@@ -85,6 +102,7 @@ Input:
 "Remind me to call John tomorrow"
 
 Output:
+
 {
   "tool": "create_task",
   "title": "Call John",
@@ -96,11 +114,24 @@ Input:
 "Schedule a dentist appointment this Friday at 2pm"
 
 Output:
+
 {
   "tool": "create_event",
   "title": "Dentist appointment",
-  "date": "this Friday",
-  "time": "2pm",
+  "when": "this Friday at 2pm",
+  "durationMinutes": 60
+}
+
+
+Input:
+"Log a calendar invite on the 8th at 3 pm for testing"
+
+Output:
+
+{
+  "tool": "create_event",
+  "title": "Testing",
+  "when": "on the 8th at 3 pm",
   "durationMinutes": 60
 }
 `
@@ -110,18 +141,25 @@ Output:
           content: text
         }
       ],
+
       response_format: {
         type: "json_object"
       }
+
     });
+
 
     const toolData = JSON.parse(
       response.choices[0].message.content
     );
 
+
+    console.log("TOOL DATA:");
     console.log(toolData);
 
+
     const result = await executeTool(toolData);
+
 
     return res.status(200).json({
       success: true,
@@ -129,9 +167,13 @@ Output:
       result
     });
 
+
   } catch (error) {
+
     return res.status(500).json({
       error: error.message
     });
+
   }
+
 }
