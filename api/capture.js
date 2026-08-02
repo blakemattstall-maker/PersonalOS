@@ -46,7 +46,13 @@ Important date rules:
 - Do NOT calculate dates.
 - Do NOT convert dates into timestamps.
 - Do NOT invent dates.
-- Preserve the user's natural date language.
+
+For dates like "the 8th", "the 15th", or "on the 20th", include the month if it is not already provided.
+
+Example:
+User: "on the 8th at 3pm"
+Return:
+"August 8 at 3pm"
 
 If the user gives only a time:
 - If that time is still ahead today, assume today.
@@ -131,7 +137,7 @@ Output:
 {
   "tool": "create_event",
   "title": "Testing",
-  "when": "on the 8th at 3 pm",
+  "when": "August 8th at 3 pm",
   "durationMinutes": 60
 }
 `

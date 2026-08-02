@@ -35,16 +35,22 @@ export async function createEvent(
 
 
 
-  const parsedDate = chrono.parseDate(
-    when,
-    new Date(),
-    {
-      forwardDate: true
-    }
-  );
+  const now = DateTime.now()
+  .setZone(userTimeZone)
+  .toJSDate();
+
+
+const parsedDate = chrono.parseDate(
+  when,
+  now,
+  {
+    forwardDate: true
+});
 
 
   if (!parsedDate) {
+    console.log("Chrono parsed:");
+    console.log(parsedDate);
     throw new Error(
       `Could not understand date/time: ${when}`
     );
