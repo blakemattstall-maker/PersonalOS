@@ -19,11 +19,11 @@ export async function createEvent(
 
 
   // Temporary until user settings exist.
-  // Later this will come from Supabase user profile.
+  // Later this should come from Supabase.
   const userTimeZone = "America/Los_Angeles";
 
 
-  console.log("=== GOOGLE CALENDAR V7 ===");
+  console.log("=== GOOGLE CALENDAR V8 ===");
 
   console.log({
     title,
@@ -33,13 +33,23 @@ export async function createEvent(
   });
 
 
-  const now = DateTime
+  const nowLuxon = DateTime
     .now()
-    .setZone(userTimeZone)
-    .toJSDate();
+    .setZone(userTimeZone);
+
+  const now = nowLuxon.toJSDate();
 
 
-  const parsed = chrono.parse(
+  console.log("REFERENCE TIME:");
+
+  console.log({
+    iso: nowLuxon.toISO(),
+    weekday: nowLuxon.weekdayLong,
+    zone: nowLuxon.zoneName
+  });
+
+
+  const parsedDate = chrono.parseDate(
     when,
     now,
     {
@@ -48,51 +58,21 @@ export async function createEvent(
   );
 
 
-  console.log("Chrono raw:");
-  console.log(parsed);
+  console.log("Chrono parsed:");
+
+  console.log(parsedDate);
 
 
-  if (!parsed.length) {
+  if (!parsedDate) {
     throw new Error(
       `Could not understand date/time: ${when}`
     );
   }
 
 
-  const result = parsed[0];
-
-
-  const year = result.start.get("year");
-  const month = result.start.get("month");
-  const day = result.start.get("day");
-
-  const hour = result.start.get("hour") ?? 9;
-  const minute = result.start.get("minute") ?? 0;
-
-
-  console.log("Chrono fields:");
-
-  console.log({
-    year,
-    month,
-    day,
-    hour,
-    minute
-  });
-
-
-  const start = DateTime.fromObject(
-    {
-      year,
-      month,
-      day,
-      hour,
-      minute
-    },
-    {
-      zone: userTimeZone
-    }
-  );
+  const start = DateTime
+    .fromJSDate(parsedDate)
+    .setZone(userTimeZone);
 
 
   const end = start.plus({
@@ -107,7 +87,6 @@ export async function createEvent(
     endISO: end.toISO(),
     timezone: userTimeZone
   });
-
 
 
   const requestBody = {
