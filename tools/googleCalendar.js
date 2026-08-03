@@ -1,6 +1,8 @@
 import { google } from "googleapis";
 import { getGoogleClient } from "../lib/google.js";
+import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
+import { createCalendarEventRecord, updateCalendarGoogleId, findRecentDuplicateEvent } from "../tools/database.js";
 
 
 export async function createEvent({
@@ -10,32 +12,14 @@ export async function createEvent({
   day,
   hour,
   minute,
-  timezone = "America/Los_Angeles",
-  durationMinutes = 60
+  timezone = null,
+  durationMinutes = 60,
+  goal_id = null,
+  project_id = null
 }) {
 
 
-  console.log("=== GOOGLE CALENDAR V9 ===");
-
-  console.log({
-    title,
-    year,
-    month,
-    day,
-    hour,
-    minute,
-    timezone,
-    durationMinutes
-  });
-
-
-  const auth = await getGoogleClient();
-
-
-  const calendar = google.calendar({
-    version: "v3",
-    auth
-  });
+  const tz = timezone || await getUserTimezone();
 
 
   const start = DateTime.fromObject(
@@ -47,17 +31,15 @@ export async function createEvent({
       minute
     },
     {
-      zone: timezone
+      zone: tz
     }
   );
 
 
   if (!start.isValid) {
-
     throw new Error(
       `Invalid calendar date: ${start.invalidReason}`
     );
-
   }
 
 
@@ -65,13 +47,41 @@ export async function createEvent({
     minutes: durationMinutes
   });
 
+  const duplicate = await findRecentDuplicateEvent({
+    title,
+    start_time: start.toISO()
+  });
 
-  console.log("FINAL TIMES");
 
-  console.log({
-    start: start.toISO(),
-    end: end.toISO(),
-    timezone
+  if (duplicate) {
+
+    console.log("DUPLICATE BLOCKED:", title);
+
+    return {
+      success: true,
+      duplicate: true,
+      message: `Event "${title}" was already created moments ago.`,
+      data: null,
+      supabase_id: duplicate.id
+    };
+
+  }
+
+  const supabaseRecord = await createCalendarEventRecord({
+    title,
+    start_time: start.toISO(),
+    end_time: end.toISO(),
+    timezone: tz,
+    goal_id,
+    project_id
+  });
+
+
+  const auth = await getGoogleClient();
+
+  const calendar = google.calendar({
+    version: "v3",
+    auth
   });
 
 
@@ -81,40 +91,120 @@ export async function createEvent({
 
     start: {
       dateTime: start.toISO(),
-      timeZone: timezone
+      timeZone: tz
     },
 
     end: {
       dateTime: end.toISO(),
-      timeZone: timezone
+      timeZone: tz
     }
 
   };
 
 
-  console.log("REQUEST BODY");
+  const response = await calendar.events.insert({
+    calendarId: "primary",
+    requestBody
+  });
 
-  console.log(
-    JSON.stringify(requestBody, null, 2)
+
+  await updateCalendarGoogleId(
+    supabaseRecord.id,
+    response.data.id
   );
 
 
-  const response = await calendar.events.insert({
+  return {
+    success: true,
+    message: `Created event "${title}"`,
+    data: response.data,
+    supabase_id: supabaseRecord.id
+  };
+
+}
+
+export async function getEvents({
+  startDate,
+  endDate,
+  timezone = null,
+  maxResults = 50
+}) {
+
+
+  const tz = timezone || await getUserTimezone();
+
+
+  const timeMin = DateTime
+    .fromISO(startDate, { zone: tz })
+    .startOf("day");
+
+  const timeMax = DateTime
+    .fromISO(endDate, { zone: tz })
+    .endOf("day");
+
+
+  if (!timeMin.isValid || !timeMax.isValid) {
+    throw new Error(
+      `Invalid date range: ${startDate} to ${endDate}`
+    );
+  }
+
+
+  const auth = await getGoogleClient();
+
+  const calendar = google.calendar({
+    version: "v3",
+    auth
+  });
+
+
+  const response = await calendar.events.list({
 
     calendarId: "primary",
 
-    requestBody
+    timeMin: timeMin.toISO(),
+    timeMax: timeMax.toISO(),
+
+    maxResults,
+
+    // Expands recurring events into actual occurrences
+    singleEvents: true,
+
+    orderBy: "startTime"
 
   });
 
 
+  // Slim the payload down before it ever reaches the AI
+  const events = (response.data.items || []).map(event => ({
+
+    id: event.id,
+
+    title: event.summary || "(no title)",
+
+    start: event.start?.dateTime || event.start?.date || null,
+    end: event.end?.dateTime || event.end?.date || null,
+
+    allDay: !event.start?.dateTime,
+
+    location: event.location || null
+
+  }));
+
+
   return {
 
-    success:true,
+    success: true,
 
-    message:`Created event "${title}"`,
+    count: events.length,
 
-    data:response.data
+    range: {
+      startDate,
+      endDate,
+      timezone: tz
+    },
+
+    events
 
   };
 
