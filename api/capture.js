@@ -1,6 +1,8 @@
 import openai from "../lib/openai.js";
 import { executeTool } from "../lib/router.js";
 import { buildContext } from "../lib/context.js";
+import { DateTime } from "luxon";
+
 
 export default async function handler(req, res) {
 
@@ -10,9 +12,11 @@ export default async function handler(req, res) {
     });
   }
 
+
   try {
 
     const { text } = req.body;
+
 
     if (!text) {
       return res.status(400).json({
@@ -20,235 +24,218 @@ export default async function handler(req, res) {
       });
     }
 
-    const today = new Date().toISOString();
 
     const context = await buildContext();
 
-    console.log("USER CONTEXT:");
-    console.log(JSON.stringify(context, null, 2));
+
+    const userTimezone = "America/Los_Angeles";
+
+
+    const now = DateTime.now()
+      .setZone(userTimezone);
+
+
+    const currentDate = now.toFormat("yyyy-MM-dd");
+    const currentTime = now.toFormat("HH:mm");
+
+
+    console.log("AI DATE CONTEXT");
+
+    console.log({
+      currentDate,
+      currentTime,
+      timezone: userTimezone
+    });
+
 
     const response = await openai.chat.completions.create({
 
       model: "gpt-4o-mini",
 
+
       messages: [
+
         {
           role: "system",
-          content: `
-You are the tool planner for a personal operating system.
 
-Current date/time: ${today}
-User timezone: America/Los_Angeles.
+          content: `
+
+You are the planning engine for a personal operating system.
+
+Current local date:
+${currentDate}
+
+Current local time:
+${currentTime}
+
+Timezone:
+${userTimezone}
+
+
+IMPORTANT DATE LOGIC:
+
+You are responsible for converting human date language into exact dates.
+
+Use the current local date above as the source of truth.
+
+Examples:
+
+If today is 2026-08-02:
+
+"today" = 2026-08-02
+
+"tomorrow" = 2026-08-03
+
+"day after tomorrow" = 2026-08-04
+
+Do NOT add extra days.
+
+Do NOT use server time.
+
+Do NOT assume UTC.
+
 
 User context:
 
 ${JSON.stringify(context, null, 2)}
 
-Current date/time: ${today}
-User timezone: America/Los_Angeles.
 
 Return ONLY valid JSON.
 
-Your job:
-1. Determine the correct tool.
-2. Extract the required information.
-3. Decide if information should be permanently remembered.
 
----
+------------------------------------------------
 
-MEMORY RULES:
+CREATE EVENT
 
-You have a memory system.
-
-Use save_memory ONLY for information that improves future interactions.
-
-ALWAYS save:
-
-- Long term goals
-- Personal preferences
-- Recurring habits
-- Important relationships
-- Personal constraints
-- Strong likes/dislikes
-- Decisions that affect future planning
-
-Examples:
-"I want to become a product manager"
-"I prefer direct feedback"
-"My girlfriend's birthday is March 5th"
-"I train 5 days per week"
-
----
-
-DO NOT save:
-
-- One-time events
-- Temporary emotions
-- Random conversation details
-- Calendar events
-- Tasks
-- Information only useful for today
-
-Examples:
-"My dentist appointment is Friday"
-"I need groceries"
-"I'm tired today"
-
----
-
-For memories:
-Choose a type:
-
-preference
-goal
-habit
-relationship
-fact
-constraint
-
-Return:
+Format:
 
 {
-  "tool":"save_memory",
-  "type":"",
-  "content":"",
-  "importance":1-10
-}
+  "tool":"create_event",
 
-Importance:
+  "title":"",
 
-10 = critical life information
-8-9 = important long term preference/goal
-5-7 = useful context
-1-4 = minor information
+  "year":0,
+  "month":0,
+  "day":0,
 
----
+  "hour":0,
+  "minute":0,
 
-DATE RULES:
+  "timezone":"America/Los_Angeles",
 
-- Do NOT calculate dates.
-- Do NOT convert dates into timestamps.
-- Do NOT invent dates.
-
-For dates like "the 8th", "the 15th", or "on the 20th":
-include the month if it is not already provided.
-
-Example:
-
-User:
-"on the 8th at 3pm"
-
-Return:
-
-"August 8 at 3pm"
-
-
-If the user gives only a time:
-
-- If that time is still ahead today, assume today.
-- Otherwise assume tomorrow.
-- Never assume next week unless explicitly stated.
-
----
-
-Available tools:
-
-create_task:
-
-{
-  "tool": "create_task",
-  "title": "",
-  "due": ""
-}
-
-
-create_event:
-
-{
-  "tool": "create_event",
-  "title": "",
-  "when": "",
   "durationMinutes":60
 }
 
 
-save_memory:
+------------------------------------------------
+
+CREATE TASK
+
+Format:
 
 {
-  "tool": "save_memory",
+  "tool":"create_task",
+
+  "title":"",
+
+  "year":0,
+  "month":0,
+  "day":0,
+
+  "hour":0,
+  "minute":0,
+
+  "timezone":"America/Los_Angeles"
+}
+
+
+------------------------------------------------
+
+SAVE MEMORY
+
+Format:
+
+{
+  "tool":"save_memory",
+
   "type":"",
+
   "content":"",
+
   "importance":0
 }
 
 
-general_question:
+------------------------------------------------
+
+GENERAL QUESTION
+
+Format:
 
 {
   "tool":"general_question",
+
   "question":""
 }
 
 
+------------------------------------------------
 
 Examples:
 
-Input:
-"Remind me to call John tomorrow"
-
-Output:
-
-{
-  "tool":"create_task",
-  "title":"Call John",
-  "due":"tomorrow"
-}
-
 
 Input:
-"Schedule a dentist appointment this Friday at 2pm"
+Add a calendar event tomorrow at 9 AM for breakfast
+
 
 Output:
 
 {
   "tool":"create_event",
-  "title":"Dentist appointment",
-  "when":"this Friday at 2pm",
+
+  "title":"Breakfast",
+
+  "year":2026,
+  "month":8,
+  "day":3,
+
+  "hour":9,
+  "minute":0,
+
+  "timezone":"America/Los_Angeles",
+
   "durationMinutes":60
 }
 
 
 Input:
-"Remember I prefer lifting in the morning"
+Remember I prefer direct feedback
+
 
 Output:
 
 {
   "tool":"save_memory",
+
   "type":"preference",
-  "content":"User prefers lifting in the morning",
-  "importance":8
+
+  "content":"User prefers direct feedback",
+
+  "importance":9
 }
 
-
-Input:
-"My goal is to lose 30 pounds by summer"
-
-Output:
-
-{
-  "tool":"save_memory",
-  "type":"goal",
-  "content":"User wants to lose 30 pounds by summer",
-  "importance":10
-}
 `
+
         },
+
+
         {
           role:"user",
           content:text
         }
+
       ],
+
 
       response_format:{
         type:"json_object"
@@ -257,30 +244,43 @@ Output:
     });
 
 
+
     const toolData = JSON.parse(
       response.choices[0].message.content
     );
 
 
-    console.log("TOOL DATA:");
-    console.log(toolData);
+    console.log("TOOL DATA");
+
+    console.log(
+      JSON.stringify(toolData, null, 2)
+    );
 
 
     const result = await executeTool(toolData);
 
 
     return res.status(200).json({
+
       success:true,
+
       tool:toolData.tool,
+
       result
+
     });
+
 
 
   } catch(error) {
 
+
     return res.status(500).json({
+
       error:error.message
+
     });
+
 
   }
 

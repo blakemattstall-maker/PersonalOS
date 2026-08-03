@@ -1,16 +1,36 @@
 import { google } from "googleapis";
 import { getGoogleClient } from "../lib/google.js";
-import * as chrono from "chrono-node";
 import { DateTime } from "luxon";
 
 
-export async function createEvent(
+export async function createEvent({
   title,
-  when,
+  year,
+  month,
+  day,
+  hour,
+  minute,
+  timezone = "America/Los_Angeles",
   durationMinutes = 60
-) {
+}) {
+
+
+  console.log("=== GOOGLE CALENDAR V9 ===");
+
+  console.log({
+    title,
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    timezone,
+    durationMinutes
+  });
+
 
   const auth = await getGoogleClient();
+
 
   const calendar = google.calendar({
     version: "v3",
@@ -18,61 +38,27 @@ export async function createEvent(
   });
 
 
-  // Temporary until user settings exist.
-  // Later this should come from Supabase.
-  const userTimeZone = "America/Los_Angeles";
-
-
-  console.log("=== GOOGLE CALENDAR V8 ===");
-
-  console.log({
-    title,
-    when,
-    durationMinutes,
-    userTimeZone
-  });
-
-
-  const nowLuxon = DateTime
-    .now()
-    .setZone(userTimeZone);
-
-  const now = nowLuxon.toJSDate();
-
-
-  console.log("REFERENCE TIME:");
-
-  console.log({
-    iso: nowLuxon.toISO(),
-    weekday: nowLuxon.weekdayLong,
-    zone: nowLuxon.zoneName
-  });
-
-
-  const parsedDate = chrono.parseDate(
-    when,
-    now,
+  const start = DateTime.fromObject(
     {
-      forwardDate: true
+      year,
+      month,
+      day,
+      hour,
+      minute
+    },
+    {
+      zone: timezone
     }
   );
 
 
-  console.log("Chrono parsed:");
+  if (!start.isValid) {
 
-  console.log(parsedDate);
-
-
-  if (!parsedDate) {
     throw new Error(
-      `Could not understand date/time: ${when}`
+      `Invalid calendar date: ${start.invalidReason}`
     );
+
   }
-
-
-  const start = DateTime
-    .fromJSDate(parsedDate)
-    .setZone(userTimeZone);
 
 
   const end = start.plus({
@@ -80,12 +66,12 @@ export async function createEvent(
   });
 
 
-  console.log("Luxon:");
+  console.log("FINAL TIMES");
 
   console.log({
-    startISO: start.toISO(),
-    endISO: end.toISO(),
-    timezone: userTimeZone
+    start: start.toISO(),
+    end: end.toISO(),
+    timezone
   });
 
 
@@ -95,12 +81,12 @@ export async function createEvent(
 
     start: {
       dateTime: start.toISO(),
-      timeZone: userTimeZone
+      timeZone: timezone
     },
 
     end: {
       dateTime: end.toISO(),
-      timeZone: userTimeZone
+      timeZone: timezone
     }
 
   };
@@ -124,11 +110,11 @@ export async function createEvent(
 
   return {
 
-    success: true,
+    success:true,
 
-    message: `Created event "${title}"`,
+    message:`Created event "${title}"`,
 
-    data: response.data
+    data:response.data
 
   };
 
