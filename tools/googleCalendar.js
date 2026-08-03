@@ -12,7 +12,6 @@ export async function createEvent(
 
   const auth = await getGoogleClient();
 
-
   const calendar = google.calendar({
     version: "v3",
     auth
@@ -20,11 +19,11 @@ export async function createEvent(
 
 
   // Temporary until user settings exist.
-  // This will eventually come from Supabase.
+  // Later this will come from Supabase user profile.
   const userTimeZone = "America/Los_Angeles";
 
 
-  console.log("=== GOOGLE CALENDAR V6 ===");
+  console.log("=== GOOGLE CALENDAR V7 ===");
 
   console.log({
     title,
@@ -34,65 +33,79 @@ export async function createEvent(
   });
 
 
-
-  const now = DateTime.now()
-  .setZone(userTimeZone)
-  .toJSDate();
-
-
-const parsedDate = chrono.parseDate(
-  when,
-  now,
-  {
-    forwardDate: true
-});
+  const now = DateTime
+    .now()
+    .setZone(userTimeZone)
+    .toJSDate();
 
 
-  if (!parsedDate) {
-    console.log("Chrono parsed:");
-    console.log(parsedDate);
+  const parsed = chrono.parse(
+    when,
+    now,
+    {
+      forwardDate: true
+    }
+  );
+
+
+  console.log("Chrono raw:");
+  console.log(parsed);
+
+
+  if (!parsed.length) {
     throw new Error(
       `Could not understand date/time: ${when}`
     );
   }
 
-  const chronoResult = chrono.parse(
-  when,
-  now,
-  {
-    forwardDate: true
-  }
-)[0];
 
-const start = DateTime.fromObject(
-  {
-    year: chronoResult.start.get("year"),
-    month: chronoResult.start.get("month"),
-    day: chronoResult.start.get("day"),
-    hour: chronoResult.start.get("hour") ?? 9,
-    minute: chronoResult.start.get("minute") ?? 0
-  },
-  {
-    zone: userTimeZone
-  }
-);
+  const result = parsed[0];
+
+
+  const year = result.start.get("year");
+  const month = result.start.get("month");
+  const day = result.start.get("day");
+
+  const hour = result.start.get("hour") ?? 9;
+  const minute = result.start.get("minute") ?? 0;
+
+
+  console.log("Chrono fields:");
+
+  console.log({
+    year,
+    month,
+    day,
+    hour,
+    minute
+  });
+
+
+  const start = DateTime.fromObject(
+    {
+      year,
+      month,
+      day,
+      hour,
+      minute
+    },
+    {
+      zone: userTimeZone
+    }
+  );
+
 
   const end = start.plus({
     minutes: durationMinutes
   });
 
 
-
-  console.log("Parsed event:");
+  console.log("Luxon:");
 
   console.log({
-
-    start: start.toISO(),
-
-    end: end.toISO(),
-
+    startISO: start.toISO(),
+    endISO: end.toISO(),
     timezone: userTimeZone
-
   });
 
 
@@ -102,23 +115,16 @@ const start = DateTime.fromObject(
     summary: title,
 
     start: {
-
       dateTime: start.toISO(),
-
       timeZone: userTimeZone
-
     },
 
     end: {
-
       dateTime: end.toISO(),
-
       timeZone: userTimeZone
-
     }
 
   };
-
 
 
   console.log("REQUEST BODY");
@@ -128,7 +134,6 @@ const start = DateTime.fromObject(
   );
 
 
-
   const response = await calendar.events.insert({
 
     calendarId: "primary",
@@ -136,7 +141,6 @@ const start = DateTime.fromObject(
     requestBody
 
   });
-
 
 
   return {

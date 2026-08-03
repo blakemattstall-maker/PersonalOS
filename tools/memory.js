@@ -54,3 +54,34 @@ export async function getMemories(
 
   return data;
 }
+
+
+
+export async function getFormattedMemories(
+  limit = 20
+) {
+
+  const memories = await getMemories(limit);
+
+
+  const grouped = {};
+
+
+  memories.forEach(memory => {
+
+    if (!grouped[memory.type]) {
+      grouped[memory.type] = [];
+    }
+
+
+    grouped[memory.type].push({
+      content: memory.content,
+      importance: memory.importance
+    });
+
+  });
+
+
+  return grouped;
+
+}
