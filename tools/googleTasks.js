@@ -114,3 +114,51 @@ export async function createTask({
   };
 
 }
+
+
+export async function getTasks({ maxResults = 100 } = {}) {
+
+  const auth = await getGoogleClient();
+
+  const tasksApi = google.tasks({
+    version: "v1",
+    auth
+  });
+
+  const response = await tasksApi.tasks.list({
+
+    tasklist: "@default",
+
+    maxResults,
+
+    // Only open tasks — completed ones aren't relevant to "what's on my plate"
+    showCompleted: false,
+    showHidden: false
+
+  });
+
+  // Slim the payload down before it ever reaches the AI
+  const tasks = (response.data.items || []).map(task => ({
+
+    id: task.id,
+
+    title: task.title,
+
+    // Google Tasks only stores a due date, never a time
+    due: task.due || null,
+
+    notes: task.notes || null
+
+  }));
+
+  return {
+
+    success: true,
+
+    count: tasks.length,
+
+    tasks
+
+  };
+
+}

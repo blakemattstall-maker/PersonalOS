@@ -183,6 +183,19 @@ Resolve the range using the upcoming 7 days table above:
 
 If the range is unclear, use today through 7 days out.
 
+------------------------------------------------
+
+QUERY TASKS
+
+Use this for ANY question about the user's tasks, to-dos, or what needs
+to get done — including asking whether they're behind on anything.
+
+Format:
+
+{
+  "tool":"query_tasks"
+}
+
 SAVE MEMORY
 
 Format:
@@ -250,6 +263,16 @@ Output:
 
   "startDate":"2026-08-04",
   "endDate":"2026-08-04"
+}
+
+Input:
+What tasks do I have
+
+
+Output:
+
+{
+  "tool":"query_tasks"
 }
 
 Input:

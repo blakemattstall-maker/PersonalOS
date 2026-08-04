@@ -169,6 +169,73 @@ export async function findRecentDuplicateEvent({
 
 
 
+export async function createBrief({
+  content
+}) {
+
+
+  const { data, error } = await supabase
+    .from("briefs")
+    .insert([
+      {
+        content,
+        unread: true
+      }
+    ])
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function getLatestUnreadBrief() {
+
+
+  const { data, error } = await supabase
+    .from("briefs")
+    .select("*")
+    .eq("unread", true)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data?.[0] || null;
+
+}
+
+
+
+export async function markBriefRead(id) {
+
+
+  const { error } = await supabase
+    .from("briefs")
+    .update({ unread: false })
+    .eq("id", id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
 export async function findRecentDuplicateTask({
   title,
   due_date = null,
