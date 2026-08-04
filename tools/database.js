@@ -197,6 +197,35 @@ export async function createBrief({
 
 
 
+export async function createBodyweightLog({
+  weight,
+  unit = "lbs"
+}) {
+
+
+  const { data, error } = await supabase
+    .from("bodyweight_logs")
+    .insert([
+      {
+        weight,
+        unit
+      }
+    ])
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
 export async function createDeepThoughtPlaceholder({
   topic
 }) {

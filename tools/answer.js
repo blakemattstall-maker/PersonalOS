@@ -1,5 +1,5 @@
 import openai from "../lib/openai.js";
-import { buildContext } from "../lib/context.js";
+import { buildRichContext } from "../lib/context.js";
 
 
 export async function answerQuestion({ question }) {
@@ -10,7 +10,7 @@ export async function answerQuestion({ question }) {
   }
 
 
-  const context = await buildContext();
+  const context = await buildRichContext();
 
 
   const response = await openai.chat.completions.create({
@@ -26,6 +26,10 @@ export async function answerQuestion({ question }) {
 You are PersonalOS, a personal assistant answering a question for your user.
 
 What you know about this user:
+
+${context.bio || "(no profile saved yet)"}
+
+Recent memories:
 
 ${JSON.stringify(context.memories, null, 2)}
 
