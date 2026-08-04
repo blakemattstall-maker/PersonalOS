@@ -992,7 +992,7 @@ export async function getActiveProjects() {
 
   const { data, error } = await supabase
     .from("projects")
-    .select("*, goals(title, deadline)")
+    .select("*")
     .eq("status", "active")
     .order("created_at", { ascending: false });
 
