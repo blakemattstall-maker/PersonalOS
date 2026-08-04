@@ -1,4 +1,4 @@
-import { getLatestUnreadBrief, markBriefRead } from "../../tools/database.js";
+import { getLatestUnreadBrief, markBriefRead, getMostRecentBrief } from "../../tools/database.js";
 
 
 export default async function handler(req, res) {
@@ -12,7 +12,14 @@ export default async function handler(req, res) {
 
   try {
 
-    const brief = await getLatestUnreadBrief();
+    // peek=true: for the frontend dashboard, which may be revisited —
+    // shows the latest brief without consuming it. Default (Shortcuts):
+    // only unread briefs, marked read once delivered.
+    const peek = req.query.peek === "true";
+
+    const brief = peek
+      ? await getMostRecentBrief()
+      : await getLatestUnreadBrief();
 
     if (!brief) {
       return res.status(200).json({
@@ -22,7 +29,9 @@ export default async function handler(req, res) {
       });
     }
 
-    await markBriefRead(brief.id);
+    if (!peek) {
+      await markBriefRead(brief.id);
+    }
 
     return res.status(200).json({
       success: true,

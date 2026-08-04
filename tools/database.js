@@ -247,6 +247,27 @@ export async function getRecentNotes({
 
 
 
+export async function getMostRecentBrief() {
+
+
+  const { data, error } = await supabase
+    .from("briefs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data?.[0] || null;
+
+}
+
+
+
 export async function getLatestUnreadBrief() {
 
 
