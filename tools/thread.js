@@ -138,6 +138,16 @@ export async function buildPlan({
   }
 
   const thought = await getDeepThoughtById(deep_thought_id);
+
+  if (thought.thread_status === "active" && thought.project_id) {
+    return {
+      success: true,
+      duplicate: true,
+      message: "A plan was already built for this — check your Projects section.",
+      data: { project_id: thought.project_id }
+    };
+  }
+
   const document = JSON.parse(thought.content);
   const context = await buildRichContext();
   const tz = await getUserTimezone();
