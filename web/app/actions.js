@@ -88,6 +88,21 @@ export async function buildPlanAction(id) {
 }
 
 
+export async function resetBuildAction(id) {
+
+  const backendUrl = process.env.BACKEND_URL;
+
+  await fetch(`${backendUrl}/api/deepThoughts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "resetBuild", id })
+  });
+
+  revalidatePath("/");
+
+}
+
+
 export async function deleteProjectAction(id) {
 
   const backendUrl = process.env.BACKEND_URL;

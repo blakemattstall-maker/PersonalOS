@@ -1,4 +1,4 @@
-import { getPendingDeepThoughts, resolveDeepThought, getThreadTurns } from "../../tools/database.js";
+import { getPendingDeepThoughts, resolveDeepThought, getThreadTurns, updateDeepThoughtThread } from "../../tools/database.js";
 import { respondToThread, buildPlan } from "../../tools/thread.js";
 
 
@@ -74,6 +74,22 @@ export default async function handler(req, res) {
         const result = await buildPlan({ deep_thought_id: id });
 
         return res.status(200).json(result);
+
+      }
+
+
+      // Escape hatch. The build runs in the background, so if the function is
+      // killed mid-flight the thread would sit in "building" forever with the
+      // rebuild guard blocking any retry. This lets the dashboard hand it back.
+      if (action === "resetBuild") {
+
+        if (!id) {
+          return res.status(400).json({ error: "Missing id" });
+        }
+
+        await updateDeepThoughtThread({ id, thread_status: "ready_to_build" });
+
+        return res.status(200).json({ success: true });
 
       }
 

@@ -1,3 +1,4 @@
+import { waitUntil } from "@vercel/functions";
 import openai from "../lib/openai.js";
 import { buildRichContext } from "../lib/context.js";
 import { getUserTimezone } from "../lib/profile.js";
@@ -130,6 +131,12 @@ that hasn't changed from the current state above.
 
 
 
+// Building a plan is one gpt-5.6-sol call plus a real task/event for every
+// step — 25-45s of honest work. It used to run inside the button press, which
+// meant the dashboard's Server Action hit its own duration limit and showed a
+// server error while the build actually carried on and succeeded in the
+// background. Same ack-then-work shape as start_deep_thinking: mark it
+// building, return immediately, do the work after the response is sent.
 export async function buildPlan({
   deep_thought_id
 }) {
@@ -149,6 +156,64 @@ export async function buildPlan({
     };
   }
 
+  // A second press while the first build is still running would create a whole
+  // second project with a second set of real Google tasks — which is exactly
+  // what happened once before, when a client timeout hid a build that had
+  // actually succeeded.
+  if (thought.thread_status === "building") {
+    return {
+      success: true,
+      building: true,
+      message: "Already building this plan — it'll appear under Projects shortly.",
+      data: { deep_thought_id }
+    };
+  }
+
+  await updateDeepThoughtThread({
+    id: deep_thought_id,
+    thread_status: "building"
+  });
+
+  waitUntil(runPlanBuild({ deep_thought_id }));
+
+  return {
+    success: true,
+    building: true,
+    message: "Building your plan now — it'll appear under Projects in a moment.",
+    data: { deep_thought_id }
+  };
+
+}
+
+
+async function runPlanBuild({ deep_thought_id }) {
+
+  try {
+
+    return await executePlanBuild({ deep_thought_id });
+
+  } catch (error) {
+
+    console.error("BUILD PLAN FAILED:", error.message);
+
+    // Put it back where the user can retry, rather than stranding it in
+    // "building" forever with no way out.
+    await updateDeepThoughtThread({
+      id: deep_thought_id,
+      thread_status: "ready_to_build"
+    });
+
+  }
+
+}
+
+
+async function executePlanBuild({
+  deep_thought_id
+}) {
+
+  const thought = await getDeepThoughtById(deep_thought_id);
+
   // Thoughts saved before structured output are plain text, not JSON.
   // Don't let one of those crash the build — plan from the raw text instead.
   let document;
@@ -167,7 +232,13 @@ export async function buildPlan({
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-sol",
+    // Was gpt-5.6-sol at ~22s for this call alone, which put the whole build
+    // uncomfortably close to the 60s function ceiling — and a build that
+    // overruns leaves the thread stuck mid-flight. Turning an already-decided
+    // analysis into a sequenced task list is structured generation, not the
+    // hard judgment call sol is worth paying for; terra does it in ~13s.
+    // The deep thinking itself stays on sol.
+    model: "gpt-5.6-terra",
 
     response_format: { type: "json_object" },
 
@@ -196,7 +267,11 @@ Generate:
 2. A workback schedule: an ordered list of tasks. Each needs a title
    and "days_before_deadline" (if there's a deadline in the analysis)
    or "days_from_today" (if there isn't). Order matters — this is the
-   sequence a missed deadline would cascade through.
+   sequence a missed deadline would cascade through. Dates must move
+   forward with the order: each task falls on or after the one before
+   it, so days_before_deadline never increases as you go down the list,
+   and nothing lands after the deadline itself. Keep titles short —
+   a few words, not a sentence.
 3. Mark any task that's tied to a specific time (not just a day) with
    needs_calendar_event: true and a time_of_day ("HH:MM", 24-hour).
 4. Any planning material worth writing now — a short brief or
@@ -249,19 +324,40 @@ Return ONLY JSON:
   // a counter mutated inside the loop, which can't survive running these
   // concurrently — and sequence_order is what the missed-deadline cascade
   // walks, so getting it wrong would silently corrupt rescheduling.
+  let previousDue = null;
+
   const plannedTasks = (plan.tasks || []).map((t, index) => {
 
     const sequence_order = index + 1;
 
-    const due = (deadline && t.days_before_deadline != null)
-      ? deadline.minus({ days: t.days_before_deadline })
-      : today.plus({ days: t.days_from_today ?? sequence_order });
-
-    const [hour, minute] = t.time_of_day
+    const [rawHour, rawMinute] = t.time_of_day
       ? t.time_of_day.split(":").map(Number)
       : [9, 0];
 
-    return { ...t, sequence_order, due, hour, minute };
+    let due = (deadline && t.days_before_deadline != null)
+      ? deadline.minus({ days: t.days_before_deadline })
+      : today.plus({ days: t.days_from_today ?? sequence_order });
+
+    // Compare full timestamps, not bare dates. The day and the time-of-day are
+    // chosen independently by the model, so a plan can put "close RSVPs" at
+    // 8pm and the next step at 9am the same morning — correct dates, backwards
+    // schedule. The cascade rescheduler shifts everything after a missed step
+    // by sequence_order, so the order has to actually hold.
+    due = due.set({ hour: rawHour, minute: rawMinute, second: 0, millisecond: 0 });
+
+    // Nothing may land past the deadline day, but keep its time of day —
+    // clamping to the deadline itself would drag evening steps to midnight.
+    if (deadline && due.startOf("day") > deadline.startOf("day")) {
+      due = deadline.set({ hour: rawHour, minute: rawMinute, second: 0, millisecond: 0 });
+    }
+
+    if (previousDue && due < previousDue) {
+      due = previousDue;
+    }
+
+    previousDue = due;
+
+    return { ...t, sequence_order, due, hour: due.hour, minute: due.minute };
 
   });
 

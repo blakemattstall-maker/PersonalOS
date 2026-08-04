@@ -5,6 +5,12 @@ import DeepThoughtThread from "./DeepThoughtThread.js";
 import ProjectDeleteButton from "./ProjectDeleteButton.js";
 
 
+// Server Actions inherit their timeout from the page that invokes them, and
+// respondToThread runs a gpt-5.6-sol call. Without this they die at the
+// platform default and the dashboard shows a bare server error.
+export const maxDuration = 60;
+
+
 async function getBrief() {
 
   const backendUrl = process.env.BACKEND_URL;
