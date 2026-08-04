@@ -1,8 +1,11 @@
 import { getProjectsWithDetails, updateProject } from "../tools/database.js";
 import { deleteProject } from "../tools/projects.js";
+import { requireAuth } from "../lib/auth.js";
 
 
 export default async function handler(req, res) {
+
+  if (!requireAuth(req, res)) return;
 
   if (req.method === "GET") {
 

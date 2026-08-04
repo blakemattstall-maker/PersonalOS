@@ -1,5 +1,6 @@
 import openai from "../lib/openai.js";
 import { executeTool } from "../lib/router.js";
+import { requireAuth } from "../lib/auth.js";
 import { TOOLS } from "../lib/toolDefinitions.js";
 import { DateTime } from "luxon";
 import { getUserTimezone } from "../lib/profile.js";
@@ -7,6 +8,8 @@ import { getPendingClarification, clearPendingClarification } from "../tools/pen
 import { resumePendingClarification } from "../tools/modify.js";
 
 export default async function handler(req, res) {
+
+  if (!requireAuth(req, res)) return;
 
   if (req.method !== "POST") {
     return res.status(405).json({

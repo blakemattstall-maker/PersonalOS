@@ -4,6 +4,7 @@ import ResolveButton from "./ResolveButton.js";
 import DeepThoughtThread from "./DeepThoughtThread.js";
 import ProjectDeleteButton from "./ProjectDeleteButton.js";
 import VoicePicker from "./VoicePicker.js";
+import { backendGet } from "./backend.js";
 
 
 // Server Actions inherit their timeout from the page that invokes them, and
@@ -14,15 +15,9 @@ export const maxDuration = 60;
 
 async function getBrief() {
 
-  const backendUrl = process.env.BACKEND_URL;
-
   try {
 
-    const res = await fetch(`${backendUrl}/api/brief/latest?peek=true`, {
-      cache: "no-store"
-    });
-
-    return await res.json();
+    return await backendGet("/api/brief/latest?peek=true");
 
   } catch (error) {
 
@@ -35,15 +30,9 @@ async function getBrief() {
 
 async function getPendingDeepThoughts() {
 
-  const backendUrl = process.env.BACKEND_URL;
-
   try {
 
-    const res = await fetch(`${backendUrl}/api/deepThoughts`, {
-      cache: "no-store"
-    });
-
-    const data = await res.json();
+    const data = await backendGet("/api/deepThoughts");
 
     const thoughts = data.thoughts || [];
 
@@ -52,11 +41,7 @@ async function getPendingDeepThoughts() {
 
         try {
 
-          const turnsRes = await fetch(`${backendUrl}/api/deepThoughts?turns=${t.id}`, {
-            cache: "no-store"
-          });
-
-          const turnsData = await turnsRes.json();
+          const turnsData = await backendGet(`/api/deepThoughts?turns=${t.id}`);
 
           return { ...t, turns: turnsData.turns || [] };
 
@@ -82,15 +67,9 @@ async function getPendingDeepThoughts() {
 
 async function getPendingNudges() {
 
-  const backendUrl = process.env.BACKEND_URL;
-
   try {
 
-    const res = await fetch(`${backendUrl}/api/nudges`, {
-      cache: "no-store"
-    });
-
-    const data = await res.json();
+    const data = await backendGet("/api/nudges");
 
     return data.nudges || [];
 
@@ -105,15 +84,9 @@ async function getPendingNudges() {
 
 async function getActiveProjects() {
 
-  const backendUrl = process.env.BACKEND_URL;
-
   try {
 
-    const res = await fetch(`${backendUrl}/api/projects`, {
-      cache: "no-store"
-    });
-
-    const data = await res.json();
+    const data = await backendGet("/api/projects");
 
     return data.projects || [];
 

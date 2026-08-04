@@ -1,18 +1,13 @@
 import Link from "next/link";
 import { formatDate, DeepThoughtBody } from "../shared.js";
+import { backendGet } from "../backend.js";
 
 
 async function getHistory() {
 
-  const backendUrl = process.env.BACKEND_URL;
-
   try {
 
-    const res = await fetch(`${backendUrl}/api/history`, {
-      cache: "no-store"
-    });
-
-    return await res.json();
+    return await backendGet("/api/history");
 
   } catch (error) {
 

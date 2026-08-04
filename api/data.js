@@ -1,8 +1,11 @@
 import { getMemories, deleteMemory } from "../tools/memory.js";
 import { getRecentNotes, deleteNote, getAllIntentions, deleteIntention } from "../tools/database.js";
+import { requireAuth } from "../lib/auth.js";
 
 
 export default async function handler(req, res) {
+
+  if (!requireAuth(req, res)) return;
 
   if (req.method === "GET") {
 

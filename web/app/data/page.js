@@ -1,19 +1,14 @@
 import Link from "next/link";
 import { formatDate } from "../shared.js";
 import DeleteButton from "../DeleteButton.js";
+import { backendGet } from "../backend.js";
 
 
 async function getData() {
 
-  const backendUrl = process.env.BACKEND_URL;
-
   try {
 
-    const res = await fetch(`${backendUrl}/api/data`, {
-      cache: "no-store"
-    });
-
-    return await res.json();
+    return await backendGet("/api/data");
 
   } catch (error) {
 

@@ -1,8 +1,11 @@
 import { getPendingDeepThoughts, resolveDeepThought, getThreadTurns, updateDeepThoughtThread } from "../../tools/database.js";
 import { respondToThread, buildPlan } from "../../tools/thread.js";
+import { requireAuth } from "../../lib/auth.js";
 
 
 export default async function handler(req, res) {
+
+  if (!requireAuth(req, res)) return;
 
   if (req.method === "GET") {
 

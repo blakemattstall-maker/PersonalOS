@@ -1,17 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { backendPost } from "./backend.js";
 
 
 export async function resolveDeepThought(id) {
 
-  const backendUrl = process.env.BACKEND_URL;
-
-  await fetch(`${backendUrl}/api/deepThoughts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id })
-  });
+  await backendPost("/api/deepThoughts", { id });
 
   revalidatePath("/");
   revalidatePath("/history");
@@ -21,13 +16,7 @@ export async function resolveDeepThought(id) {
 
 export async function resolveNudge(id) {
 
-  const backendUrl = process.env.BACKEND_URL;
-
-  await fetch(`${backendUrl}/api/nudges`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id })
-  });
+  await backendPost("/api/nudges", { id });
 
   revalidatePath("/");
   revalidatePath("/history");
@@ -37,13 +26,7 @@ export async function resolveNudge(id) {
 
 export async function deleteDataItem(type, id) {
 
-  const backendUrl = process.env.BACKEND_URL;
-
-  await fetch(`${backendUrl}/api/data`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ type, id })
-  });
+  await backendPost("/api/data", { type, id });
 
   revalidatePath("/data");
 
@@ -52,15 +35,7 @@ export async function deleteDataItem(type, id) {
 
 export async function respondToThreadAction(id, message) {
 
-  const backendUrl = process.env.BACKEND_URL;
-
-  const res = await fetch(`${backendUrl}/api/deepThoughts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "respond", id, message })
-  });
-
-  const result = await res.json();
+  const result = await backendPost("/api/deepThoughts", { action: "respond", id, message });
 
   revalidatePath("/");
 
@@ -71,15 +46,7 @@ export async function respondToThreadAction(id, message) {
 
 export async function buildPlanAction(id) {
 
-  const backendUrl = process.env.BACKEND_URL;
-
-  const res = await fetch(`${backendUrl}/api/deepThoughts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "buildPlan", id })
-  });
-
-  const result = await res.json();
+  const result = await backendPost("/api/deepThoughts", { action: "buildPlan", id });
 
   revalidatePath("/");
 
@@ -90,13 +57,7 @@ export async function buildPlanAction(id) {
 
 export async function resetBuildAction(id) {
 
-  const backendUrl = process.env.BACKEND_URL;
-
-  await fetch(`${backendUrl}/api/deepThoughts`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "resetBuild", id })
-  });
+  await backendPost("/api/deepThoughts", { action: "resetBuild", id });
 
   revalidatePath("/");
 
@@ -105,15 +66,7 @@ export async function resetBuildAction(id) {
 
 export async function deleteProjectAction(id) {
 
-  const backendUrl = process.env.BACKEND_URL;
-
-  const res = await fetch(`${backendUrl}/api/projects`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "delete", id })
-  });
-
-  const result = await res.json();
+  const result = await backendPost("/api/projects", { action: "delete", id });
 
   revalidatePath("/");
   revalidatePath("/history");
