@@ -1,6 +1,7 @@
 import openai from "../lib/openai.js";
 import { executeTool } from "../lib/router.js";
 import { buildContext } from "../lib/context.js";
+import { TOOLS } from "../lib/toolDefinitions.js";
 import { DateTime } from "luxon";
 import { getUserTimezone } from "../lib/profile.js";
 
@@ -104,77 +105,7 @@ Do NOT use server time.
 Do NOT assume UTC.
 
 
-User context:
-
-${JSON.stringify(context, null, 2)}
-
-
-Return ONLY valid JSON.
-
-
-------------------------------------------------
-
-CREATE EVENT
-
-Format:
-
-{
-  "tool":"create_event",
-
-  "title":"",
-
-  "year":0,
-  "month":0,
-  "day":0,
-
-  "hour":0,
-  "minute":0,
-
-  "timezone":"${userTimezone}",
-
-  "durationMinutes":60
-}
-
-
-------------------------------------------------
-
-CREATE TASK
-
-Format:
-
-{
-  "tool":"create_task",
-
-  "title":"",
-
-  "year":0,
-  "month":0,
-  "day":0,
-
-  "hour":0,
-  "minute":0,
-
-  "timezone":"${userTimezone}"
-}
-
-
-------------------------------------------------
-
-QUERY SCHEDULE
-
-Use this for ANY question about the user's calendar, schedule,
-events, availability, or what is coming up.
-
-Format:
-
-{
-  "tool":"query_schedule",
-
-  "startDate":"YYYY-MM-DD",
-  "endDate":"YYYY-MM-DD"
-}
-
-Resolve the range using the upcoming 7 days table above:
+For query_schedule, resolve the range using the upcoming 7 days table above:
 
 "today" = today only
 "tomorrow" = tomorrow only
@@ -183,114 +114,15 @@ Resolve the range using the upcoming 7 days table above:
 
 If the range is unclear, use today through 7 days out.
 
-------------------------------------------------
 
-QUERY TASKS
+User context:
 
-Use this for ANY question about the user's tasks, to-dos, or what needs
-to get done — including asking whether they're behind on anything.
-
-Format:
-
-{
-  "tool":"query_tasks"
-}
-
-SAVE MEMORY
-
-Format:
-
-{
-  "tool":"save_memory",
-
-  "type":"",
-
-  "content":"",
-
-  "importance":0
-}
+${JSON.stringify(context, null, 2)}
 
 
-------------------------------------------------
-
-GENERAL QUESTION
-
-Format:
-
-{
-  "tool":"general_question",
-
-  "question":""
-}
-
-
-------------------------------------------------
-
-Examples:
-
-
-Input:
-Add a calendar event tomorrow at 9 AM for breakfast
-
-
-Output:
-
-{
-  "tool":"create_event",
-
-  "title":"Breakfast",
-
-  "year":2026,
-  "month":8,
-  "day":3,
-
-  "hour":9,
-  "minute":0,
-
-  "timezone":"${userTimezone}",
-
-  "durationMinutes":60
-}
-
-Input:
-What do I have going on tomorrow
-
-
-Output:
-
-{
-  "tool":"query_schedule",
-
-  "startDate":"2026-08-04",
-  "endDate":"2026-08-04"
-}
-
-Input:
-What tasks do I have
-
-
-Output:
-
-{
-  "tool":"query_tasks"
-}
-
-Input:
-Remember I prefer direct feedback
-
-
-Output:
-
-{
-  "tool":"save_memory",
-
-  "type":"preference",
-
-  "content":"User prefers direct feedback",
-
-  "importance":9
-}
-
+Use the tools available to you to fulfill the user's request. If a single
+message asks for more than one thing (e.g. "add the meeting and remind me
+to bring the contract"), call every tool needed to satisfy all of it.
 `
 
         },
@@ -304,36 +136,81 @@ Output:
       ],
 
 
-      response_format:{
-        type:"json_object"
-      }
+      tools: TOOLS,
+
+      tool_choice: "auto"
 
     });
 
 
-
-    const toolData = JSON.parse(
-      response.choices[0].message.content
-    );
+    const message = response.choices[0].message;
 
 
-    console.log("TOOL DATA");
+    console.log("TOOL CALLS");
 
     console.log(
-      JSON.stringify(toolData, null, 2)
+      JSON.stringify(message.tool_calls, null, 2)
     );
 
 
-    const result = await executeTool(toolData, text);
+    if (!message.tool_calls || message.tool_calls.length === 0) {
+
+      return res.status(200).json({
+        success: true,
+        tool: "general_question",
+        result: {
+          success: true,
+          message: message.content || "I'm not sure how to help with that."
+        }
+      });
+
+    }
+
+
+    const results = [];
+    let anyFailure = false;
+
+    for (const call of message.tool_calls) {
+
+      const toolName = call.function.name;
+
+      let args = {};
+
+      try {
+        args = JSON.parse(call.function.arguments || "{}");
+      } catch (parseError) {
+        args = {};
+      }
+
+      try {
+
+        const result = await executeTool(
+          { tool: toolName, ...args },
+          text
+        );
+
+        results.push({ tool: toolName, result });
+
+      } catch (error) {
+
+        anyFailure = true;
+
+        results.push({ tool: toolName, error: error.message });
+
+      }
+
+    }
 
 
     return res.status(200).json({
 
-      success:true,
+      success: !anyFailure,
 
-      tool:toolData.tool,
+      results,
 
-      result
+      // Backward-compatible top-level fields for the common single-action case
+      tool: results[0]?.tool,
+      result: results[0]?.result
 
     });
 
