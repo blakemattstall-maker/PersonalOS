@@ -197,9 +197,8 @@ export async function createBrief({
 
 
 
-export async function createDeepThoughtRecord({
-  topic,
-  content
+export async function createDeepThoughtPlaceholder({
+  topic
 }) {
 
 
@@ -208,10 +207,36 @@ export async function createDeepThoughtRecord({
     .insert([
       {
         topic,
-        content,
-        status: "pending_review"
+        content: "",
+        status: "thinking"
       }
     ])
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function updateDeepThoughtResult({
+  id,
+  content,
+  status
+}) {
+
+
+  const { data, error } = await supabase
+    .from("deep_thoughts")
+    .update({ content, status })
+    .eq("id", id)
     .select()
     .single();
 
@@ -235,7 +260,7 @@ export async function getPendingDeepThoughts({
   const { data, error } = await supabase
     .from("deep_thoughts")
     .select("*")
-    .eq("status", "pending_review")
+    .in("status", ["thinking", "pending_review"])
     .order("created_at", { ascending: false })
     .limit(limit);
 

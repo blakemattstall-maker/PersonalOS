@@ -105,9 +105,13 @@ export default async function Home() {
               {pendingThoughts.map((thought) => (
                 <div key={thought.id} className="border-t border-border pt-4 first:border-t-0 first:pt-0">
                   <h3 className="font-medium text-foreground">{thought.topic}</h3>
-                  <div className="mt-2 whitespace-pre-wrap text-foreground leading-relaxed">
-                    {thought.content}
-                  </div>
+                  {thought.status === "thinking" ? (
+                    <p className="mt-2 text-muted italic">Still thinking this through…</p>
+                  ) : (
+                    <div className="mt-2 whitespace-pre-wrap text-foreground leading-relaxed">
+                      {thought.content}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
