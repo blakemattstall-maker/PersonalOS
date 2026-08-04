@@ -7,10 +7,17 @@
     {
       "path": "/api/cron/syncCanvas",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/reviewIntentions",
+      "schedule": "30 12 * * *"
     }
   ],
   "functions": {
     "api/capture.js": {
+      "maxDuration": 60
+    },
+    "api/cron/reviewIntentions.js": {
       "maxDuration": 60
     }
   }

@@ -504,3 +504,201 @@ export async function findRecentDuplicateTask({
   return data?.[0] || null;
 
 }
+
+
+
+export async function createIntention({
+  content
+}) {
+
+
+  const { data, error } = await supabase
+    .from("intentions")
+    .insert([
+      {
+        content,
+        status: "open"
+      }
+    ])
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function getOpenIntentions() {
+
+
+  const { data, error } = await supabase
+    .from("intentions")
+    .select("*")
+    .eq("status", "open")
+    .order("created_at", { ascending: true });
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
+
+}
+
+
+
+export async function markIntentionSurfaced(id) {
+
+
+  const { error } = await supabase
+    .from("intentions")
+    .update({ last_surfaced_at: new Date().toISOString() })
+    .eq("id", id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
+export async function createNudge({
+  intention_id,
+  message
+}) {
+
+
+  const { data, error } = await supabase
+    .from("nudges")
+    .insert([
+      {
+        intention_id,
+        message,
+        status: "pending_review"
+      }
+    ])
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function getPendingNudges() {
+
+
+  const { data, error } = await supabase
+    .from("nudges")
+    .select("*, intentions(content)")
+    .eq("status", "pending_review")
+    .order("created_at", { ascending: false });
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
+
+}
+
+
+
+export async function resolveNudge(id) {
+
+
+  const { error } = await supabase
+    .from("nudges")
+    .update({ status: "resolved" })
+    .eq("id", id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
+export async function resolveDeepThought(id) {
+
+
+  const { error } = await supabase
+    .from("deep_thoughts")
+    .update({ status: "resolved" })
+    .eq("id", id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
+export async function getHistory({ limit = 30 } = {}) {
+
+
+  const [thoughts, nudges, briefs] = await Promise.all([
+
+    supabase
+      .from("deep_thoughts")
+      .select("id, topic, content, status, created_at")
+      .in("status", ["resolved"])
+      .order("created_at", { ascending: false })
+      .limit(limit),
+
+    supabase
+      .from("nudges")
+      .select("id, message, status, created_at, intentions(content)")
+      .in("status", ["resolved"])
+      .order("created_at", { ascending: false })
+      .limit(limit),
+
+    supabase
+      .from("briefs")
+      .select("id, content, created_at")
+      .order("created_at", { ascending: false })
+      .limit(limit)
+
+  ]);
+
+
+  if (thoughts.error) throw new Error(thoughts.error.message);
+  if (nudges.error) throw new Error(nudges.error.message);
+  if (briefs.error) throw new Error(briefs.error.message);
+
+
+  return {
+
+    thoughts: thoughts.data || [],
+
+    nudges: nudges.data || [],
+
+    briefs: briefs.data || []
+
+  };
+
+}
