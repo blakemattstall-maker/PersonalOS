@@ -1,5 +1,5 @@
 import openai from "../lib/openai.js";
-import { getTasks } from "./googleTasks.js";
+import { getTasks, taskDueDate } from "./googleTasks.js";
 import { getUserTimezone, getProfileBio } from "../lib/profile.js";
 import { DateTime } from "luxon";
 
@@ -25,9 +25,7 @@ export async function queryTasks({
       return `${t.title} (no due date)`;
     }
 
-    const due = DateTime.fromISO(t.due).setZone(tz);
-
-    return `${t.title} — due ${due.toFormat("ccc MMM d")}`;
+    return `${t.title} — due ${taskDueDate(t.due).toFormat("ccc MMM d")}`;
 
   }).join("\n");
 

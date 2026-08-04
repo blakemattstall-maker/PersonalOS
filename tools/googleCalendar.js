@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import { getGoogleClient } from "../lib/google.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
-import { createCalendarEventRecord, updateCalendarGoogleId, findRecentDuplicateEvent, getEventById, updateEventTimesRecord } from "../tools/database.js";
+import { createCalendarEventRecord, updateCalendarGoogleId, findRecentDuplicateEvent, getEventById, updateEventTimesRecord, syncEventByGoogleId, deleteEventRowByGoogleId } from "../tools/database.js";
 
 
 export async function createEvent({
@@ -244,6 +244,92 @@ export async function updateEventTimes({
   await updateEventTimesRecord(supabase_id, newStartISO, newEndISO);
 
   return { success: true };
+
+}
+
+
+
+// --- Modifications keyed off the Google id (see googleTasks.js for why) ---
+
+export async function rescheduleEventByGoogleId({
+  google_event_id,
+  year,
+  month,
+  day,
+  hour,
+  minute,
+  durationMinutes = null,
+  timezone = null
+}) {
+
+  const tz = timezone || await getUserTimezone();
+
+  const auth = await getGoogleClient();
+
+  const calendar = google.calendar({ version: "v3", auth });
+
+
+  // Read the existing event first so a move that doesn't mention a length
+  // keeps the one it already had, rather than silently becoming an hour.
+  const { data: existing } = await calendar.events.get({
+    calendarId: "primary",
+    eventId: google_event_id
+  });
+
+  const previousStart = existing.start?.dateTime ? DateTime.fromISO(existing.start.dateTime) : null;
+  const previousEnd = existing.end?.dateTime ? DateTime.fromISO(existing.end.dateTime) : null;
+
+  const existingMinutes = previousStart && previousEnd
+    ? previousEnd.diff(previousStart, "minutes").minutes
+    : 60;
+
+
+  // Time omitted ("move it to Thursday") keeps the original time of day.
+  const start = DateTime.fromObject(
+    {
+      year,
+      month,
+      day,
+      hour: hour ?? previousStart?.setZone(tz).hour ?? 9,
+      minute: minute ?? previousStart?.setZone(tz).minute ?? 0
+    },
+    { zone: tz }
+  );
+
+  if (!start.isValid) {
+    throw new Error(`Invalid calendar date: ${start.invalidReason}`);
+  }
+
+  const end = start.plus({ minutes: durationMinutes || existingMinutes });
+
+
+  await calendar.events.patch({
+    calendarId: "primary",
+    eventId: google_event_id,
+    requestBody: {
+      start: { dateTime: start.toISO(), timeZone: tz },
+      end: { dateTime: end.toISO(), timeZone: tz }
+    }
+  });
+
+
+  await syncEventByGoogleId(google_event_id, {
+    start_time: start.toISO(),
+    end_time: end.toISO()
+  });
+
+
+  return { start, end };
+
+}
+
+
+
+export async function deleteEventByGoogleId(google_event_id) {
+
+  await deleteGoogleEvent(google_event_id);
+
+  await deleteEventRowByGoogleId(google_event_id);
 
 }
 

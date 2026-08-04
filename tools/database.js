@@ -1170,6 +1170,74 @@ export async function deleteProjectRecord(project_id) {
 
 
 
+// Most items live only in Google — 6 of 8 open tasks had no Supabase row,
+// because anything created directly in the Tasks app never round-trips here.
+// So modifications key off the Google id and treat the local row as an
+// optional mirror: update it when it exists, never fail when it doesn't.
+export async function syncTaskByGoogleId(google_task_id, updates) {
+
+  if (!google_task_id) return;
+
+  const { error } = await supabase
+    .from("tasks")
+    .update(updates)
+    .eq("google_task_id", google_task_id);
+
+  if (error) {
+    console.error("TASK MIRROR UPDATE FAILED:", error.message);
+  }
+
+}
+
+
+export async function deleteTaskRowByGoogleId(google_task_id) {
+
+  if (!google_task_id) return;
+
+  const { error } = await supabase
+    .from("tasks")
+    .delete()
+    .eq("google_task_id", google_task_id);
+
+  if (error) {
+    console.error("TASK MIRROR DELETE FAILED:", error.message);
+  }
+
+}
+
+
+export async function syncEventByGoogleId(google_event_id, updates) {
+
+  if (!google_event_id) return;
+
+  const { error } = await supabase
+    .from("calendar_events")
+    .update(updates)
+    .eq("google_event_id", google_event_id);
+
+  if (error) {
+    console.error("EVENT MIRROR UPDATE FAILED:", error.message);
+  }
+
+}
+
+
+export async function deleteEventRowByGoogleId(google_event_id) {
+
+  if (!google_event_id) return;
+
+  const { error } = await supabase
+    .from("calendar_events")
+    .delete()
+    .eq("google_event_id", google_event_id);
+
+  if (error) {
+    console.error("EVENT MIRROR DELETE FAILED:", error.message);
+  }
+
+}
+
+
 export async function updateTaskDueDateRecord(id, due_date) {
 
 

@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import { getGoogleClient } from "../lib/google.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
-import { createTaskRecord, updateTaskGoogleId, findRecentDuplicateTask, getTaskById, updateTaskDueDateRecord } from "../tools/database.js";
+import { createTaskRecord, updateTaskGoogleId, findRecentDuplicateTask, getTaskById, updateTaskDueDateRecord, syncTaskByGoogleId, deleteTaskRowByGoogleId } from "../tools/database.js";
 
 
 export async function createTask({
@@ -122,6 +122,20 @@ export async function createTask({
 }
 
 
+// Google Tasks records a DATE, not a moment — it discards the time portion and
+// hands the date back as UTC midnight ("2026-08-13T00:00:00.000Z"). Reading
+// that as a timestamp and converting to a timezone west of UTC rolls it back a
+// day, so every due date displayed to a US user was a day early and tasks were
+// called overdue before they were. Always read a task due through this.
+export function taskDueDate(due) {
+
+  if (!due) return null;
+
+  return DateTime.fromISO(due, { zone: "utc" });
+
+}
+
+
 export async function getTasks({ maxResults = 100 } = {}) {
 
   const auth = await getGoogleClient();
@@ -237,5 +251,80 @@ export async function deleteGoogleTask(google_task_id) {
     // Already gone on Google's side is fine — not a failure.
     if (!String(error.message).includes("404")) throw error;
   }
+
+}
+
+
+
+// --- Modifications keyed off the Google id ---
+//
+// Google is the source of truth for tasks: most of them were created in the
+// Tasks app and have no local row at all, so these take the Google id the
+// read path already returns and mirror into Supabase only if a row exists.
+
+export async function completeTaskByGoogleId(google_task_id) {
+
+  const auth = await getGoogleClient();
+
+  const tasksApi = google.tasks({ version: "v1", auth });
+
+  const { data } = await tasksApi.tasks.patch({
+    tasklist: "@default",
+    task: google_task_id,
+    requestBody: {
+      status: "completed",
+      completed: new Date().toISOString()
+    }
+  });
+
+  await syncTaskByGoogleId(google_task_id, { status: "completed" });
+
+  return data;
+
+}
+
+
+
+export async function rescheduleTaskByGoogleId({
+  google_task_id,
+  year,
+  month,
+  day,
+  hour = 9,
+  minute = 0,
+  timezone = null
+}) {
+
+  const tz = timezone || await getUserTimezone();
+
+  const date = DateTime.fromObject({ year, month, day, hour, minute }, { zone: tz });
+
+  if (!date.isValid) {
+    throw new Error(`Invalid task date: ${date.invalidReason}`);
+  }
+
+  const auth = await getGoogleClient();
+
+  const tasksApi = google.tasks({ version: "v1", auth });
+
+  await tasksApi.tasks.patch({
+    tasklist: "@default",
+    task: google_task_id,
+    requestBody: { due: date.toUTC().toISO() }
+  });
+
+  await syncTaskByGoogleId(google_task_id, { due_date: date.toISO() });
+
+  return date;
+
+}
+
+
+
+export async function deleteTaskByGoogleId(google_task_id) {
+
+  await deleteGoogleTask(google_task_id);
+
+  await deleteTaskRowByGoogleId(google_task_id);
 
 }

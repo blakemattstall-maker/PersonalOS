@@ -69,6 +69,8 @@ Resolve every relative date ("tomorrow", "this Thursday", "a week from tomorrow"
 
 For query_schedule choose a range: "today" is today only; "this week" runs through the coming Sunday; if unclear use today through 7 days out.
 
+Changing something that already exists — moving it, pushing it, rescheduling it, marking it done, cancelling or deleting it — is always modify_task or modify_event. Never a query tool, and never a create tool. Naming a day ("move my dentist appointment to Thursday") does not make it a schedule question.
+
 Call every tool needed to satisfy the request — if one message asks for two things, make two calls.`
 
         },
