@@ -34,6 +34,10 @@ finances, school, career goals, existing commitments), use it explicitly:
 Profile:
 ${context.bio || "(no profile saved yet)"}
 
+Recent bodyweight trend (most recent first) — relevant for anything
+touching fitness, health, energy, discipline, or habits:
+${context.bodyweightTrend || "(no bodyweight data yet)"}
+
 Recent memories:
 ${JSON.stringify(context.memories, null, 2)}
 

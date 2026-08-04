@@ -79,7 +79,8 @@ export async function createTaskRecord({
   status = "pending",
   priority = null,
   goal_id = null,
-  project_id = null
+  project_id = null,
+  canvas_assignment_id = null
 }) {
 
 
@@ -92,7 +93,8 @@ export async function createTaskRecord({
         status,
         priority,
         goal_id,
-        project_id
+        project_id,
+        canvas_assignment_id
       }
     ])
     .select()
@@ -105,6 +107,30 @@ export async function createTaskRecord({
 
 
   return data;
+
+}
+
+
+
+export async function findTaskByCanvasId({
+  canvas_assignment_id
+}) {
+
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("id")
+    .eq("canvas_assignment_id", canvas_assignment_id)
+    .limit(1);
+
+
+  if (error) {
+    console.error("CANVAS DUPLICATE CHECK FAILED:", error.message);
+    return null;
+  }
+
+
+  return data?.[0] || null;
 
 }
 
@@ -221,6 +247,29 @@ export async function createBodyweightLog({
 
 
   return data;
+
+}
+
+
+
+export async function getRecentBodyweightLogs({
+  limit = 10
+} = {}) {
+
+
+  const { data, error } = await supabase
+    .from("bodyweight_logs")
+    .select("weight, unit, logged_at")
+    .order("logged_at", { ascending: false })
+    .limit(limit);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
 
 }
 

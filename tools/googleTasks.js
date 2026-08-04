@@ -14,7 +14,8 @@ export async function createTask({
   minute = 0,
   timezone = null,
   goal_id = null,
-  project_id = null
+  project_id = null,
+  canvas_assignment_id = null
 }) {
 
 
@@ -84,7 +85,8 @@ export async function createTask({
     title,
     due_date: due_iso,
     goal_id,
-    project_id
+    project_id,
+    canvas_assignment_id
   });
 
 

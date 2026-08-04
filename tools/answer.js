@@ -29,6 +29,10 @@ What you know about this user:
 
 ${context.bio || "(no profile saved yet)"}
 
+Recent bodyweight trend (most recent first):
+
+${context.bodyweightTrend || "(no bodyweight data yet)"}
+
 Recent memories:
 
 ${JSON.stringify(context.memories, null, 2)}
