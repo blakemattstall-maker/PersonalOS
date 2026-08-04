@@ -1,4 +1,5 @@
 import { reviewIntentionsForNudges } from "../../tools/nudges.js";
+import { checkProjectDeadlines } from "../../tools/projectCheckup.js";
 
 
 export default async function handler(req, res) {
@@ -14,9 +15,16 @@ export default async function handler(req, res) {
 
   try {
 
-    const result = await reviewIntentionsForNudges();
+    const [nudgeResult, projectResult] = await Promise.all([
+      reviewIntentionsForNudges(),
+      checkProjectDeadlines()
+    ]);
 
-    return res.status(200).json(result);
+    return res.status(200).json({
+      success: true,
+      nudges: nudgeResult,
+      projects: projectResult
+    });
 
 
   } catch (error) {

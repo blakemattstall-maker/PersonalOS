@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import { getGoogleClient } from "../lib/google.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
-import { createTaskRecord, updateTaskGoogleId, findRecentDuplicateTask } from "../tools/database.js";
+import { createTaskRecord, updateTaskGoogleId, findRecentDuplicateTask, getTaskById, updateTaskDueDateRecord } from "../tools/database.js";
 
 
 export async function createTask({
@@ -16,7 +16,8 @@ export async function createTask({
   goal_id = null,
   project_id = null,
   canvas_assignment_id = null,
-  notes = null
+  notes = null,
+  sequence_order = null
 }) {
 
 
@@ -87,7 +88,8 @@ export async function createTask({
     due_date: due_iso,
     goal_id,
     project_id,
-    canvas_assignment_id
+    canvas_assignment_id,
+    sequence_order
   });
 
 
@@ -164,5 +166,57 @@ export async function getTasks({ maxResults = 100 } = {}) {
     tasks
 
   };
+
+}
+
+
+
+export async function getTaskStatus(google_task_id) {
+
+  const auth = await getGoogleClient();
+
+  const tasksApi = google.tasks({ version: "v1", auth });
+
+  const response = await tasksApi.tasks.get({
+    tasklist: "@default",
+    task: google_task_id
+  });
+
+  return response.data.status;
+
+}
+
+
+
+export async function updateTaskDueDate({
+  supabase_id,
+  newDueISO
+}) {
+
+  const taskRow = await getTaskById(supabase_id);
+
+  const tz = await getUserTimezone();
+
+  const due = DateTime.fromISO(newDueISO, { zone: tz }).toUTC().toISO();
+
+
+  if (taskRow.google_task_id) {
+
+    const auth = await getGoogleClient();
+
+    const tasksApi = google.tasks({ version: "v1", auth });
+
+    await tasksApi.tasks.patch({
+      tasklist: "@default",
+      task: taskRow.google_task_id,
+      requestBody: { due }
+    });
+
+  }
+
+
+  await updateTaskDueDateRecord(supabase_id, newDueISO);
+
+  return { success: true };
 
 }

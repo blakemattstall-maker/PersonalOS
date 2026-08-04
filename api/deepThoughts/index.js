@@ -1,4 +1,5 @@
-import { getPendingDeepThoughts, resolveDeepThought } from "../../tools/database.js";
+import { getPendingDeepThoughts, resolveDeepThought, getThreadTurns } from "../../tools/database.js";
+import { respondToThread, buildPlan } from "../../tools/thread.js";
 
 
 export default async function handler(req, res) {
@@ -6,6 +7,14 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
 
     try {
+
+      if (req.query.turns) {
+
+        const turns = await getThreadTurns(req.query.turns);
+
+        return res.status(200).json({ success: true, turns });
+
+      }
 
       const thoughts = await getPendingDeepThoughts();
 
@@ -27,15 +36,49 @@ export default async function handler(req, res) {
 
     try {
 
-      const { id } = req.body;
+      const { action, id, message } = req.body;
 
-      if (!id) {
-        return res.status(400).json({ error: "Missing id" });
+
+      if (!action || action === "resolve") {
+
+        if (!id) {
+          return res.status(400).json({ error: "Missing id" });
+        }
+
+        await resolveDeepThought(id);
+
+        return res.status(200).json({ success: true });
+
       }
 
-      await resolveDeepThought(id);
 
-      return res.status(200).json({ success: true });
+      if (action === "respond") {
+
+        if (!id || !message) {
+          return res.status(400).json({ error: "Missing id or message" });
+        }
+
+        const result = await respondToThread({ deep_thought_id: id, message });
+
+        return res.status(200).json(result);
+
+      }
+
+
+      if (action === "buildPlan") {
+
+        if (!id) {
+          return res.status(400).json({ error: "Missing id" });
+        }
+
+        const result = await buildPlan({ deep_thought_id: id });
+
+        return res.status(200).json(result);
+
+      }
+
+
+      return res.status(400).json({ error: `Unknown action: ${action}` });
 
     } catch (error) {
 

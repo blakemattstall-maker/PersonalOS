@@ -48,3 +48,41 @@ export async function deleteDataItem(type, id) {
   revalidatePath("/data");
 
 }
+
+
+export async function respondToThreadAction(id, message) {
+
+  const backendUrl = process.env.BACKEND_URL;
+
+  const res = await fetch(`${backendUrl}/api/deepThoughts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "respond", id, message })
+  });
+
+  const result = await res.json();
+
+  revalidatePath("/");
+
+  return result;
+
+}
+
+
+export async function buildPlanAction(id) {
+
+  const backendUrl = process.env.BACKEND_URL;
+
+  const res = await fetch(`${backendUrl}/api/deepThoughts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "buildPlan", id })
+  });
+
+  const result = await res.json();
+
+  revalidatePath("/");
+
+  return result;
+
+}

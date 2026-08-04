@@ -80,7 +80,8 @@ export async function createTaskRecord({
   priority = null,
   goal_id = null,
   project_id = null,
-  canvas_assignment_id = null
+  canvas_assignment_id = null,
+  sequence_order = null
 }) {
 
 
@@ -94,7 +95,8 @@ export async function createTaskRecord({
         priority,
         goal_id,
         project_id,
-        canvas_assignment_id
+        canvas_assignment_id,
+        sequence_order
       }
     ])
     .select()
@@ -160,6 +162,50 @@ export async function updateTaskGoogleId(
   return data;
 
 }
+
+
+
+export async function getTaskById(id) {
+
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function getEventById(id) {
+
+
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
 
 export async function findRecentDuplicateEvent({
   title,
@@ -752,5 +798,349 @@ export async function getHistory({ limit = 30 } = {}) {
     briefs: briefs.data || []
 
   };
+
+}
+
+
+
+// --- Threads (interactive follow-up on a deep-thought) ---
+
+export async function createThreadTurn({
+  deep_thought_id,
+  role,
+  message
+}) {
+
+
+  const { data, error } = await supabase
+    .from("thread_turns")
+    .insert([{ deep_thought_id, role, message }])
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function getThreadTurns(deep_thought_id) {
+
+
+  const { data, error } = await supabase
+    .from("thread_turns")
+    .select("*")
+    .eq("deep_thought_id", deep_thought_id)
+    .order("created_at", { ascending: true });
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
+
+}
+
+
+
+export async function getDeepThoughtById(id) {
+
+
+  const { data, error } = await supabase
+    .from("deep_thoughts")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function updateDeepThoughtThread({
+  id,
+  content,
+  thread_status,
+  project_id
+}) {
+
+
+  const updates = {};
+
+  if (content !== undefined) updates.content = content;
+  if (thread_status !== undefined) updates.thread_status = thread_status;
+  if (project_id !== undefined) updates.project_id = project_id;
+
+
+  const { data, error } = await supabase
+    .from("deep_thoughts")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+// --- Goals & Projects ---
+
+export async function createGoal({
+  title,
+  description = null,
+  deadline = null,
+  priority = null
+}) {
+
+
+  const { data, error } = await supabase
+    .from("goals")
+    .insert([{ title, description, deadline, priority, status: "active", progress: 0 }])
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function createProject({
+  goal_id = null,
+  name,
+  description = null,
+  next_action = null
+}) {
+
+
+  const { data, error } = await supabase
+    .from("projects")
+    .insert([{ goal_id, name, description, next_action, status: "active" }])
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function updateProject({
+  id,
+  status,
+  next_action
+}) {
+
+
+  const updates = {};
+
+  if (status !== undefined) updates.status = status;
+  if (next_action !== undefined) updates.next_action = next_action;
+
+
+  const { error } = await supabase
+    .from("projects")
+    .update(updates)
+    .eq("id", id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
+export async function getActiveProjects() {
+
+
+  const { data, error } = await supabase
+    .from("projects")
+    .select("*, goals(title, deadline)")
+    .eq("status", "active")
+    .order("created_at", { ascending: false });
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
+
+}
+
+
+
+export async function getProjectsWithDetails() {
+
+
+  const projects = await getActiveProjects();
+
+
+  const withDetails = await Promise.all(
+    projects.map(async (project) => {
+
+      const [tasksResult, materials] = await Promise.all([
+
+        supabase
+          .from("tasks")
+          .select("*")
+          .eq("project_id", project.id)
+          .order("sequence_order", { ascending: true }),
+
+        getProjectMaterials(project.id)
+
+      ]);
+
+      return {
+        ...project,
+        tasks: tasksResult.data || [],
+        materials
+      };
+
+    })
+  );
+
+
+  return withDetails;
+
+}
+
+
+
+export async function createProjectMaterial({
+  project_id,
+  type,
+  title,
+  content
+}) {
+
+
+  const { data, error } = await supabase
+    .from("project_materials")
+    .insert([{ project_id, type, title, content }])
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function getProjectMaterials(project_id) {
+
+
+  const { data, error } = await supabase
+    .from("project_materials")
+    .select("*")
+    .eq("project_id", project_id)
+    .order("created_at", { ascending: false });
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
+
+}
+
+
+
+export async function getProjectTasksOrdered(project_id) {
+
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("project_id", project_id)
+    .order("sequence_order", { ascending: true });
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
+
+}
+
+
+
+export async function updateTaskDueDateRecord(id, due_date) {
+
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({ due_date })
+    .eq("id", id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
+export async function updateEventTimesRecord(id, start_time, end_time) {
+
+
+  const { error } = await supabase
+    .from("calendar_events")
+    .update({ start_time, end_time })
+    .eq("id", id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
 
 }

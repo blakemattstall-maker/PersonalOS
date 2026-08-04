@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { formatDate, DeepThoughtBody } from "./shared.js";
+import { formatDate } from "./shared.js";
 import ResolveButton from "./ResolveButton.js";
+import DeepThoughtThread from "./DeepThoughtThread.js";
 
 
 async function getBrief() {
@@ -36,7 +37,31 @@ async function getPendingDeepThoughts() {
 
     const data = await res.json();
 
-    return data.thoughts || [];
+    const thoughts = data.thoughts || [];
+
+    const withTurns = await Promise.all(
+      thoughts.map(async (t) => {
+
+        try {
+
+          const turnsRes = await fetch(`${backendUrl}/api/deepThoughts?turns=${t.id}`, {
+            cache: "no-store"
+          });
+
+          const turnsData = await turnsRes.json();
+
+          return { ...t, turns: turnsData.turns || [] };
+
+        } catch (error) {
+
+          return { ...t, turns: [] };
+
+        }
+
+      })
+    );
+
+    return withTurns;
 
   } catch (error) {
 
@@ -70,25 +95,30 @@ async function getPendingNudges() {
 }
 
 
-function NeedsYouCard({ item }) {
+async function getActiveProjects() {
 
-  if (item.kind === "thought") {
+  const backendUrl = process.env.BACKEND_URL;
 
-    return (
-      <div className="border-t border-border pt-4 first:border-t-0 first:pt-0">
-        <h3 className="font-medium text-foreground">{item.topic}</h3>
-        {item.status === "thinking" ? (
-          <p className="mt-2 text-muted italic">Still thinking this through…</p>
-        ) : (
-          <>
-            <DeepThoughtBody content={item.content} />
-            <ResolveButton type="thought" id={item.id} />
-          </>
-        )}
-      </div>
-    );
+  try {
+
+    const res = await fetch(`${backendUrl}/api/projects`, {
+      cache: "no-store"
+    });
+
+    const data = await res.json();
+
+    return data.projects || [];
+
+  } catch (error) {
+
+    return [];
 
   }
+
+}
+
+
+function NudgeCard({ item }) {
 
   return (
     <div className="border-t border-border pt-4 first:border-t-0 first:pt-0">
@@ -106,10 +136,11 @@ function NeedsYouCard({ item }) {
 
 export default async function Home() {
 
-  const [brief, pendingThoughts, pendingNudges] = await Promise.all([
+  const [brief, pendingThoughts, pendingNudges, projects] = await Promise.all([
     getBrief(),
     getPendingDeepThoughts(),
-    getPendingNudges()
+    getPendingNudges(),
+    getActiveProjects()
   ]);
 
   const needsYou = [
@@ -149,13 +180,72 @@ export default async function Home() {
 
             <div className="mt-4 space-y-8">
               {needsYou.map((item) => (
-                <NeedsYouCard key={`${item.kind}-${item.id}`} item={item} />
+                item.kind === "thought"
+                  ? <DeepThoughtThread key={`thought-${item.id}`} thought={item} turns={item.turns || []} />
+                  : <NudgeCard key={`nudge-${item.id}`} item={item} />
               ))}
             </div>
 
           )}
 
         </section>
+
+        {projects.length > 0 && (
+
+          <section className="mt-6 rounded-2xl border border-border bg-surface p-6">
+
+            <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+              Projects
+            </h2>
+
+            <div className="mt-4 space-y-6">
+              {projects.map((project) => (
+                <div key={project.id} className="border-t border-border pt-4 first:border-t-0 first:pt-0">
+
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium text-foreground">{project.name}</h3>
+                    <span className="text-xs text-muted">{project.status}</span>
+                  </div>
+
+                  {project.description && (
+                    <p className="mt-1 text-sm text-muted">{project.description}</p>
+                  )}
+
+                  {project.next_action && (
+                    <p className="mt-2 text-sm text-foreground">
+                      <span className="text-muted">Next: </span>{project.next_action}
+                    </p>
+                  )}
+
+                  {project.tasks?.length > 0 && (
+                    <ul className="mt-2 space-y-1 text-sm text-muted">
+                      {project.tasks.map(t => (
+                        <li key={t.id}>
+                          {t.status === "completed" ? "✓" : "○"} {t.title}
+                          {t.due_date && ` — ${formatDate(t.due_date)}`}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {project.materials?.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {project.materials.map(m => (
+                        <details key={m.id} className="text-sm">
+                          <summary className="cursor-pointer text-accent">{m.title}</summary>
+                          <p className="mt-1 whitespace-pre-wrap text-muted">{m.content}</p>
+                        </details>
+                      ))}
+                    </div>
+                  )}
+
+                </div>
+              ))}
+            </div>
+
+          </section>
+
+        )}
 
         <section className="mt-6 rounded-2xl border border-border bg-surface p-6">
 

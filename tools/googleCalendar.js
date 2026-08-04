@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import { getGoogleClient } from "../lib/google.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
-import { createCalendarEventRecord, updateCalendarGoogleId, findRecentDuplicateEvent } from "../tools/database.js";
+import { createCalendarEventRecord, updateCalendarGoogleId, findRecentDuplicateEvent, getEventById, updateEventTimesRecord } from "../tools/database.js";
 
 
 export async function createEvent({
@@ -207,5 +207,42 @@ export async function getEvents({
     events
 
   };
+
+}
+
+
+
+export async function updateEventTimes({
+  supabase_id,
+  newStartISO,
+  newEndISO
+}) {
+
+  const eventRow = await getEventById(supabase_id);
+
+  const tz = eventRow.timezone || await getUserTimezone();
+
+
+  if (eventRow.google_event_id) {
+
+    const auth = await getGoogleClient();
+
+    const calendar = google.calendar({ version: "v3", auth });
+
+    await calendar.events.patch({
+      calendarId: "primary",
+      eventId: eventRow.google_event_id,
+      requestBody: {
+        start: { dateTime: newStartISO, timeZone: tz },
+        end: { dateTime: newEndISO, timeZone: tz }
+      }
+    });
+
+  }
+
+
+  await updateEventTimesRecord(supabase_id, newStartISO, newEndISO);
+
+  return { success: true };
 
 }
