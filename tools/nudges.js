@@ -95,14 +95,19 @@ export async function reviewIntentionsForNudges() {
 
       const evaluation = await evaluateIntention(intention, context, tz);
 
-      await markIntentionSurfaced(intention.id);
-
       if (evaluation.should_nudge && evaluation.message) {
 
         await createNudge({
           intention_id: intention.id,
           message: evaluation.message
         });
+
+        // Only stamp this when a nudge actually goes out. Marking it on every
+        // evaluation made last_surfaced_at mean "last looked at", so the prompt
+        // below told the model "last nudged 0 days ago" every single day —
+        // which, against a default-to-silence instruction, silenced the whole
+        // system permanently after the first run.
+        await markIntentionSurfaced(intention.id);
 
         nudged++;
 

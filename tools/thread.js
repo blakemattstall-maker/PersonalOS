@@ -148,7 +148,16 @@ export async function buildPlan({
     };
   }
 
-  const document = JSON.parse(thought.content);
+  // Thoughts saved before structured output are plain text, not JSON.
+  // Don't let one of those crash the build — plan from the raw text instead.
+  let document;
+
+  try {
+    document = JSON.parse(thought.content);
+  } catch (parseError) {
+    document = { reasoning: thought.content, deadline: null };
+  }
+
   const context = await buildRichContext();
   const tz = await getUserTimezone();
 

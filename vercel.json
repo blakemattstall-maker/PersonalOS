@@ -20,6 +20,12 @@
     "api/cron/reviewIntentions.js": {
       "maxDuration": 60
     },
+    "api/cron/morningBrief.js": {
+      "maxDuration": 60
+    },
+    "api/cron/syncCanvas.js": {
+      "maxDuration": 60
+    },
     "api/deepThoughts/index.js": {
       "maxDuration": 60
     },
