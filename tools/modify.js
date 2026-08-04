@@ -3,6 +3,7 @@ import { DateTime } from "luxon";
 import { getUserTimezone } from "../lib/profile.js";
 import { getTasks, completeTaskByGoogleId, rescheduleTaskByGoogleId, deleteTaskByGoogleId, taskDueDate } from "./googleTasks.js";
 import { getEvents, rescheduleEventByGoogleId, deleteEventByGoogleId } from "./googleCalendar.js";
+import { savePendingClarification } from "./pending.js";
 
 
 // The system could create things but never change them. The functions to
@@ -135,17 +136,34 @@ export async function modifyTask({ description, action, year, month, day, _noFal
   }
 
   if (resolved.status === "ambiguous") {
+
+    const question = `Two of those match — ${resolved.options.map(o => o.label).join(", and ")}. Which one?`;
+
+    await savePendingClarification({
+      kind: "task",
+      action,
+      args: { year, month, day },
+      candidates: resolved.options,
+      question
+    });
+
     return {
       success: false,
       needsClarification: true,
-      message: `Which one did you mean? ${resolved.options.map(o => o.label).join("; or ")}.`,
+      message: question,
       data: { options: resolved.options }
     };
+
   }
 
 
-  const target = resolved.target;
+  return performTaskAction(resolved.target, action, { year, month, day });
 
+}
+
+
+
+async function performTaskAction(target, action, { year, month, day } = {}) {
 
   if (action === "complete") {
 
@@ -248,17 +266,34 @@ export async function modifyEvent({ description, action, year, month, day, hour,
   }
 
   if (resolved.status === "ambiguous") {
+
+    const question = `Two of those match — ${resolved.options.map(o => o.label).join(", and ")}. Which one?`;
+
+    await savePendingClarification({
+      kind: "event",
+      action,
+      args: { year, month, day, hour, minute, durationMinutes },
+      candidates: resolved.options,
+      question
+    });
+
     return {
       success: false,
       needsClarification: true,
-      message: `Which one did you mean? ${resolved.options.map(o => o.label).join("; or ")}.`,
+      message: question,
       data: { options: resolved.options }
     };
+
   }
 
 
-  const target = resolved.target;
+  return performEventAction(resolved.target, action, { year, month, day, hour, minute, durationMinutes });
 
+}
+
+
+
+async function performEventAction(target, action, { year, month, day, hour, minute, durationMinutes } = {}) {
 
   if (action === "delete") {
 
@@ -295,5 +330,37 @@ export async function modifyEvent({ description, action, year, month, day, hour,
 
 
   return { success: false, message: `I don't know how to "${action}" an event.` };
+
+}
+
+
+
+// Called before normal routing when a question is parked. The user's reply is
+// matched against the candidates we already showed them, so "the draft one"
+// resolves even though it means nothing on its own. Anything that doesn't
+// clearly pick one is treated as a change of subject, not a bad answer.
+export async function resumePendingClarification({ pending, text }) {
+
+  const { kind, action, args, candidates } = pending.output || {};
+
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    return { handled: false };
+  }
+
+  const resolved = await resolveTarget({
+    description: text,
+    candidates,
+    kind: kind === "event" ? "calendar event" : "task"
+  });
+
+  if (resolved.status !== "ok") {
+    return { handled: false };
+  }
+
+  const result = kind === "event"
+    ? await performEventAction(resolved.target, action, args || {})
+    : await performTaskAction(resolved.target, action, args || {});
+
+  return { handled: true, result };
 
 }

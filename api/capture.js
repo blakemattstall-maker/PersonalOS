@@ -3,6 +3,8 @@ import { executeTool } from "../lib/router.js";
 import { TOOLS } from "../lib/toolDefinitions.js";
 import { DateTime } from "luxon";
 import { getUserTimezone } from "../lib/profile.js";
+import { getPendingClarification, clearPendingClarification } from "../tools/pending.js";
+import { resumePendingClarification } from "../tools/modify.js";
 
 export default async function handler(req, res) {
 
@@ -22,6 +24,34 @@ export default async function handler(req, res) {
       return res.status(400).json({
         error: "No text provided."
       });
+    }
+
+
+    // If the last turn ended in "which one did you mean?", try this utterance
+    // as the answer before routing it as a fresh command. The Shortcut has no
+    // conversation of its own, so without this the question could never be
+    // answered — "the draft one" means nothing to the router on its own.
+    const pending = await getPendingClarification();
+
+    if (pending) {
+
+      const resumed = await resumePendingClarification({ pending, text });
+
+      await clearPendingClarification();
+
+      if (resumed.handled) {
+
+        return res.status(200).json({
+          success: resumed.result.success,
+          results: [{ tool: "clarification", result: resumed.result }],
+          tool: "clarification",
+          result: resumed.result
+        });
+
+      }
+
+      // Not an answer — the user moved on. Fall through and route normally.
+
     }
 
 
