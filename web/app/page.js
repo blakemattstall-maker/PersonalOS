@@ -30,7 +30,7 @@ async function getPendingDeepThoughts() {
 
   try {
 
-    const res = await fetch(`${backendUrl}/api/deepThoughts/pending`, {
+    const res = await fetch(`${backendUrl}/api/deepThoughts`, {
       cache: "no-store"
     });
 
@@ -53,7 +53,7 @@ async function getPendingNudges() {
 
   try {
 
-    const res = await fetch(`${backendUrl}/api/nudges/pending`, {
+    const res = await fetch(`${backendUrl}/api/nudges`, {
       cache: "no-store"
     });
 
