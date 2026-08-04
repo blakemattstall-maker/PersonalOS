@@ -1,7 +1,49 @@
 import openai from "../lib/openai.js";
-import { getProjectsWithDetails } from "./database.js";
+import {
+  getProjectsWithDetails,
+  getProjectTasksOrdered,
+  getProjectEvents,
+  clearDeepThoughtProjectLink,
+  deleteProjectRecord
+} from "./database.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
+import { deleteGoogleTask } from "./googleTasks.js";
+import { deleteGoogleEvent } from "./googleCalendar.js";
+
+
+export async function deleteProject({ project_id }) {
+
+  if (!project_id) {
+    throw new Error("deleteProject requires project_id.");
+  }
+
+  const [tasks, events] = await Promise.all([
+    getProjectTasksOrdered(project_id),
+    getProjectEvents(project_id)
+  ]);
+
+  for (const task of tasks) {
+    await deleteGoogleTask(task.google_task_id);
+  }
+
+  for (const event of events) {
+    await deleteGoogleEvent(event.google_event_id);
+  }
+
+  await clearDeepThoughtProjectLink(project_id);
+
+  await deleteProjectRecord(project_id);
+
+  return {
+
+    success: true,
+
+    message: `Deleted the project and ${tasks.length} task(s), ${events.length} event(s) — from Google too, not just here.`
+
+  };
+
+}
 
 
 export async function queryProjects({

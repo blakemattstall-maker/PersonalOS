@@ -2,6 +2,7 @@ import Link from "next/link";
 import { formatDate } from "./shared.js";
 import ResolveButton from "./ResolveButton.js";
 import DeepThoughtThread from "./DeepThoughtThread.js";
+import ProjectDeleteButton from "./ProjectDeleteButton.js";
 
 
 async function getBrief() {
@@ -202,9 +203,15 @@ export default async function Home() {
               {projects.map((project) => (
                 <div key={project.id} className="border-t border-border pt-4 first:border-t-0 first:pt-0">
 
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <h3 className="font-medium text-foreground">{project.name}</h3>
-                    <span className="text-xs text-muted">{project.status}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted">{project.status}</span>
+                      <ProjectDeleteButton
+                        id={project.id}
+                        taskCount={(project.tasks?.length || 0) + (project.materials?.length || 0)}
+                      />
+                    </div>
                   </div>
 
                   {project.description && (

@@ -1,4 +1,5 @@
 import { getProjectsWithDetails, updateProject } from "../tools/database.js";
+import { deleteProject } from "../tools/projects.js";
 
 
 export default async function handler(req, res) {
@@ -27,10 +28,18 @@ export default async function handler(req, res) {
 
     try {
 
-      const { id, status, next_action } = req.body;
+      const { id, action, status, next_action } = req.body;
 
       if (!id) {
         return res.status(400).json({ error: "Missing id" });
+      }
+
+      if (action === "delete") {
+
+        const result = await deleteProject({ project_id: id });
+
+        return res.status(200).json(result);
+
       }
 
       await updateProject({ id, status, next_action });

@@ -246,3 +246,22 @@ export async function updateEventTimes({
   return { success: true };
 
 }
+
+
+
+export async function deleteGoogleEvent(google_event_id) {
+
+  if (!google_event_id) return;
+
+  const auth = await getGoogleClient();
+
+  const calendar = google.calendar({ version: "v3", auth });
+
+  try {
+    await calendar.events.delete({ calendarId: "primary", eventId: google_event_id });
+  } catch (error) {
+    // Already gone on Google's side is fine — not a failure.
+    if (!String(error.message).includes("404") && !String(error.message).includes("410")) throw error;
+  }
+
+}

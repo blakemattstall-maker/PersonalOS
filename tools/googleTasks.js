@@ -220,3 +220,22 @@ export async function updateTaskDueDate({
   return { success: true };
 
 }
+
+
+
+export async function deleteGoogleTask(google_task_id) {
+
+  if (!google_task_id) return;
+
+  const auth = await getGoogleClient();
+
+  const tasksApi = google.tasks({ version: "v1", auth });
+
+  try {
+    await tasksApi.tasks.delete({ tasklist: "@default", task: google_task_id });
+  } catch (error) {
+    // Already gone on Google's side is fine — not a failure.
+    if (!String(error.message).includes("404")) throw error;
+  }
+
+}

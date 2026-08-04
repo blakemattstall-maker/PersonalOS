@@ -1113,6 +1113,63 @@ export async function getProjectTasksOrdered(project_id) {
 
 
 
+export async function getProjectEvents(project_id) {
+
+
+  const { data, error } = await supabase
+    .from("calendar_events")
+    .select("*")
+    .eq("project_id", project_id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
+
+}
+
+
+
+export async function clearDeepThoughtProjectLink(project_id) {
+
+
+  const { error } = await supabase
+    .from("deep_thoughts")
+    .update({ project_id: null, thread_status: "resolved" })
+    .eq("project_id", project_id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
+export async function deleteProjectRecord(project_id) {
+
+
+  await supabase.from("project_materials").delete().eq("project_id", project_id);
+  await supabase.from("calendar_events").delete().eq("project_id", project_id);
+  await supabase.from("tasks").delete().eq("project_id", project_id);
+
+  const { error } = await supabase
+    .from("projects")
+    .delete()
+    .eq("id", project_id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
 export async function updateTaskDueDateRecord(id, due_date) {
 
 

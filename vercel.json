@@ -22,6 +22,9 @@
     },
     "api/deepThoughts/index.js": {
       "maxDuration": 60
+    },
+    "api/projects.js": {
+      "maxDuration": 60
     }
   }
 }

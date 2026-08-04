@@ -86,3 +86,23 @@ export async function buildPlanAction(id) {
   return result;
 
 }
+
+
+export async function deleteProjectAction(id) {
+
+  const backendUrl = process.env.BACKEND_URL;
+
+  const res = await fetch(`${backendUrl}/api/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "delete", id })
+  });
+
+  const result = await res.json();
+
+  revalidatePath("/");
+  revalidatePath("/history");
+
+  return result;
+
+}
