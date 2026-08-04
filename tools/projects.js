@@ -10,6 +10,7 @@ import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
 import { deleteGoogleTask } from "./googleTasks.js";
 import { deleteGoogleEvent } from "./googleCalendar.js";
+import { mapWithConcurrency } from "../lib/async.js";
 
 
 export async function deleteProject({ project_id }) {
@@ -23,13 +24,9 @@ export async function deleteProject({ project_id }) {
     getProjectEvents(project_id)
   ]);
 
-  for (const task of tasks) {
-    await deleteGoogleTask(task.google_task_id);
-  }
+  await mapWithConcurrency(tasks, (task) => deleteGoogleTask(task.google_task_id));
 
-  for (const event of events) {
-    await deleteGoogleEvent(event.google_event_id);
-  }
+  await mapWithConcurrency(events, (event) => deleteGoogleEvent(event.google_event_id));
 
   await clearDeepThoughtProjectLink(project_id);
 

@@ -7,6 +7,7 @@ import {
   markIntentionSurfaced,
   createNudge
 } from "./database.js";
+import { mapWithConcurrency } from "../lib/async.js";
 
 
 async function evaluateIntention(intention, context, tz) {
@@ -89,7 +90,12 @@ export async function reviewIntentionsForNudges() {
   let nudged = 0;
   const errors = [];
 
-  for (const intention of intentions) {
+  // One model call per intention, previously strictly sequential at ~3.5s
+  // each — which put a hard ceiling around 10 open intentions before this
+  // daily cron hit Vercel's 60s limit and died halfway through. Each
+  // intention is still judged entirely on its own, and each nudge is still
+  // its own separate card; only the waiting happens in parallel.
+  await mapWithConcurrency(intentions, async (intention) => {
 
     try {
 
@@ -119,7 +125,7 @@ export async function reviewIntentionsForNudges() {
 
     }
 
-  }
+  });
 
   return {
 

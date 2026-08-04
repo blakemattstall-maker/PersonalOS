@@ -4,26 +4,21 @@ import { getActiveProjects, getProjectTasksOrdered } from "./database.js";
 import supabase from "../lib/supabase.js";
 import { getTaskStatus, updateTaskDueDate } from "./googleTasks.js";
 import { updateEventTimes } from "./googleCalendar.js";
+import { mapWithConcurrency } from "../lib/async.js";
 
 
 async function shiftDownstreamTasks({ project_id, fromSequenceOrder, delayDays, tz }) {
 
   const tasks = await getProjectTasksOrdered(project_id);
 
-  const downstream = tasks.filter(t => t.sequence_order > fromSequenceOrder);
+  const downstream = tasks.filter(t => t.sequence_order > fromSequenceOrder && t.due_date);
 
-  for (const task of downstream) {
-
-    if (!task.due_date) continue;
-
-    const newDue = DateTime.fromISO(task.due_date).setZone(tz).plus({ days: delayDays });
-
-    await updateTaskDueDate({
+  await mapWithConcurrency(downstream, (task) =>
+    updateTaskDueDate({
       supabase_id: task.id,
-      newDueISO: newDue.toISO()
-    });
-
-  }
+      newDueISO: DateTime.fromISO(task.due_date).setZone(tz).plus({ days: delayDays }).toISO()
+    })
+  );
 
   return downstream.length;
 
@@ -40,18 +35,13 @@ async function shiftDownstreamEvents({ project_id, afterISO, delayDays }) {
 
   if (error) throw new Error(error.message);
 
-  for (const event of (events || [])) {
-
-    const newStart = DateTime.fromISO(event.start_time).plus({ days: delayDays });
-    const newEnd = DateTime.fromISO(event.end_time).plus({ days: delayDays });
-
-    await updateEventTimes({
+  await mapWithConcurrency(events || [], (event) =>
+    updateEventTimes({
       supabase_id: event.id,
-      newStartISO: newStart.toISO(),
-      newEndISO: newEnd.toISO()
-    });
-
-  }
+      newStartISO: DateTime.fromISO(event.start_time).plus({ days: delayDays }).toISO(),
+      newEndISO: DateTime.fromISO(event.end_time).plus({ days: delayDays }).toISO()
+    })
+  );
 
   return (events || []).length;
 
@@ -111,6 +101,15 @@ export async function checkProjectDeadlines() {
           .eq("id", task.id);
 
         cascadesTriggered++;
+
+        // Stop after one cascade per project per run. The shift just rewrote
+        // every downstream due date, but `tasks` is the snapshot from before
+        // it — so continuing would judge later steps against stale dates and
+        // double-count a miss the cascade already absorbed. (Two overdue
+        // steps, -4d and -2d, pushed the tail 6 days instead of 4.) Anything
+        // still genuinely missed is caught by tomorrow's run against fresh
+        // data.
+        break;
 
       }
 

@@ -12,6 +12,7 @@ import {
 } from "./database.js";
 import { createTask } from "./googleTasks.js";
 import { createEvent } from "./googleCalendar.js";
+import { mapWithConcurrency } from "../lib/async.js";
 
 
 export async function respondToThread({
@@ -244,65 +245,67 @@ Return ONLY JSON:
     : null;
 
 
-  let sequence_order = 0;
-  const createdTasks = [];
+  // Resolve every task's slot and due date up front. sequence_order used to be
+  // a counter mutated inside the loop, which can't survive running these
+  // concurrently — and sequence_order is what the missed-deadline cascade
+  // walks, so getting it wrong would silently corrupt rescheduling.
+  const plannedTasks = (plan.tasks || []).map((t, index) => {
 
-  for (const t of (plan.tasks || [])) {
+    const sequence_order = index + 1;
 
-    sequence_order += 1;
-
-    let due;
-
-    if (deadline && t.days_before_deadline != null) {
-      due = deadline.minus({ days: t.days_before_deadline });
-    } else {
-      due = today.plus({ days: t.days_from_today ?? sequence_order });
-    }
+    const due = (deadline && t.days_before_deadline != null)
+      ? deadline.minus({ days: t.days_before_deadline })
+      : today.plus({ days: t.days_from_today ?? sequence_order });
 
     const [hour, minute] = t.time_of_day
       ? t.time_of_day.split(":").map(Number)
       : [9, 0];
 
+    return { ...t, sequence_order, due, hour, minute };
+
+  });
+
+
+  const createdTasks = await mapWithConcurrency(plannedTasks, async (t) => {
+
     const taskResult = await createTask({
       title: t.title,
-      year: due.year,
-      month: due.month,
-      day: due.day,
-      hour,
-      minute,
+      year: t.due.year,
+      month: t.due.month,
+      day: t.due.day,
+      hour: t.hour,
+      minute: t.minute,
       project_id: project.id,
-      sequence_order
+      sequence_order: t.sequence_order
     });
-
-    createdTasks.push(taskResult);
 
     if (t.needs_calendar_event) {
 
       await createEvent({
         title: t.title,
-        year: due.year,
-        month: due.month,
-        day: due.day,
-        hour,
-        minute,
+        year: t.due.year,
+        month: t.due.month,
+        day: t.due.day,
+        hour: t.hour,
+        minute: t.minute,
         project_id: project.id
       });
 
     }
 
-  }
+    return taskResult;
+
+  });
 
 
-  for (const m of (plan.materials || [])) {
-
-    await createProjectMaterial({
+  await mapWithConcurrency(plan.materials || [], (m) =>
+    createProjectMaterial({
       project_id: project.id,
       type: m.type,
       title: m.title,
       content: m.content
-    });
-
-  }
+    })
+  );
 
 
   await updateDeepThoughtThread({

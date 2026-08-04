@@ -3,6 +3,7 @@ import { DateTime } from "luxon";
 import { getUserTimezone } from "../lib/profile.js";
 import { createTask } from "./googleTasks.js";
 import { findTaskByCanvasId } from "./database.js";
+import { mapWithConcurrency } from "../lib/async.js";
 
 
 export async function getUpcomingCanvasAssignments({ daysAhead = 21 } = {}) {
@@ -44,7 +45,10 @@ export async function syncCanvasAssignments() {
   let skipped = 0;
   const errors = [];
 
-  for (const assignment of assignments) {
+  // Each assignment carries its own canvas_id, so these don't interact —
+  // safe to run a few at a time. Sequentially this blew Vercel's limit the
+  // moment a semester's worth of assignments landed at once.
+  await mapWithConcurrency(assignments, async (assignment) => {
 
     try {
 
@@ -52,7 +56,7 @@ export async function syncCanvasAssignments() {
 
       if (existing) {
         skipped++;
-        continue;
+        return;
       }
 
       const due = assignment.due_at;
@@ -76,7 +80,7 @@ export async function syncCanvasAssignments() {
 
     }
 
-  }
+  });
 
   return {
 
