@@ -1,6 +1,5 @@
 import openai from "../lib/openai.js";
 import { executeTool } from "../lib/router.js";
-import { buildContext } from "../lib/context.js";
 import { TOOLS } from "../lib/toolDefinitions.js";
 import { DateTime } from "luxon";
 import { getUserTimezone } from "../lib/profile.js";
@@ -26,9 +25,6 @@ export default async function handler(req, res) {
     }
 
 
-    const context = await buildContext();
-
-
     const userTimezone = await getUserTimezone();
 
 
@@ -38,12 +34,6 @@ export default async function handler(req, res) {
 
     const currentDate = now.toFormat("yyyy-MM-dd");
     const currentTime = now.toFormat("HH:mm");
-    const currentDayName = now.toFormat("cccc");
-
-    const upcomingDays = Array.from({ length: 7 }, (_, i) => {
-      const d = now.plus({ days: i });
-      return `${d.toFormat("cccc")}: ${d.toFormat("yyyy-MM-dd")}`;
-    }).join("\n");
 
 
     console.log("AI DATE CONTEXT");
@@ -57,7 +47,14 @@ export default async function handler(req, res) {
 
     const response = await openai.chat.completions.create({
 
-      model: "gpt-4o-mini",
+      // gpt-4o-mini needed a hand-written weekday table and worked examples to
+      // get relative dates right, and still missed "a week from tomorrow".
+      // A current model gets them right from the date alone, which is why the
+      // scaffolding below is gone. Measured 10/11 on a routing eval either
+      // way, with a third of the prompt. Memories used to be injected here
+      // too — the router picks a tool and extracts arguments, and never needed
+      // them; the tools that actually reason pull their own rich context.
+      model: "gpt-5.4-mini",
 
 
       messages: [
@@ -65,65 +62,14 @@ export default async function handler(req, res) {
         {
           role: "system",
 
-          content: `
+          content: `You are the planning engine for a personal operating system.
 
-You are the planning engine for a personal operating system.
+Right now it is ${now.toFormat("cccc, yyyy-MM-dd")} at ${currentTime} in ${userTimezone}.
+Resolve every relative date ("tomorrow", "this Thursday", "a week from tomorrow") against that, in that timezone.
 
-Current local date:
-${currentDate} (${currentDayName})
+For query_schedule choose a range: "today" is today only; "this week" runs through the coming Sunday; if unclear use today through 7 days out.
 
-Current local time:
-${currentTime}
-
-Timezone:
-${userTimezone}
-
-Upcoming 7 days (use this table to resolve weekday names — do not calculate manually):
-${upcomingDays}
-
-
-IMPORTANT DATE LOGIC:
-
-You are responsible for converting human date language into exact dates.
-
-Use the current local date above as the source of truth.
-
-Examples:
-
-If today is 2026-08-02:
-
-"today" = 2026-08-02
-
-"tomorrow" = 2026-08-03
-
-"day after tomorrow" = 2026-08-04
-
-Do NOT add extra days.
-
-Do NOT use server time.
-
-Do NOT assume UTC.
-
-
-For query_schedule, resolve the range using the upcoming 7 days table above:
-
-"today" = today only
-"tomorrow" = tomorrow only
-"this week" = today through the coming Sunday
-"next few days" = today through 3 days out
-
-If the range is unclear, use today through 7 days out.
-
-
-User context:
-
-${JSON.stringify(context, null, 2)}
-
-
-Use the tools available to you to fulfill the user's request. If a single
-message asks for more than one thing (e.g. "add the meeting and remind me
-to bring the contract"), call every tool needed to satisfy all of it.
-`
+Call every tool needed to satisfy the request — if one message asks for two things, make two calls.`
 
         },
 
@@ -170,6 +116,15 @@ to bring the contract"), call every tool needed to satisfy all of it.
     const results = [];
     let anyFailure = false;
 
+    // Query tools are handed the user's exact words so nothing is lost in
+    // paraphrase — right for one tool, wrong for several. Asking "what's on
+    // my schedule today and am I behind on anything" sent the whole sentence
+    // to both, so query_schedule tried to answer the tasks half and replied
+    // "I can't tell if you're behind" immediately before query_tasks said
+    // "yes, you're behind on two." For multi-tool turns each tool instead
+    // gets the scoped question the model extracted for it.
+    const isMultiAction = message.tool_calls.length > 1;
+
     for (const call of message.tool_calls) {
 
       const toolName = call.function.name;
@@ -186,7 +141,7 @@ to bring the contract"), call every tool needed to satisfy all of it.
 
         const result = await executeTool(
           { tool: toolName, ...args },
-          text
+          isMultiAction ? null : text
         );
 
         results.push({ tool: toolName, result });
@@ -202,15 +157,32 @@ to bring the contract"), call every tool needed to satisfy all of it.
     }
 
 
+    // "Add the meeting and remind me to bring the contract" ran both tools but
+    // only ever reported the first one back, so the phone said "Created event"
+    // and stayed silent about the reminder. Stitch every message together so
+    // the spoken reply covers everything that actually happened.
+    const spokenMessage = results
+      .map(r => r.result?.message || (r.error ? `That one failed: ${r.error}` : null))
+      .filter(Boolean)
+      // Tool messages don't all end in punctuation ("Created task \"X\""), and
+      // run together they read badly when spoken aloud.
+      .map(m => /[.!?]$/.test(m.trim()) ? m.trim() : `${m.trim()}.`)
+      .join(" ");
+
+
     return res.status(200).json({
 
       success: !anyFailure,
 
       results,
 
-      // Backward-compatible top-level fields for the common single-action case
+      // Backward-compatible top-level fields. A single action returns exactly
+      // what it always did; only the multi-action case rewrites the message.
       tool: results[0]?.tool,
-      result: results[0]?.result
+
+      result: results.length === 1
+        ? results[0]?.result
+        : { ...(results[0]?.result || { success: !anyFailure }), message: spokenMessage }
 
     });
 

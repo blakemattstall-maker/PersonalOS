@@ -31,7 +31,7 @@ export async function queryTasks({
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-4o-mini",
+    model: "gpt-5.4-mini",
 
     messages: [
 
