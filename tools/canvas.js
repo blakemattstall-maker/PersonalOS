@@ -29,7 +29,8 @@ export async function getUpcomingCanvasAssignments({ daysAhead = 21 } = {}) {
     .map(event => ({
       canvas_id: `canvas_${event.uid}`,
       title: event.summary || "Untitled assignment",
-      due_at: DateTime.fromJSDate(event.start).setZone(tz)
+      due_at: DateTime.fromJSDate(event.start).setZone(tz),
+      url: event.url || null
     }));
 
 }
@@ -63,7 +64,8 @@ export async function syncCanvasAssignments() {
         day: due.day,
         hour: due.hour,
         minute: due.minute,
-        canvas_assignment_id: assignment.canvas_id
+        canvas_assignment_id: assignment.canvas_id,
+        notes: assignment.url
       });
 
       created++;

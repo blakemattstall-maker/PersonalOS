@@ -15,7 +15,8 @@ export async function createTask({
   timezone = null,
   goal_id = null,
   project_id = null,
-  canvas_assignment_id = null
+  canvas_assignment_id = null,
+  notes = null
 }) {
 
 
@@ -96,7 +97,8 @@ export async function createTask({
 
     requestBody: {
       title,
-      ...(due && { due })
+      ...(due && { due }),
+      ...(notes && { notes })
     }
 
   });
