@@ -404,6 +404,58 @@ export async function getRecentNotes({
 
 
 
+export async function deleteNote(id) {
+
+  const { error } = await supabase
+    .from("notes")
+    .delete()
+    .eq("id", id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
+export async function getAllIntentions() {
+
+
+  const { data, error } = await supabase
+    .from("intentions")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
+
+}
+
+
+
+export async function deleteIntention(id) {
+
+  const { error } = await supabase
+    .from("intentions")
+    .delete()
+    .eq("id", id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
 export async function getMostRecentBrief() {
 
 

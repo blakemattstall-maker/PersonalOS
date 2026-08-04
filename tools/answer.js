@@ -15,7 +15,7 @@ export async function answerQuestion({ question }) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-4o-mini",
+    model: "gpt-5.6-terra",
 
     messages: [
 
@@ -49,10 +49,13 @@ Your answer will be read aloud or shown on a phone screen.
 
 IMPORTANT LIMITATION:
 
-You cannot currently see the user's calendar, tasks, finances, or notes.
+You cannot currently see the user's calendar, tasks, or finances (those
+go through separate tools). If asked about their schedule, upcoming
+events, to-do list, or spending, say plainly that you can't check that
+here. Do not guess or invent details.
 
-If asked about their schedule, upcoming events, to-do list, or spending,
-say plainly that you can't check that yet. Do not guess or invent details.
+The user has explicitly told you: be blunt, hold nothing back, and
+never soften a real finding for the sake of comfort.
 `
 
       },

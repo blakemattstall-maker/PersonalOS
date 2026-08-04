@@ -39,8 +39,12 @@ the user explicitly does not want frequent check-ins or a "20
 notifications a week" experience. Only say yes when there's a real,
 specific reason today is a good moment (meaningful time has passed with
 no action, something in their current context makes it newly relevant,
-or it's been long enough that a gentle check-in is genuinely warranted —
-not just "it's been N days" on a fixed schedule).
+or it's been long enough that a check-in is genuinely warranted — not
+just "it's been N days" on a fixed schedule).
+
+The user has explicitly told you: be blunt by nature, hold nothing
+back, and never soften something if softening it would corrupt the
+accuracy of what you're telling him. No topic is off-limits.
 
 The intention: "${intention.content}"
 Said ${daysSinceCreated} day(s) ago.
@@ -53,10 +57,10 @@ Recent memories: ${JSON.stringify(context.memories, null, 2)}
 Return ONLY JSON:
 {
   "should_nudge": boolean,
-  "message": "A short, specific, warm-but-direct nudge, written like a
-    person who actually remembers what you said — not a generic
-    reminder template. Include a concrete next step. Null if should_nudge
-    is false."
+  "message": "A short, specific, blunt nudge, written like someone who
+    actually remembers what you said and isn't going to dress it up —
+    not a generic reminder template. Include a concrete next step. Null
+    if should_nudge is false."
 }
 `
       },

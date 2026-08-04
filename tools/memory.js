@@ -57,6 +57,22 @@ export async function getMemories(
 
 
 
+export async function deleteMemory(id) {
+
+  const { error } = await supabase
+    .from("memories")
+    .delete()
+    .eq("id", id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
 export async function getFormattedMemories(
   limit = 20
 ) {
