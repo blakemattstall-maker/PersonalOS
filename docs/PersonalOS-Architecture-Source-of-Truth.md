@@ -1,340 +1,142 @@
 # PersonalOS — Architecture & Design Source of Truth
 
-**Version:** 1.1
-**Date:** August 2, 2026
-**Purpose:** The reference document for *why* PersonalOS is built the way it is, what each future feature actually requires, and what order things should be built in. This supersedes feature wish-lists. Read this before starting any new feature.
+**Version:** 2.0
+**Date:** August 4, 2026 (major revision — the system changed enormously since v1.1; treat anything from before this date as historical unless verified against live code)
+**Purpose:** The reference document for *why* PersonalOS is built the way it is, what each feature actually requires, and what order things get built in. Read `PersonalOS-Current-State-Handoff.md` first for the practical "what's true right now," then this doc for the reasoning behind it.
 
 ---
 
 ## 0. How to use this document
 
-The roadmap lists **what** to build. This document covers **what has to exist first**, which is a different and more important question.
-
-The core finding: almost none of the roadmap features are blocked by their own complexity. They are blocked by three missing system-wide capabilities. Building those three unlocks most of the roadmap at once. Building features first, without them, means building each one twice.
+Same as v1.1: the roadmap lists **what**, this document covers **what has to exist first** and **why decisions were made this way**. Most of the original "three missing capabilities" thesis played out as predicted — building the spine (S1–S4 especially) unlocked most of the rest at once.
 
 ---
 
 ## 1. Honest state of the system today
 
-### What genuinely works
-- Natural language → structured JSON via OpenAI (`gpt-4o-mini`)
-- Tool routing for three actions: `create_event`, `create_task`, `save_memory`
-- Supabase-first write pattern for calendar and tasks (source of truth, with `google_*_id` written back)
-- Memory storage and blanket injection into every prompt
-- Activity logging on success
+This section replaces v1.1 entirely — nearly everything in it is now built.
 
-### What does not exist yet
 | Capability | Status |
 |---|---|
-| Reading data back out of Supabase | ⚠️ Partial. `memory.js` + `context.js` read `memories` and inject them into every prompt. Works, but it's fixed context injection — not a query tool the AI can invoke, and no other table is ever read. |
-| Updating or deleting anything | ❌ None. |
-| Reading from Google (calendar/tasks state) | ❌ None. Push-only. |
-| Running without a user prompt | ❌ None. Fully request-response. |
-| Failure logging | ❌ `router.js` hardcodes `success: true`; thrown errors never reach `activity_logs`. |
-| Multiple tools in one utterance | ❌ One JSON object, one tool. |
-| Anything writing to `goals`, `projects`, `profiles` | ❌ Tables exist, unused. |
-
-### Live defects worth fixing
-- **`general_question` is a dead route.** The system prompt in `capture.js` instructs the AI to return `{"tool":"general_question"}`, but `router.js` has no case for it — it falls through to `default` and returns "Unknown tool." Any non-command question to PersonalOS currently fails.
-- **Failures are invisible.** Because `success: true` is hardcoded and `logActivity` runs after the tool call, a thrown error produces a 500 with no log record. For a system that will eventually run unattended background jobs, this is the highest-priority debt in the codebase.
-- **Timezone is hardcoded in ~4 places** even though `profiles.timezone` exists as a column. Should be read once from the profile.
-- **No idempotency protection.** A duplicate event has already occurred once in testing. There are no unique constraints or request keys preventing repeats. This becomes serious the moment anything retries automatically.
-- **Dead stubs:** `calendar.js` and `tasks.js` shadow the real `googleCalendar.js` / `googleTasks.js`. Known, deferred.
+| Reading data back out of Supabase | ✅ Done. Query tools per domain (`query_schedule`, `query_tasks`, `query_notes`, `query_projects`), all callable, all bounded, all synthesizing rather than dumping raw rows. |
+| Updating or deleting anything | ✅ Done, further than originally scoped. `updateTaskDueDate`/`updateEventTimes` (first update-capable Google functions, built for the cascade-reschedule feature), `deleteGoogleTask`/`deleteGoogleEvent`/`deleteProject` (full project teardown, real Google + Supabase). Memories/notes/intentions deletable via the `/data` page. |
+| Reading from Google (calendar/tasks state) | ✅ Done — live reads, not cached Supabase copies. |
+| Running without a user prompt | ✅ Done. Three daily Vercel Cron jobs. |
+| Failure logging | ✅ Done since Phase A. |
+| Multiple tools in one utterance | ✅ Done (Phase F — native OpenAI tool calling replaced the inline-JSON-schema-as-prompt-text approach entirely). |
+| Writing to `goals`/`projects` | ✅ Partially. `projects` is populated by the interactive-threads "build a plan" flow. `goals` is still empty in practice — `buildPlan()` doesn't create goal rows yet, only project rows. `projects.goal_id` exists as a column but has **no real FK constraint** (discovered the hard way — don't trust an embedded Supabase select through it). |
+| An actual output surface | ✅ Done — the web dashboard, not just Shortcuts text. |
+| Proactive nudges | ✅ Done, but deliberately not via true push (see S5 below) — dashboard-based, surfaced next time the user opens it. |
 
 ---
 
-## 2. The central insight: three modes of operation
+## 2. The three modes — still the right mental model
 
-Everything PersonalOS will ever do falls into one of three modes. The system currently supports one of them.
+### Mode A — Act *(built, unchanged in spirit)*
+One utterance → structured payload(s) → write(s). Now supports multiple actions per utterance (Phase F).
 
-### Mode A — **Act** *(built)*
-> "Add coffee with Brad Friday at noon."
+### Mode B — Retrieve & Synthesize *(built)*
+All the query tools, `general_question`, `query_projects`. Genuinely works now, not aspirational.
 
-One utterance → one structured payload → one write. This is the entire current system.
+### Mode C — Observe & Initiate *(built, in a specific and deliberate shape)*
+Three daily crons: the brief (scheduled digest), Canvas sync (scheduled pull), and intention review (scheduled *judgment* — not a fixed check-in, a per-item "is today the moment" decision that defaults to silence). This last one matters: the original v1.1 framing assumed Mode C meant "runs on a schedule," but the actual requirement that emerged was **runs on a schedule, decides per-item whether to actually say anything, and never bundles into one digest** — a real design constraint, not an implementation detail. See §7 below.
 
-### Mode B — **Retrieve & Synthesize** *(not built)*
-> "What did I spend on food this month?"
-> "What's on my plate this week?"
-> "Should I take this internship?"
-
-Read many rows → reason across them → return prose. Fundamentally different from Mode A: the output is an *answer*, not a record. Requires query tools, a way to bound how much data enters the prompt, and prompt design for analysis rather than extraction.
-
-**Blocked features:** financial reports, calendar conflict detection, life reviews, decision assistant, note recall, relationship prompts. That is most of the roadmap.
-
-### Mode C — **Observe & Initiate** *(not built)*
-> "You haven't touched your business tasks in 11 days."
-> Monday morning brief.
-> Deep-thinking project breakdown delivered 10 minutes after you asked.
-
-Runs on a schedule or trigger, with no user present. Requires scheduled execution, job state, and a delivery channel. Vercel serverless is request-response only — this needs Vercel Cron and, for long-running work, a job record the request can hand off to.
-
-**Blocked features:** weekly/monthly reviews, neglected-task detection, deep thinking workflows, location triggers, relationship follow-up nudges.
-
-**The whole roadmap is a request for Modes B and C.** That framing should drive build order.
+**The interactive threads feature (deep-thinking → clarify → plan) sits across B and a new territory:** it's Retrieve & Synthesize that can *escalate* into a tracked, ongoing thing (a project) with its own future Mode C behavior (deadline-cascade checks). This wasn't anticipated in v1.1's framing and is worth naming as its own pattern: **Mode D — Escalate & Track**, if it recurs elsewhere (it likely will — this same shape probably fits notes-that-become-projects, or a nudge that becomes a real commitment).
 
 ---
 
-## 3. The spine — infrastructure every feature depends on
+## 3. The spine — status update
 
-Ranked by how many roadmap features each unlocks.
+Ranked as in v1.1, updated:
 
-### S1. Read path / query tools *(unlocks the most)*
+### S1. Read path — ✅ done
+Every domain has a query tool. Result budgets are respected (limits on notes/memories/pending items). Synthesis-style prompting is standard now, not novel.
 
-**Starting point is better than it looks.** A Supabase read path already exists and works: `memory.js` (`getMemories`, `getFormattedMemories`) → `context.js` (`buildContext`) → injected into every prompt. The plumbing is proven. What's missing is generalizing it.
+### S2. Two-way sync — still not built, and lower priority than v1.1 assumed
+The original reasoning ("Google is written to and never read from, silent divergence") turned out to be less urgent in practice, because the query tools read **live from Google**, not from Supabase's copy. Supabase's task/event rows are mostly used for idempotency (`google_task_id`/`google_event_id` uniqueness) and project linkage (`project_id`, `sequence_order`), not as the thing the user actually queries. Revisit if something starts depending on Supabase's completion-status field specifically.
 
-Four specific limits on today's read path:
-1. **Not routable** — the AI cannot decide to look something up. It receives the same top-N memories regardless of what was asked.
-2. **Single table** — only `memories`. Nothing reads `calendar_events`, `tasks`, `goals`, or `projects`.
-3. **Not parameterized** — `getMemories(limit)` takes a count. No date ranges, filters, or search.
-4. **No answer path** — even with data in context, `router.js` has no case that returns a synthesized answer instead of executing an action (the dead `general_question` route).
+### S3. Background execution — ✅ done
+Three daily crons on Hobby (well under the ~100-job cap). `waitUntil` (`@vercel/functions`) is also in active use for a different purpose than originally scoped in v1.1 — not just "cron jobs," but **deferred work within a request** (deep-thinking's ack-then-analyze pattern). This is a second background-execution primitive worth knowing about: cron for *scheduled* work, `waitUntil` for *request-triggered-but-slow* work that shouldn't block the response.
 
-What to build:
-- Query functions per domain (`getUpcomingEvents`, `getTasksByStatus`, `getTransactionsInRange`, `searchNotes`) — same shape as the existing memory getters
-- Expose them as **callable tools**, not just automatic context
-- A **result budget** — never inject unbounded rows into a prompt. Cap, summarize, or pre-aggregate in SQL.
-- A second prompt style: analysis/summarization, not JSON extraction
+### S4. Scalable tool routing — ✅ done
+Native OpenAI tool calling, ~13 tools now. The predicted payoff (adding a tool is just a schema entry + router case, no prompt engineering) has held up repeatedly — every tool added since Phase F took minutes, not a prompt-tuning session.
 
-**Still the single highest-leverage piece of work remaining** — but it's an extension of a working pattern, not a from-scratch build.
+### S5. Output surface — ✅ resolved differently than v1.1 predicted
+v1.1 said "no web app yet, cron → Supabase → Shortcuts pull." That held for exactly one feature (the morning brief) before the interactive-threads requirement (a genuine back-and-forth conversation, dictated input, tap-to-play output) made a real web app unavoidable — Shortcuts fundamentally cannot do that interaction. Built as a **separate Vercel project** from the API backend, deliberately, so frontend iteration never risks the working backend. Passphrase-gated at the frontend; backend API itself is still unauthenticated (see Known Limitations in the handoff doc).
 
-### S2. Two-way sync + idempotency
-Currently Google is written to and never read from, so anything changed in Google (task checked off, event moved or deleted) silently diverges from Supabase. Needs:
-- A pull/reconcile function per integration
-- Scheduled reconciliation (depends on S3)
-- Unique constraints on `google_event_id` / `google_task_id`, plus an idempotency key on inbound requests
-- A conflict rule: **last-write-wins, Supabase authoritative on conflict** (recommended — simplest defensible rule)
+**True push notifications were researched (Pushcut, ~$2-4/mo) and explicitly declined.** The fallback — native "Show Notification" + a Home Screen web-app icon — means "proactive" in practice still means "the phone pulls when you next open the dashboard," same core constraint as v1.1 identified, just with a nicer surface to pull into.
 
-### S3. Background execution
-Vercel Cron endpoints (`/api/cron/*`), protected by a secret header. Plus a `jobs` table for anything exceeding function timeout: request creates a job row → returns immediately → cron worker processes → result stored → user retrieves.
+### S6. Retrieval-based memory — still not built
+Blanket top-N by importance, unchanged from v1.1. Lower urgency than originally assumed — memory count hasn't grown large enough yet to dilute attention meaningfully. Revisit once it does.
 
-### S4. Scalable tool routing
-The current design puts every tool's JSON schema inline as text in one giant system prompt. At 3 tools this is fine. At 15 it is expensive, brittle, and the model starts confusing formats. Migrate to **OpenAI native tool/function calling**, which:
-- Moves schemas out of the prompt into structured definitions
-- Enables **multiple tool calls per utterance** ("add the meeting and remind me to bring the contract")
-- Gives better format compliance for free
+### S7. Entity graph — partially emerged, not deliberately built
+`tasks.project_id`, `calendar_events.project_id`, `tasks.sequence_order`, `deep_thoughts.project_id` — direct FKs, not the generic `entity_links` table v1.1 recommended. This has been sufficient so far because the actual need (linking tasks/events to a project, in sequence) was narrower than the generic case v1.1 anticipated. Revisit the generic link-table idea only if a genuinely many-to-many relationship shows up (e.g., a task relevant to two projects).
 
-### S5. Output surface *(resolved — deferred web app, pull-based delivery)*
-Modes B and C produce long-form output: a monthly review, a project breakdown, a spending report. Apple Shortcuts can display text but is a poor reader for 1,000+ words, cannot render tables or charts, has no history, and cannot host Plaid Link.
-
-**Resolution:** no web app yet. Build the *delivery* half first, using a pattern that works today and doesn't have to be thrown away later:
-
-```
-Vercel Cron (server)        →  computes brief / detects nudge
-        ↓
-Supabase `briefs` table     →  result stored, unread flag
-        ↓
-Shortcuts time automation   →  phone pulls on schedule
-        ↓
-Notification / spoken / Apple Note
-```
-
-Critical detail: **the server cannot push to your phone. The phone pulls.** So heavy work runs server-side on cron and *stores* a result; a scheduled Shortcuts automation fetches it. This decouples computation from delivery, avoids the function timeout, and means the same stored output is instantly available to a web app later without rework.
-
-**The web app becomes necessary when** you want: charts, Plaid Link, browsable note/transaction history, or interactive follow-up on a report. Revisit at that point, not before.
-
-### S6. Retrieval-based memory
-Today: top 20 memories by importance, all injected into every prompt. Problems at scale — cost grows linearly, irrelevant memories dilute attention, contradictions accumulate ("prefers X" vs. later "prefers Y"), `expires_at` is unused.
-
-Direction: embeddings + semantic search (Supabase supports `pgvector`), retrieve only what's relevant to the current utterance, plus a conflict-resolution pass so updated preferences supersede rather than coexist.
-
-### S7. Entity graph
-The roadmap repeatedly asks for connection: notes→projects, tasks→goals, people→interactions, spending→goals. Decide the mechanism **once**:
-- **Recommended:** a generic `entity_links` table (`from_type`, `from_id`, `to_type`, `to_id`, `relationship`) alongside the existing direct foreign keys. Direct FKs for the hot paths already in the schema; the link table for everything sparse and many-to-many.
-
-### S8. Observability
-Fix failure logging, log token/cost per call, add a duration metric. Once Mode C exists, silent background failures are the default failure mode — you will not notice a cron job that has been dead for three weeks unless the system tells you.
+### S8. Observability — partially done
+Failure logging solid since Phase A. Token/cost-per-call logging still not built — the builder explicitly declined it, preferring to watch the OpenAI dashboard directly. Don't build this unprompted either; it was a real decision, not an oversight.
 
 ---
 
-## 4. Feature-by-feature analysis
+## 4. What actually got built, vs. the v1.1 feature list
 
-### 🧠 Adaptive Memory System
-- **Depends on:** S6. Nothing else.
-- **Hidden difficulty:** "Automatically determines what's worth remembering" requires a *second* LLM pass over each interaction deciding what to extract — doubling cost per request unless batched. Contradiction handling is the part everyone skips and regrets: without it, memory rots into a pile of conflicting claims.
-- **Verdict:** Highest leverage per unit of effort, because every other feature reads from it. Do the retrieval upgrade early; auto-extraction later.
+Most of v1.1 §4's analysis held up well. Notable deltas:
 
-### 📍 Location-Based Intelligence
-- **Depends on:** Shortcuts location automations (easy) + accumulated history (hard).
-- **Hidden difficulty:** Every example in the roadmap ("you usually buy protein here", "log your workout") depends on historical data that isn't being collected yet. Without it, this reduces to geofenced reminders — which iOS already does natively, for free.
-- **Verdict:** Lowest real value right now despite being the flashiest. Defer until finances/notes/habits give it something to actually say.
-
-### 📅 Intelligent Calendar Management
-- **Depends on:** S1, S2.
-- **Hidden difficulty:** Requires reading the full calendar, not just writing to it. "Overloaded day" needs a definition you must invent and tune. Suggestions introduce a genuinely new interaction pattern — **proposing** an action and waiting for confirmation, rather than executing immediately.
-- **Verdict:** The natural forcing function for building the read path. Strong candidate for next major feature.
-
-### ✅ AI Task Management
-- **Depends on:** S1, S2, S3.
-- **Hidden difficulty:** "Neglected task" detection is trivial logic once data exists. The real blocker is that completion status is one-way today (already identified). Urgency/importance ranking needs `goal_id`/`project_id` populated, which nothing currently does.
-- **Verdict:** Shares ~80% of its infrastructure with calendar management. Build the two together.
-
-### 🎯 Deep Thinking Project Workflows
-- **Depends on:** S3, S5, plus `goals`/`projects` actually being populated.
-- **Hidden difficulty:** Multi-minute reasoning does not fit inside a serverless request timeout — this is the feature that forces the jobs table. Output is 1,000–3,000 words of structured plan, which Shortcuts cannot present usefully.
-- **Verdict:** Highest wow-factor, heaviest infrastructure cost. Best *first* async feature — but only after S3 and S5 exist.
-
-### 📝 AI Note System
-- **Depends on:** `notes` table, S6 (shared embedding/retrieval), S7.
-- **Design fork to decide now:** are notes and memories one store or two? **Recommendation: two tables, one retrieval layer.** Memories are facts *about you* used to personalize behavior; notes are content *you authored* and want to find later. Different lifecycles, different write triggers — but identical embedding/search infrastructure.
-- **Verdict:** Capture is trivial. All the value is in retrieval and linking, which is S6/S7 work.
-
-### 💰 Financial Intelligence
-- **Depends on:** `transactions` table, S1, a data source (Plaid / CSV / manual — interchangeable).
-- **Hidden difficulty:** The report generator is the actual feature; the ingestion pipeline is a swappable detail. Categorization quality determines whether "trends" mean anything — bad categories produce confident nonsense.
-- **Verdict:** Build the report against seeded test data first, choose the pipeline second. The reporting logic does not change based on data source.
-
-### 📊 Weekly / Monthly Life Reviews
-- **Depends on:** S1, S3, and meaningful data density across calendar, tasks, finances, goals.
-- **Hidden difficulty:** Output quality is capped by input density. A "review" over three weeks of sparse data reads like a horoscope — vague enough to be true, useless enough to ignore. This is a data problem masquerading as a prompt problem.
-- **Verdict:** Capstone feature. Consider a deliberately shallow v1 early (calendar + tasks only) to force the read path, then deepen as data accumulates.
-
-### 👥 Relationship Management
-- **Depends on:** `people` table, S1 (calendar read), entity extraction, S7.
-- **Hidden difficulty:** Interaction history has to populate itself — from calendar attendees, from notes mentioning people. Any design requiring manual logging of interactions will be abandoned within two weeks. That's not a discipline problem, it's a design problem.
-- **Verdict:** Only viable if fed automatically. Defer until calendar read + notes exist.
-
-### 🤖 Personal Decision Assistant
-- **Depends on:** Everything above.
-- **Hidden difficulty:** Technically none — it is a prompt over accumulated context. Its quality is a *direct function* of how much real data the rest of the system has captured.
-- **Verdict:** Not a feature to build so much as a **measurement of whether the system worked.** It becomes possible on its own. Treat it as the success metric, not a milestone.
+- **Adaptive Memory System** — still mostly future work (S6 not built), but the "second LLM pass to decide what's worth remembering" problem got partially sidestepped: `save_intention`'s broad-capture design means intentions get saved liberally at write time, and the *judgment* (is this worth surfacing) happens later, per-item, at read/review time — not at capture time. This pattern (capture liberally, judge later) is worth reusing if memory retrieval gets tackled.
+- **Intelligent Calendar Management** — the "propose, don't execute, for destructive actions" pattern v1.1 flagged as a new interaction type is now real: the interactive-threads flow (propose a plan → user confirms → then it acts) is exactly this pattern, generalized beyond calendar.
+- **Deep Thinking Project Workflows** — built, and it forced exactly what v1.1 predicted (the jobs-table-shaped problem, solved via `waitUntil` instead of a literal jobs table; the "Shortcuts can't present 1000+ words usefully" problem, solved via the web dashboard).
+- **Financial Intelligence, Relationship Management, Location Intelligence** — none started. Location was explicitly evaluated and declined (see handoff doc). The other two remain genuinely blocked on their stated prerequisites (a data source decision for finances; calendar-attendee/notes extraction for relationships).
 
 ---
 
-## 5. Dependency map
+## 5. Cost & model strategy — now real, not aspirational
 
-```
-                    ┌──────────────────────────┐
-                    │   S1  READ PATH          │  ← highest leverage
-                    │   (query + synthesize)   │
-                    └──────────┬───────────────┘
-                               │
-        ┌──────────────────────┼──────────────────────┐
-        │                      │                      │
-        ▼                      ▼                      ▼
-  Financial reports     Calendar intel          Note recall
-        │               Task intel                    │
-        │                      │                      │
-        │              ┌───────┴────────┐             │
-        │              │ S2 TWO-WAY SYNC│             │
-        │              └───────┬────────┘             │
-        │                      │                      │
-        └──────────┬───────────┴──────────┬───────────┘
-                   │                      │
-                   ▼                      ▼
-        ┌──────────────────┐   ┌────────────────────┐
-        │ S3 BACKGROUND    │   │ S5 OUTPUT SURFACE  │
-        │    EXECUTION     │   │   (decision open)  │
-        └────────┬─────────┘   └─────────┬──────────┘
-                 │                       │
-                 └───────────┬───────────┘
-                             ▼
-              Deep thinking · Life reviews
-              Relationship nudges · Location
-                             │
-                             ▼
-                 🤖 Decision Assistant
-                  (emerges, not built)
-```
+v1.1 recommended tiered model selection "invoked deliberately." That's now implemented and the builder has granted **standing discretion** to adjust it without asking:
 
-**Supporting throughout:** S4 (tool routing) should be migrated before tool count exceeds ~6. S6 (memory retrieval) and S8 (observability) improve everything and can be done in parallel at any time.
+- `gpt-4o-mini` — routing, `query_tasks`/`query_schedule`/`query_notes` (high-frequency, simple extraction/synthesis)
+- `gpt-5.6-terra` — `general_question` (carries full rich context now, needed more than mini could give), nudge evaluation, `query_projects`
+- `gpt-5.6-sol` — `start_deep_thinking`, `respondToThread`, `buildPlan` (occasional, high-stakes, worth the cost)
+
+The one real, unaddressed cost risk: `reviewIntentionsForNudges()` calls the model **once per open intention, every single day, indefinitely**, until an intention is resolved or dismissed. This scales linearly with however many "someday" intentions accumulate unresolved. Not yet a problem at current volume; worth watching if the intentions list grows large and stays unpruned. The builder has chosen to self-monitor via the OpenAI dashboard rather than build in-app cost tracking (S8) — respect that decision, don't build spend-visibility features unprompted.
 
 ---
 
-## 6. Recommended build order
+## 6. Privacy & security posture — mostly unchanged, one addition
 
-*Revised in v1.1 for a proactive, daily-driver system.*
+Still true from v1.1: service key bypasses RLS (fine, server-only, single-user), never send secrets/tokens to the LLM, `activity_logs` stores full input/output (consider redaction if genuinely sensitive data starts flowing through).
 
-| Phase | Work | Why here |
-|---|---|---|
-| **A** | **Reliability floor:** real failure logging; `general_question` route; timezone from `profiles`; idempotency constraints | Promoted to first. A daily driver that fails silently is worse than no system — and duplicates land in a real calendar |
-| **B** | **S1 read path** — query tools + synthesis prompt style, starting with **Google Calendar read** | Highest leverage; starting with calendar read also lays the first half of two-way sync |
-| **C** | **S3 background execution** — Vercel Cron + `briefs` table + Shortcuts pull automation | Proactive is a stated requirement, so this is core infrastructure, not optional |
-| **D** | **Morning brief** — first true Mode C feature, end to end | Perfect forcing function: exercises S1 + S3 + S5 together, and is useful every single day |
-| **E** | **S2 two-way sync** — reconcile task completion and event changes back from Google | Daily reliance makes divergence painful fast; now cheap because calendar read exists |
-| **F** | **S4 native tool calling + multi-tool** | Do before tool count exceeds ~6 |
-| **G** | Data capture expansion: notes, transactions pipeline, people | Feeds the synthesis layer |
-| **H** | **S6 memory retrieval upgrade** | Before memory count makes blanket injection untenable |
-| **I** | Synthesis features: reviews, deep thinking, relationships, location | All now unblocked |
-
-### The reliability bar changed
-Daily reliance raises the standard on things that were previously cosmetic:
-- **Fail loudly, to you.** A failed cron job must surface in the next brief, not just in a log table you never open.
-- **Idempotency is mandatory,** not defensive. Retries + background jobs + a real calendar = duplicate events you have to clean up by hand.
-- **Propose, don't execute, for anything destructive.** Deleting or moving real commitments needs confirmation, which is a new interaction pattern (see §4, Calendar).
-- **Degrade gracefully.** If Google is down or a token expires, the brief should still deliver what it can and say what's missing.
+**New:** the web frontend has app-level passphrase auth; the backend API does not. This asymmetry is intentional for now (the frontend is the newer, more "browsable" surface; the backend is Shortcut-only and the builder has repeatedly, deliberately deferred fixing it). Don't let "well the frontend has auth now" become an argument for treating the backend as covered — it isn't.
 
 ---
 
-## 7. Data model direction
+## 7. A design principle that emerged this session, worth stating explicitly
 
-**Existing and in use:** `memories`, `calendar_events`, `tasks`, `activity_logs`
-**Existing and unused:** `profiles`, `goals`, `projects` — populate these before building anything that claims to connect actions to goals
-**Needed:** `notes`, `transactions`, `people`, `jobs`, `entity_links`, `places` (if location proceeds)
-
-**Conventions to adopt now, while it's cheap:**
-- Every table gets `created_at` / `updated_at` (mostly present already)
-- Every externally-synced record gets `external_id` + a unique constraint
-- Every table gets `user_id` — even single-user. Retrofitting this later is painful; adding it now costs nothing.
-- Timestamps stored UTC, timezone resolved at display from `profiles.timezone`
-- Soft delete (`deleted_at`) over hard delete for anything the AI reasons over historically
+**Judgment over schedule, for anything proactive.** The nudge system's defining requirement wasn't "check daily" — it was "decide, per item, using real judgment, whether today is actually the moment, and default to silence." A fixed cadence (even a smart-sounding one like "check weekly") was explicitly rejected in favor of this. Apply this same lens to any future Mode C feature: the question is never just "how often should this run," it's "what does *this specific instance* need, decided fresh each time." This is also why the interactive-threads system stores diff summaries per turn instead of the full document each time — the same instinct (don't repeat what hasn't changed, only surface what's new/different) shows up at the UI layer too.
 
 ---
 
-## 8. Cost & model strategy
+## 8. Open decisions
 
-Current: everything runs on `gpt-4o-mini`. Correct for routing — it is cheap and extraction is easy.
-
-Synthesis is a different job. Weekly reviews, deep-thinking breakdowns, and decision analysis reward a stronger model. Plan for **tiered model selection**: cheap model for routing and extraction, stronger model for analysis and long-form generation, invoked deliberately rather than by default.
-
-Cost discipline to build in from the start:
-- Cap context injection (memory retrieval instead of blanket injection — S6)
-- Pre-aggregate in SQL rather than sending raw rows to the model
-- Log tokens per call in `activity_logs` so cost is visible before it's a surprise
-
----
-
-## 9. Privacy & security posture
-
-The roadmap moves PersonalOS from "calendar events" to **finances, relationships, personal notes, and decisions** — the most sensitive data you'll ever put in it.
-
-- Supabase currently uses the **service key**, which bypasses Row Level Security entirely. Acceptable for a server-only, single-user system. **Not acceptable the moment a browser-based frontend exists** — that requires RLS and anon-key auth.
-- Never send secrets or tokens to the LLM. Financial *totals* and *categories* are fine; account numbers and access tokens are not.
-- If Plaid or any bank link proceeds, its access tokens are the highest-value secret in the system — encrypted at rest, never logged, never in `activity_logs`.
-- `activity_logs` currently stores full input/output JSON. Once notes and finances flow through the router, that table becomes a plaintext archive of everything. Consider redaction rules or a retention window.
-
----
-
-## 10. Open decisions
-
-### ✅ Resolved (v1.1)
-
-1. **Output surface — web app deferred.** Not off the table, but only when a feature genuinely demands it (charts, Plaid Link, browsable history, interactive follow-up). Until then: cron computes → Supabase stores → Shortcuts pulls. See S5.
-2. **Proactive — yes.** Briefs, nudges, reminders. **Consequence: S3 background execution is promoted from optional to core infrastructure,** and moves to Phase C.
-3. **Daily driver — yes.** **Consequence: the reliability floor moves to Phase A.** Failure logging, idempotency, and graceful degradation stop being cleanup and become prerequisites. See §6.
+### ✅ Resolved since v1.1
+1. Notes vs. memories — confirmed as separate (notes = things to look up, memories = facts about the user, intentions = a third, newer category for forward-looking statements).
+2. AI spend ceiling — explicitly declined a hard number; self-monitored via OpenAI's dashboard, auto-refill off (hard ceiling by construction).
+3. Brief cadence — resolved, daily ~6am Pacific (shifts with DST since the cron schedule is UTC-based — watch this, and watch `profiles.timezone` needing a manual update around 2026-08-08/09 when the builder returns to Illinois).
+4. Location tracking — explicitly declined, not deferred.
+5. Push notifications — Pushcut researched and declined on cost; native notification + Home Screen icon is the accepted fallback.
 
 ### ⬜ Still open
-
-4. **Notes vs. memories** — recommendation is two tables, one retrieval layer (§4). Confirm or override.
-5. **Sync conflict rule** — recommendation is Supabase-authoritative, last-write-wins. Confirm or override.
-6. **AI spend ceiling** — a monthly number, so tiered model selection can be designed against a real constraint. More pressing now: proactive means the system spends money on schedule whether or not you use it that day.
-7. **Brief cadence and content** — what time, and what's in it? Shapes the first Mode C feature directly.
-
----
-
-## 11. Principles & anti-patterns
-
-**Carried forward from the original handoff (still correct):**
-- One architectural change at a time. Test locally. Confirm. Commit.
-- Supabase is the source of truth. External services are integrations, never the database.
-- Prefer boring, reliable systems over clever ones.
-- Don't refactor working systems without a reason.
-
-**Added, based on where this roadmap leads:**
-- **Infrastructure before features.** Three missing capabilities block most of the roadmap. Features built without them get rebuilt.
-- **Any feature requiring manual data entry will be abandoned.** If a feature only works when you diligently log something, it does not work. Design for automatic capture or don't build it.
-- **Synthesis quality is a data problem.** "The review isn't insightful" almost always means there isn't enough data, not that the prompt is wrong. Resist fixing prompts when the answer is more data.
-- **Distrust flashy-but-hollow features.** Location intelligence is the clearest example — impressive demo, nothing real to say until history exists.
-- **Silence is the default failure mode of background jobs.** Anything that runs unattended must report that it ran.
+6. Sync conflict rule (S2) — moot until two-way sync actually gets built, which is now lower-priority than v1.1 assumed.
+7. Backend API authentication — timing explicitly left to the builder to decide, not a technical open question.
+8. Live web search integration — approved in principle, not yet built (Responses API, different surface than the rest of the codebase).
+9. Whether the generic `entity_links` table (S7) is ever actually needed, or whether direct FKs keep being sufficient.
 
 ---
 
-*Update this document when an open decision is resolved or a phase completes. It should stay the answer to "why is it built this way," not a changelog.*
+## 9. Principles & anti-patterns — carried forward, one addition
+
+Everything from v1.1 still holds (boring over clever, infrastructure before features, manual-entry features get abandoned, synthesis quality is a data problem, silence is the default failure mode of background jobs).
+
+**New, learned the hard way this session:** *a client-side timeout does not mean a server-side write failed.* For anything that writes to an external system (Google Tasks/Calendar especially), a timed-out request may have completed anyway — check actual state before retrying, or the retry itself becomes the bug (this exact thing happened: a timed-out `buildPlan` call had actually succeeded, and the retry created a second full project with a second set of real Google tasks/events).
+
+---
+
+*Update this document when an open decision resolves or a phase completes. It should stay the answer to "why is it built this way," not a changelog — the handoff doc is the changelog. Both were substantially rewritten 2026-08-04; treat prior versions as historical context only.*

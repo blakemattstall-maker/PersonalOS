@@ -1,78 +1,100 @@
 # PersonalOS — Current State Handoff
-**Date:** August 3, 2026
-**Purpose:** Bring a new assistant (Claude Code) up to speed on exactly where this project stands. The original handoff doc and the architecture doc (`PersonalOS-Architecture-Source-of-Truth.md`) cover vision and long-term design — this covers what's actually built, tested, and true *right now*.
+**Date:** August 4, 2026
+**Purpose:** Bring a new assistant (Claude Code) up to speed on exactly where this project stands. Read alongside `PersonalOS-Architecture-Source-of-Truth.md` (the *why*). This doc covers what's actually built, tested, and true *right now* — it changed enormously in one long session on 2026-08-04, so don't trust anything from before that date without verifying against the live code/deployment.
 
 ---
 
 ## About the builder
 
-- No formal coding background, not a CS major. This is a first major software project.
-- Zero coding experience going in — has learned everything through step-by-step guidance in chat.
-- Prefers: one change at a time, explained clearly, tested and confirmed before moving on. Wants to understand *why*, not just get working code.
-- This is intended to be a **daily driver** the builder will actually depend on — not just a learning exercise. That raises the bar on reliability, failure handling, and not silently breaking real commitments (a duplicate calendar event has already happened once).
-- Wants PersonalOS to eventually be **proactive** (briefs, nudges, reminders), not just respond when spoken to.
-- A small web app is not off the table long-term, but deferred until a specific feature genuinely needs it (Plaid Link, charts, browsable history). Default output surface for now stays Shortcuts.
-- Budget-conscious: wants to keep every tool free (Vercel, Supabase, GitHub, VS Code, Shortcuts). Only paid line item is the OpenAI API key.
-
-**Working style Claude Code should carry forward:** explain the "why" before the "what," make one change, help test it, confirm before moving to the next. Don't let iteration speed replace the builder's understanding — if changes start moving faster than they can follow, say so explicitly.
+- Blake, 19, Illinois State University (Business Marketing, rising sophomore, grad May 2029). Full profile — education, career goals, VATHOS (his fragrance brand), working style — is saved in `profiles.bio` in Supabase and automatically fed into every synthesis tool via `buildRichContext()`. Don't re-derive this from scratch; read the field.
+- No formal coding background. Learned everything through step-by-step guidance in chat. Still wants explanations at a high level ("what does this file do and how does it connect"), not line-by-line code walkthroughs.
+- **Standing tone rule, not a suggestion:** blunt, hold nothing back, no topic off-limits, never soften a finding for comfort. Applies to every judgment/synthesis tool (deep thinking, nudges, general_question, and anything built later). See memory `personalos-feedback-tone-and-priorities` for the exact quotes and reasoning.
+- **Model selection: standing discretion granted.** Pick whatever model best fits a task's actual reasoning demands without asking first. Only economize when the cost difference is actually meaningful — not reflexively cheap. Current tiering: `gpt-4o-mini` for high-frequency routing/extraction, `gpt-5.6-terra` for moderate reasoning over rich context, `gpt-5.6-sol` for occasional high-stakes reasoning (deep thinking, plan-building).
+- Budget-conscious but not paranoid: OpenAI is the one paid line item, auto-refill is **off** (hard ceiling, no runaway-spend risk), and the builder tracks it via OpenAI's own dashboard — declined building in-app cost visibility. Vercel/Supabase/GitHub/Google are all still free; see the architecture doc for the one real constraint (Vercel's 12-function Hobby cap) that could eventually force a $20/mo decision.
+- This is a real daily driver, not a toy — reliability, idempotency, and not silently breaking real commitments still matter as much as day one.
 
 ---
 
-## What's built and confirmed working (tested, not just written)
+## What's built and confirmed working
 
-### Core loop
-- Apple Shortcut → `/api/capture` → OpenAI (`gpt-4o-mini`) planner → structured JSON → `router.js` → tool execution → Supabase logging.
+### Core loop, reliability, read path (Phases A–B — stable, unchanged in spirit)
+Shortcut → `/api/capture` → OpenAI planner (now **native tool-calling**, not inline JSON-schema-as-prompt-text — see Phase F below) → `router.js` → tool execution → Supabase logging. Failure logging, timezone-from-profile, and idempotent duplicate protection on tasks/events all still hold.
 
-### Reliability (Phase A — complete)
-- **Failure logging is real.** `router.js` wraps tool execution in try/catch; `activity_logs.success` reflects actual outcome, `error_message` and `duration_ms` are populated on failure. Previously every failure was invisible — `success: true` was hardcoded.
-- **`general_question` route exists** (`tools/answer.js`). Previously this was a dead code path — the AI could return it but the router had no case, so any question (not a command) failed with "Unknown tool." Now answers using memory context, and is explicit that it *cannot* see calendar/tasks/finances (prevents the model from confidently inventing a fake schedule).
-- **The original user's raw text is passed through the router** (`executeTool(data, originalText)`), not just the AI's JSON. This fixed a real bug where the planner would paraphrase or attempt to answer the question itself inside the `question` field, corrupting downstream tools. Any new Mode B (answer-generating) tool should follow this same pattern — pass `originalText` through rather than trusting the planner's reconstruction of user intent.
-- **Timezone is read from `profiles.timezone`**, not hardcoded. Single lookup function in `lib/profile.js` (`getProfile()`, `getUserTimezone()`) that every tool calls independently (deliberately self-contained, not passed down from `capture.js`, because background/cron jobs won't route through `capture.js` later). Falls back to `America/Los_Angeles` if the lookup fails — never hard-fails a create over a profile read error.
-- **Idempotency / duplicate protection is live.** Unique Postgres indexes on `calendar_events.google_event_id` and `tasks.google_task_id` (partial indexes, `where ... is not null`). Plus application-level duplicate detection (`findRecentDuplicateEvent`, `findRecentDuplicateTask` in `tools/database.js`) — checks for same title + same time within a 2-minute window before creating. Returns `{success: true, duplicate: true}` rather than an error, since from the user's perspective the thing they wanted already exists.
+### Phase F — native tool calling, multi-action (done)
+`lib/toolDefinitions.js` holds every tool as a structured OpenAI function definition. `api/capture.js` loops over however many tool calls the model returns in one request — "add the meeting and remind me to bring the contract" now genuinely does both in one shot. Adding a new tool going forward is just: a schema entry + a router case + the function — no prompt text to write. ~13 tools now (calendar, tasks, memory, notes, bodyweight, deep thinking, Canvas sync, intentions, projects, general question).
 
-### Read path (Phase B — in progress)
-- **Google Calendar read works** (`getEvents()` in `tools/googleCalendar.js`). Uses `singleEvents: true` to expand recurring events into actual occurrences (required — without it you get recurrence rules, not real meetings). Slims Google's payload down to `{id, title, start, end, allDay, location}` before it ever reaches the AI — full Google event objects are large and mostly noise for this use case.
-- **`query_schedule` tool works and has been tested for actual reasoning, not just listing** — confirmed it can correctly answer "am I free Thursday afternoon" by reasoning about gaps between events, not just reciting them. Formats event times as human-readable strings (`"Thu Aug 6, 2:00pm to 3:00pm"`) before sending to the model — deliberately not raw ISO timestamps, which the model reasons about worse.
-- **Google Tasks read (`getTasks()`) and `query_tasks` tool are written but NOT yet tested.** This is the immediate next step when work resumes. Known limitation already identified: Google Tasks API only stores a due *date*, not a time — so a task created with "tomorrow at 9am" will show due tomorrow with no time attached on the Google side. Supabase's `tasks.due_date` does retain the full timestamp, which may matter later (e.g., if reminders end up driven from Supabase instead of Google).
+### Read path, fully built
+`query_schedule`, `query_tasks`, `query_notes`, `query_projects` — all read live from source (Google or Supabase), format for a reader not a parser, synthesize an answer rather than dumping raw data.
 
-### Known limitation, not yet fixed — by design, for now
-- `/api/capture` and `/api/testCalendarRead` have **no authentication**. Anyone with the URL could read the calendar or create/pollute data. Builder has explicitly decided this is acceptable for now (worst case is exhausting a $10 OpenAI balance with auto-refill off) and wants to defer real auth until later. **Do not "fix" this unprompted** — it's a known, accepted tradeoff, not an oversight.
+### Background execution (Phase C — done, now 3 daily crons)
+Vercel Cron, Hobby plan (once/day per job, ~100 job cap, nowhere near it):
+- `morningBrief` (13:00 UTC) — combines schedule + tasks into one saved brief
+- `syncCanvas` (12:00 UTC) — pulls ISU assignments in an hour early so they can appear in that day's brief
+- `reviewIntentions` (12:30 UTC) — reviews open intentions for nudges *and* checks active projects for missed-deadline cascades (folded into one file to conserve the function count, not two crons)
 
----
+### Web frontend (done, separate Vercel project)
+`https://web-blake-007c.vercel.app` — Next.js, deployed as its **own Vercel project** from `web/` in this same repo, deliberately kept separate from the API backend (`personal-os` project) so the working `/api/*.js` functions are never at risk from frontend changes. Passphrase-gated (`proxy.js` + cookie; Next.js 16 renamed `middleware.js` → `proxy.js`, don't reintroduce the old filename). Backend API itself still has **no auth** — see Known Limitations.
 
-## What's NOT built yet (don't assume it exists)
+Structure: **Needs You** (pending deep-thoughts + nudges, each resolvable) / **Projects** (active projects with tasks/materials, deletable) / **Today** (the brief) / **History** page (resolved items + past briefs) / **Manage Data** page (browse+delete memories/notes/intentions without touching Supabase).
 
-- Two-way sync — nothing reads back changes made in Google (task checked off, event moved/deleted in the Google app) into Supabase. Calendar and task completion state can silently diverge.
-- Background/scheduled execution (no Vercel Cron yet). Everything is still request-response only.
-- Any output surface other than whatever the calling Shortcut displays. No `briefs` table, no push mechanism (and note: a server cannot push to a phone — any proactive feature needs a pull-based pattern, phone-side scheduled Shortcut checking a stored result).
-- `general_question` and `query_schedule`/`query_tasks` are separate ad hoc tools bolted onto a single-tool-per-request router. Multi-tool-per-utterance and native OpenAI function-calling (replacing the inline JSON-schema-as-prompt-text approach) have been discussed as a near-term improvement but not started.
-- `goals`, `projects`, and most of `profiles` are empty/unused tables — schema exists, nothing writes to them yet.
-- Notes, transactions/finances, people/relationships — no tables, no code. Financial data source is undecided in practice (Plaid was explored and understood, but paused in favor of finishing base infrastructure first).
-- Memory retrieval is still "top-N by importance, blanket-injected into every prompt" — not query-routed, not embedding-based, no contradiction handling.
+### Deep thinking (done, several iterations)
+`start_deep_thinking` — `gpt-5.6-sol`, returns structured JSON (`verdict`/`reasoning`/`pros`/`cons`/`open_questions`), takes an actual opinionated stance rather than staying neutral, grounded in bio + memories + bodyweight trend via `buildRichContext()`. Runs via `waitUntil` (`@vercel/functions`) so the Shortcut gets an ack in ~3 seconds instead of waiting 20-40s for the full analysis — this was a real fix, not cosmetic (see memory `personalos-interactive-threads` for the exact bug).
 
----
+### Interactive threads + project building (done, the biggest single feature built this session)
+Any deep-thought on the dashboard has a response box (dictate via the iOS keyboard — deliberately **not** browser SpeechRecognition, which is unreliable on iOS Safari and specifically breaks in Home-Screen-app mode; SpeechSynthesis for tap-to-play "read aloud" is used instead since it's reliable but must fire from a direct user gesture). `respondToThread()` asks clarifying questions or revises with a **short diff summary only** — never repeats the whole analysis. Once KPIs + a deadline are clear, it proposes building a plan; on confirmation, `buildPlan()` generates a sequenced workback schedule as real tasks (+ calendar events for time-specific ones) and creates a real `projects` row, using the previously-empty existing `goals`/`projects` tables rather than new parallel ones. Missed deadlines cascade-reschedule only *downstream* tasks/events (by `sequence_order`), guarded against re-triggering the same miss daily (`tasks.cascade_shifted`).
 
-## Two dead files — known, deliberately not yet cleaned up
-`calendar.js` and `tasks.js` (short stub files, distinct from `googleCalendar.js` / `googleTasks.js`) return fake success responses and aren't called from `router.js` or anywhere else seen so far. Builder is aware and has chosen to leave them for now rather than clean up mid-flow. Don't be confused into thinking these are the real integration files.
+**Real bugs found and fixed during live testing — read `personalos-interactive-threads` memory before touching this code:**
+1. `api/deepThoughts/index.js` and `api/projects.js` both need `maxDuration: 60` in `vercel.json` — they do a big model call plus sequential Google API calls and silently die at Vercel's 10s default otherwise.
+2. Don't embed-select `goals(...)` through `projects.goal_id` — the column exists but has no actual FK constraint, so PostgREST can't resolve the join.
+3. **A client-side timeout on a long-running endpoint does not mean the server-side operation failed** — it may have completed anyway. `buildPlan` now guards against double-building; apply the same caution (check before retrying) to anything else that writes to Google.
+4. Full project deletion (`deleteProject()` in `tools/projects.js`) removes the real Google Tasks/Calendar items *first*, then Supabase records, clearing any `deep_thoughts.project_id` reference before the FK would block the delete. Wired to a "Delete project" button on the dashboard — the builder can undo a test/mistake himself without going through Claude.
 
----
+**Deliberately deferred, not forgotten:** live web search for planning material needs OpenAI's Responses API (a different surface than `chat.completions`, which is all this codebase uses today) — scoped out to avoid an unproven second integration inside an already-large change. Materials are currently AI-authored from context only.
 
-## Immediate next step when work resumes
+### Canvas assignment sync (done, via a workaround worth understanding)
+ISU blocks students from generating personal access tokens (FERPA policy, common across institutions — **do not suggest working around this**, it's a deliberate institutional restriction, not a bug). Uses the Calendar Feed ICS export instead (`CANVAS_ICS_URL` env var, a private-but-not-token-gated URL every Canvas user has under Calendar → Calendar Feed). Daily sync, idempotent via `tasks.canvas_assignment_id`. The ICS feed only exposes title/due-date/URL — no real assignment descriptions/instructions, so "make me a plan for this Canvas assignment" needs the user to paste the actual requirements; the system can't read them on its own.
 
-**Test `query_tasks`** (untested, written):
-```bash
-curl -X POST http://localhost:3000/api/capture \
-  -H "Content-Type: application/json" \
-  -d '{"text": "what tasks do I have"}'
+### Intentions + nudges (done)
+`save_intention` captures forward-looking statements **broadly** — even without an explicit "remember this" (deliberate choice, confirmed by the builder over the narrower "explicit mentions only" option). Daily review judges each open intention *independently* whether today is the moment to surface it — default is silence, no bundled digest, no fixed schedule per item. This was an explicit, considered UX requirement: "I don't want one big notification with one large followup — it takes the magic out of it."
 
-curl -X POST http://localhost:3000/api/capture \
-  -H "Content-Type: application/json" \
-  -d '{"text": "am I behind on anything"}'
-```
-Worth watching which tool the router picks for ambiguous phrasing like "what's on my plate" — it can currently only choose calendar *or* tasks per request, not both. That ambiguity is expected and is one of the reasons multi-tool calling is on the near-term list.
+### Bodyweight tracking (done)
+`log_bodyweight` + 17 real historical entries imported. Trend feeds `buildRichContext()` alongside bio/memories for anything fitness/health/discipline-adjacent.
 
-**After that**, per the architecture doc's build order: Phase C (Vercel Cron + background execution) → Phase D (the morning brief — first proactive, end-to-end feature, deliberately chosen as the forcing function that exercises the read path + background execution + output delivery together).
+### Data hygiene (done)
+`/data` page — browse and delete memories/notes/intentions directly, no Supabase dashboard needed. Built because the builder explicitly didn't want to have to check Supabase to manage what the AI saved.
 
 ---
 
-*Read this alongside `PersonalOS-Architecture-Source-of-Truth.md` for the long-term design reasoning. This document is the "where things actually stand," that one is the "why it's built this way and what's next." Update this one as state changes; the architecture doc should stay mostly stable unless a major decision changes.*
+## Known limitations, by design — do not "fix" unprompted
+
+- **Backend API has no authentication.** Explicitly, repeatedly flagged and deferred — most recently reaffirmed 2026-08-04 ("keep auth flagged, we'll tackle this when needed / soon"). Do not build this unprompted. It's becoming more relevant as more sensitive data (Canvas, full profile, deep-thinking history) flows through, and the builder knows this — he's choosing the timing deliberately.
+- **Location/time tracking was explicitly declined**, not deferred-with-intent: "Maybe we skip location for now. It feels very cool, but may just be novelty." Don't propose building this unless asked again.
+- **Live web search** (OpenAI's Responses API `web_search` tool) is approved in principle for future research-material generation, but not yet integrated — different API surface than everything else in this codebase.
+- **Vercel Hobby's 12-serverless-function-per-deployment cap is real and currently maxed out** (exactly 12 as of 2026-08-04). Any new endpoint must fold into an existing consolidated file (method-based routing, like `api/deepThoughts/index.js` and `api/projects.js` already do) rather than adding a new file. If the number of genuinely distinct resource types keeps growing, this is the constraint most likely to force a real "pay for Vercel Pro" decision — not compute or traffic, which are generous even on Hobby.
+- `profiles.timezone` is still `America/Los_Angeles`. The builder returns to Illinois (Central time) around 2026-08-08/09 — this needs a manual update around then or everything will show wrong local times. Watch for this.
+
+---
+
+## What's NOT built yet
+
+- Backend API auth (flagged, deferred on purpose)
+- Live web search for planning materials
+- Location/time tracking (explicitly skipped)
+- Two-way sync — Google-side changes (task checked off in the app, event moved) still don't flow back to Supabase. Lower priority than originally thought, since the read tools (`query_tasks`, `query_schedule`) already read live from Google rather than Supabase's copy.
+- Real push notifications (Pushcut was researched, priced at ~$2-4/mo, explicitly declined — native "Show Notification" + a Home Screen web-app icon is the fallback)
+- Embedding-based memory retrieval (still blanket top-N by importance)
+- An entity graph beyond the direct `goal_id`/`project_id` foreign keys already in use
+
+---
+
+## Immediate next steps, when work resumes
+
+No fixed next feature — the last resolved roadmap conversation left it open pending real-world use. Reasonable candidates, roughly in the order they came up:
+1. Test the missed-deadline cascade with a **real** overdue project task (not yet exercised outside initial code-path verification)
+2. Live web search integration for planning materials (the one deliberately deferred piece of the interactive-threads feature)
+3. Backend auth — only when the builder says go
+4. Whatever surfaces from actually using the interactive threads / projects system day to day
+
+---
+
+*Read this alongside `PersonalOS-Architecture-Source-of-Truth.md`. Also check the memory files under `.claude/projects/.../memory/` before assuming anything — they carry forward automatically across sessions and hold a lot of the *why* that doesn't fit in this doc (exact tone-rule quotes, bugs found during testing, the Canvas/Pushcut research findings). Update this doc as state changes.*
