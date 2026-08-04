@@ -1174,6 +1174,26 @@ export async function deleteProjectRecord(project_id) {
 // because anything created directly in the Tasks app never round-trips here.
 // So modifications key off the Google id and treat the local row as an
 // optional mirror: update it when it exists, never fail when it doesn't.
+export async function findTaskByGoogleId(google_task_id) {
+
+  if (!google_task_id) return null;
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("id, title, status, due_date, updated_at")
+    .eq("google_task_id", google_task_id)
+    .limit(1);
+
+  if (error) {
+    console.error("TASK LOOKUP BY GOOGLE ID FAILED:", error.message);
+    return null;
+  }
+
+  return data?.[0] || null;
+
+}
+
+
 export async function syncTaskByGoogleId(google_task_id, updates) {
 
   if (!google_task_id) return;

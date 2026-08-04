@@ -185,6 +185,35 @@ export async function getTasks({ maxResults = 100 } = {}) {
 
 
 
+// The normal read path hides completed tasks — right for "what's on my plate",
+// useless for "what did I actually get done". Google records its own completion
+// timestamp, so this is the authoritative history rather than an inference.
+export async function getCompletedTasks({ sinceISO, maxResults = 250 } = {}) {
+
+  const auth = await getGoogleClient();
+
+  const tasksApi = google.tasks({ version: "v1", auth });
+
+  const response = await tasksApi.tasks.list({
+    tasklist: "@default",
+    maxResults,
+    showCompleted: true,
+    showHidden: true,
+    ...(sinceISO && { completedMin: sinceISO })
+  });
+
+  return (response.data.items || [])
+    .filter(t => t.status === "completed" && t.completed)
+    .map(t => ({
+      id: t.id,
+      title: t.title || "(untitled)",
+      due: t.due || null,
+      completed: t.completed
+    }));
+
+}
+
+
 export async function getTaskStatus(google_task_id) {
 
   const auth = await getGoogleClient();

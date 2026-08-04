@@ -5,6 +5,7 @@ import { createBrief } from "../../tools/database.js";
 import { reviewIntentionsForNudges } from "../../tools/nudges.js";
 import { checkProjectDeadlines } from "../../tools/projectCheckup.js";
 import { regenerateBio } from "../../tools/profileEvolution.js";
+import { syncTaskCompletions } from "../../tools/completions.js";
 import { getUserTimezone } from "../../lib/profile.js";
 import { DateTime } from "luxon";
 
@@ -51,6 +52,14 @@ async function syncCanvas() {
 
 async function reviewIntentions() {
 
+  // Completion sync runs first and in the same job: the cascade check below
+  // asks Google whether overdue tasks are done, so recording completions
+  // beforehand keeps both looking at the same reality. Folded in here rather
+  // than added as a fourth schedule — it needs no separate cadence, and it
+  // lands before the 13:00 brief so the day's summary reflects it.
+  const completionResult = await syncTaskCompletions();
+
+
   const [nudgeResult, projectResult] = await Promise.all([
     reviewIntentionsForNudges(),
     checkProjectDeadlines()
@@ -77,6 +86,7 @@ async function reviewIntentions() {
 
   return {
     success: true,
+    completions: completionResult,
     nudges: nudgeResult,
     projects: projectResult,
     profile: profileResult
