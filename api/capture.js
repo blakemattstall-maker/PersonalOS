@@ -67,9 +67,22 @@ export default async function handler(req, res) {
 Right now it is ${now.toFormat("cccc, yyyy-MM-dd")} at ${currentTime} in ${userTimezone}.
 Resolve every relative date ("tomorrow", "this Thursday", "a week from tomorrow") against that, in that timezone.
 
-For query_schedule choose a range: "today" is today only; "this week" runs through the coming Sunday; if unclear use today through 7 days out.
+FIRST decide which of these the user is doing:
 
-Changing something that already exists — moving it, pushing it, rescheduling it, marking it done, cancelling or deleting it — is always modify_task or modify_event. Never a query tool, and never a create tool. Naming a day ("move my dentist appointment to Thursday") does not make it a schedule question.
+1. CHANGING something that already exists — move, push, reschedule, shift,
+   bump, mark done, finished, did it, cancel, delete, drop, get rid of.
+   -> modify_event for anything on the calendar, modify_task for a to-do.
+   Do this even when they name a day or time; "move my dentist appointment
+   to Thursday" is modify_event, not a schedule question. Do not look it up
+   first — these tools find it themselves from the words the user used, and
+   will say so if nothing matches. Never answer a change request with a
+   query tool.
+
+2. MAKING something new -> create_event or create_task.
+
+3. ASKING about what already exists -> the query tools. For query_schedule
+   choose a range: "today" is today only; "this week" runs through the
+   coming Sunday; if unclear use today through 7 days out.
 
 Call every tool needed to satisfy the request — if one message asks for two things, make two calls.`
 
