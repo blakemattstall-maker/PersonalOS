@@ -197,6 +197,60 @@ export async function createBrief({
 
 
 
+export async function createDeepThoughtRecord({
+  topic,
+  content
+}) {
+
+
+  const { data, error } = await supabase
+    .from("deep_thoughts")
+    .insert([
+      {
+        topic,
+        content,
+        status: "pending_review"
+      }
+    ])
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function getPendingDeepThoughts({
+  limit = 10
+} = {}) {
+
+
+  const { data, error } = await supabase
+    .from("deep_thoughts")
+    .select("*")
+    .eq("status", "pending_review")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
+
+}
+
+
+
 export async function createNoteRecord({
   content
 }) {

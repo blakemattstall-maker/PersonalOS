@@ -4,5 +4,10 @@
       "path": "/api/cron/morningBrief",
       "schedule": "0 13 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "api/capture.js": {
+      "maxDuration": 60
+    }
+  }
 }

@@ -19,6 +19,29 @@ async function getBrief() {
 }
 
 
+async function getPendingDeepThoughts() {
+
+  const backendUrl = process.env.BACKEND_URL;
+
+  try {
+
+    const res = await fetch(`${backendUrl}/api/deepThoughts/pending`, {
+      cache: "no-store"
+    });
+
+    const data = await res.json();
+
+    return data.thoughts || [];
+
+  } catch (error) {
+
+    return [];
+
+  }
+
+}
+
+
 function formatDate(iso) {
 
   if (!iso) return "";
@@ -34,7 +57,10 @@ function formatDate(iso) {
 
 export default async function Home() {
 
-  const brief = await getBrief();
+  const [brief, pendingThoughts] = await Promise.all([
+    getBrief(),
+    getPendingDeepThoughts()
+  ]);
 
   return (
     <div className="flex flex-1 flex-col bg-background">
@@ -67,9 +93,26 @@ export default async function Home() {
             Deep Thinking
           </h2>
 
-          <p className="mt-4 text-muted">
-            No reviews pending yet — this section goes live once the deep-thinking workflow is built.
-          </p>
+          {pendingThoughts.length === 0 ? (
+
+            <p className="mt-4 text-muted">
+              No reviews pending — ask PersonalOS to think through a decision and it'll show up here.
+            </p>
+
+          ) : (
+
+            <div className="mt-4 space-y-6">
+              {pendingThoughts.map((thought) => (
+                <div key={thought.id} className="border-t border-border pt-4 first:border-t-0 first:pt-0">
+                  <h3 className="font-medium text-foreground">{thought.topic}</h3>
+                  <div className="mt-2 whitespace-pre-wrap text-foreground leading-relaxed">
+                    {thought.content}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+          )}
 
         </section>
 
