@@ -197,6 +197,56 @@ export async function createBrief({
 
 
 
+export async function createNoteRecord({
+  content
+}) {
+
+
+  const { data, error } = await supabase
+    .from("notes")
+    .insert([
+      {
+        content
+      }
+    ])
+    .select()
+    .single();
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data;
+
+}
+
+
+
+export async function getRecentNotes({
+  limit = 30
+} = {}) {
+
+
+  const { data, error } = await supabase
+    .from("notes")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
+
+}
+
+
+
 export async function getLatestUnreadBrief() {
 
 
