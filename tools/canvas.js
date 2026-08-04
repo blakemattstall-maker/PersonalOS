@@ -1,60 +1,41 @@
+import ical from "node-ical";
 import { DateTime } from "luxon";
 import { getUserTimezone } from "../lib/profile.js";
 import { createTask } from "./googleTasks.js";
 import { findTaskByCanvasId } from "./database.js";
 
 
-async function fetchPlannerItems({ startDate, endDate }) {
-
-  const baseUrl = process.env.CANVAS_BASE_URL;
-  const token = process.env.CANVAS_ACCESS_TOKEN;
-
-  if (!baseUrl || !token) {
-    throw new Error("Canvas is not configured (missing CANVAS_BASE_URL or CANVAS_ACCESS_TOKEN).");
-  }
-
-  const url = `${baseUrl.replace(/\/$/, "")}/api/v1/planner/items?start_date=${startDate}&end_date=${endDate}&per_page=50`;
-
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Canvas API error: ${response.status} ${await response.text()}`);
-  }
-
-  return response.json();
-
-}
-
-
 export async function getUpcomingCanvasAssignments({ daysAhead = 21 } = {}) {
+
+  const feedUrl = process.env.CANVAS_ICS_URL;
+
+  if (!feedUrl) {
+    throw new Error("Canvas is not configured (missing CANVAS_ICS_URL).");
+  }
 
   const tz = await getUserTimezone();
 
   const now = DateTime.now().setZone(tz);
-  const startDate = now.toISO();
-  const endDate = now.plus({ days: daysAhead }).toISO();
+  const windowEnd = now.plus({ days: daysAhead });
 
-  const items = await fetchPlannerItems({ startDate, endDate });
+  const events = await ical.async.fromURL(feedUrl);
 
-  return items
-    .filter(item => item.plannable_type === "assignment" && item.plannable?.due_at)
-    .map(item => ({
-      canvas_id: `canvas_${item.plannable_id}`,
-      title: item.plannable.title || item.plannable.name || "Untitled assignment",
-      due_at: item.plannable.due_at,
-      course: item.context_name || null
+  return Object.values(events)
+    .filter(event => event.type === "VEVENT" && event.start)
+    .filter(event => {
+      const start = DateTime.fromJSDate(event.start).setZone(tz);
+      return start >= now.startOf("day") && start <= windowEnd;
+    })
+    .map(event => ({
+      canvas_id: `canvas_${event.uid}`,
+      title: event.summary || "Untitled assignment",
+      due_at: DateTime.fromJSDate(event.start).setZone(tz)
     }));
 
 }
 
 
 export async function syncCanvasAssignments() {
-
-  const tz = await getUserTimezone();
 
   const assignments = await getUpcomingCanvasAssignments();
 
@@ -73,14 +54,10 @@ export async function syncCanvasAssignments() {
         continue;
       }
 
-      const due = DateTime.fromISO(assignment.due_at).setZone(tz);
-
-      const title = assignment.course
-        ? `${assignment.course}: ${assignment.title}`
-        : assignment.title;
+      const due = assignment.due_at;
 
       await createTask({
-        title,
+        title: assignment.title,
         year: due.year,
         month: due.month,
         day: due.day,
