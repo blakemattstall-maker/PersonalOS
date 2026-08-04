@@ -87,6 +87,30 @@ ISU blocks students from generating personal access tokens (FERPA policy, common
 
 ---
 
+## Addendum — later on 2026-08-04 (supersedes parts of the above)
+
+A long second session the same day. Everything below is deployed and verified in production.
+
+**Fixed, all silent failures nobody would have noticed:**
+- `reviewIntentionsForNudges()` stamped `last_surfaced_at` on every intention it *evaluated*, not just ones it nudged, so the prompt read back "last nudged 0 days ago" every day forever. Against a default-to-silence instruction the nudge system would have gone permanently quiet after its first run.
+- `morningBrief` and `syncCanvas` had no `maxDuration` and were running at Vercel's 10s default.
+- The cascade rescheduler double-counted: it iterated a task snapshot taken *before* the shift, so two missed steps (-4d, -2d) pushed the tail 6 days instead of 4. Now one cascade per project per run.
+- **Google Tasks stores a DATE and returns it as UTC midnight.** Reading it as a timestamp in a timezone west of UTC rolled every due date back a day — `query_tasks` and the brief showed every due date one day early and called tasks overdue before they were. Use `taskDueDate()` in `tools/googleTasks.js`, and compare due-vs-today as `yyyy-MM-dd` strings, never as instants.
+- `getEvents` defaults to `maxResults: 50` and expands recurring events per occurrence, so a wide window truncated before reaching the target. 137 events were in range where 50 were visible.
+
+**Performance:** the Google OAuth client and profile are cached at module scope; every item loop runs at bounded concurrency 4 (`lib/async.js`). A 30-task plan build went ~36s → ~22s in production. The old per-operation token exchange was the root cause behind the timeout *and* the duplicate-project incident.
+
+**New capability:**
+- **Modification by voice** — `modify_task` / `modify_event` (complete, reschedule, delete). Resolution keys off the **Google id**, never a Supabase id: 6 of 8 open tasks had no local row, so every `supabase_id`-based function was unreachable for most real items. Ambiguity asks rather than guesses, and because the Shortcut is one-shot, the pending question is parked in `activity_logs` for four minutes so "the draft one" actually resolves.
+- **The memory loop** — `respondToThread` now returns what it learned and writes it to memories/intentions. Previously the system read its memory constantly and only ever wrote to it via explicit dictation; thread turns were invisible to everything afterward. Extraction rides inside the existing reply call, so it costs nothing.
+- Weekly profile regeneration (Sundays, folded into `reviewIntentions`, not a 13th function), query tools now carry the bio, `buildPlan` acks and works in the background, animated loading states, a dashboard voice picker.
+
+**Model tiering changed** — see the `personalos-memory-loop` memory. Short version: `gpt-5.4-mini` for routing and query tools, `gpt-5.6-terra` for threads/plans/nudges/questions, `gpt-5.6-sol` only for the opening deep-thinking analysis.
+
+**Agreed direction from here** (see the `personalos-priorities-2026-08-04-review` memory for the full reasoning): consolidate `api/` 12→~5 **with backend auth in the same pass** — the project is at exactly 12/12 functions, so no integration can add an endpoint until this lands, and it must precede the banking and location data now planned. Then completion sync + Apple Health, dashboards (on the `web` project, which has its own untouched function budget), banking via **SimpleFIN Bridge**, **continuous** location history, then retrieval-based memory and the drift engine.
+
+---
+
 ## Immediate next steps, when work resumes
 
 No fixed next feature — the last resolved roadmap conversation left it open pending real-world use. Reasonable candidates, roughly in the order they came up:
