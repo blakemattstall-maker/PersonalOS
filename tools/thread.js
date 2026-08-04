@@ -9,8 +9,10 @@ import {
   createThreadTurn,
   updateDeepThoughtThread,
   createProject,
-  createProjectMaterial
+  createProjectMaterial,
+  createIntention
 } from "./database.js";
+import { saveMemory } from "./memory.js";
 import { createTask } from "./googleTasks.js";
 import { createEvent } from "./googleCalendar.js";
 import { mapWithConcurrency } from "../lib/async.js";
@@ -40,7 +42,12 @@ export async function respondToThread({
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-sol",
+    // Thread replies are the most frequent expensive call in the system, and
+    // side-by-side on the same turn terra matched sol's judgment — same
+    // action, same extracted facts, comparably sharp reply — at 9.7s vs 13.4s
+    // and $0.0077 vs $0.0165 per turn. The opening deep-thinking analysis,
+    // which is occasional and higher-stakes, stays on sol.
+    model: "gpt-5.6-terra",
 
     response_format: { type: "json_object" },
 
@@ -79,6 +86,19 @@ Decide ONE of three things:
    building an actual plan (tasks, calendar events, a workback
    schedule) and ask the user to confirm.
 
+You are also the only part of this system that hears the user think out
+loud, so capture what you learn. Anything durable they reveal in passing
+— a constraint, a preference, a relationship, a financial or family
+reality, how they actually work — belongs in "memories". Anything
+forward-looking they mention wanting to do belongs in "intentions".
+Capture these liberally; the user would rather delete a few wrong ones
+than lose real signal. Two rules only: never record something already
+listed under "Recent memories" above, and never record the mechanics of
+this conversation (what you asked, what you're deciding) — only things
+that would still be true and useful months from now, in a completely
+different conversation. Return empty arrays when a turn genuinely
+reveals nothing new, which is normal.
+
 Return ONLY JSON with this exact shape:
 {
   "action": "clarify" | "revise" | "propose_plan",
@@ -91,6 +111,14 @@ Return ONLY JSON with this exact shape:
     "open_questions": ["..."],
     "kpis": ["specific, measurable success criteria, once known"],
     "deadline": "YYYY-MM-DD or null"
+  },
+  "learned": {
+    "memories": [
+      { "type": "preference | fact | constraint | relationship",
+        "content": "stated as a durable fact about the user, phrased like the existing memories above",
+        "importance": 7 }
+    ],
+    "intentions": ["something they said they want to do"]
   }
 }
 
@@ -117,15 +145,76 @@ that hasn't changed from the current state above.
   });
 
 
+  const learned = await persistLearnings(result.learned);
+
+
   return {
 
     success: true,
 
     message: result.reply,
 
-    data: { action: result.action }
+    data: { action: result.action, learned }
 
   };
+
+}
+
+
+// Threads were the one place the system heard the user think out loud and
+// wrote none of it down — turns were stored, read back into that same thread,
+// and never seen again. Everything the user reveals mid-conversation now lands
+// in the same memories/intentions the rest of the system already reads, so a
+// thing said here shows up in next week's deep thinking. Extraction rides
+// along inside the reply call rather than adding a second one, so it's free.
+async function persistLearnings(learnedRaw) {
+
+  const memories = Array.isArray(learnedRaw?.memories) ? learnedRaw.memories : [];
+  const intentions = Array.isArray(learnedRaw?.intentions) ? learnedRaw.intentions : [];
+
+  const saved = { memories: 0, intentions: 0 };
+
+
+  for (const memory of memories) {
+
+    if (!memory?.content) continue;
+
+    try {
+
+      await saveMemory(
+        memory.type || "fact",
+        memory.content,
+        Number.isFinite(memory.importance) ? memory.importance : 5
+      );
+
+      saved.memories += 1;
+
+    } catch (error) {
+      // Losing a learned fact must never take down the user's actual reply.
+      console.error("THREAD MEMORY SAVE FAILED:", error.message);
+    }
+
+  }
+
+
+  for (const content of intentions) {
+
+    if (!content) continue;
+
+    try {
+
+      await createIntention({ content });
+
+      saved.intentions += 1;
+
+    } catch (error) {
+      console.error("THREAD INTENTION SAVE FAILED:", error.message);
+    }
+
+  }
+
+
+  return saved;
 
 }
 

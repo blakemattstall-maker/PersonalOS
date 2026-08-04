@@ -3,6 +3,7 @@ import { formatDate } from "./shared.js";
 import ResolveButton from "./ResolveButton.js";
 import DeepThoughtThread from "./DeepThoughtThread.js";
 import ProjectDeleteButton from "./ProjectDeleteButton.js";
+import VoicePicker from "./VoicePicker.js";
 
 
 // Server Actions inherit their timeout from the page that invokes them, and
@@ -278,6 +279,8 @@ export default async function Home() {
           </div>
 
         </section>
+
+        <VoicePicker />
 
       </main>
     </div>

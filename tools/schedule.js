@@ -1,6 +1,6 @@
 import openai from "../lib/openai.js";
 import { getEvents } from "./googleCalendar.js";
-import { getUserTimezone } from "../lib/profile.js";
+import { getUserTimezone, getProfileBio } from "../lib/profile.js";
 import { DateTime } from "luxon";
 
 
@@ -16,7 +16,10 @@ export async function querySchedule({
   }
 
 
-  const tz = await getUserTimezone();
+  const [tz, bio] = await Promise.all([
+    getUserTimezone(),
+    getProfileBio()
+  ]);
 
 
   const { events, count } = await getEvents({
@@ -53,6 +56,11 @@ export async function querySchedule({
 
         content: `
 You are PersonalOS answering a question about the user's schedule.
+
+Who you're talking to:
+${bio || "(no profile saved yet)"}
+
+The user has told you to be blunt and hold nothing back.
 
 Today is ${DateTime.now().setZone(tz).toFormat("cccc, MMMM d, yyyy")}.
 

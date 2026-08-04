@@ -1,6 +1,6 @@
 import openai from "../lib/openai.js";
 import { createNoteRecord, getRecentNotes } from "./database.js";
-import { getUserTimezone } from "../lib/profile.js";
+import { getUserTimezone, getProfileBio } from "../lib/profile.js";
 import { DateTime } from "luxon";
 
 
@@ -32,7 +32,10 @@ export async function queryNotes({
 } = {}) {
 
 
-  const tz = await getUserTimezone();
+  const [tz, bio] = await Promise.all([
+    getUserTimezone(),
+    getProfileBio()
+  ]);
 
 
   const notes = await getRecentNotes({ limit: 30 });
@@ -59,6 +62,9 @@ export async function queryNotes({
 
         content: `
 You are PersonalOS answering a question using the user's saved notes.
+
+Who you're talking to:
+${bio || "(no profile saved yet)"}
 
 Their ${notes.length} most recent notes:
 

@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { respondToThreadAction, buildPlanAction, resolveDeepThought, resetBuildAction } from "./actions.js";
 import { DeepThoughtBody } from "./shared.js";
+import { speak, isSpeaking, stop } from "./speech.js";
 
 
 function Dots() {
@@ -14,43 +15,6 @@ function Dots() {
       <span className="pos-dot" />
     </span>
   );
-}
-
-
-// Browser speech synthesis is what it is, but the default pick is usually the
-// worst voice installed. iOS/macOS ship noticeably better ones (Ava, Samantha,
-// Allison), and users who've downloaded Enhanced/Premium voices in Accessibility
-// settings get much better results — so score the list rather than taking [0].
-// Note: Siri's own voices are not exposed to the web, so this is the ceiling
-// without going server-side for real TTS.
-const VOICE_PREFERENCE = ["ava", "samantha", "allison", "susan", "zoe", "karen", "moira"];
-
-function pickVoice() {
-
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
-
-  const voices = window.speechSynthesis.getVoices().filter(v => v.lang?.startsWith("en"));
-
-  if (voices.length === 0) return null;
-
-  const score = (v) => {
-    const name = v.name.toLowerCase();
-    let s = 0;
-    if (name.includes("premium")) s += 60;
-    if (name.includes("enhanced")) s += 50;
-    if (name.includes("natural") || name.includes("neural")) s += 45;
-    const rank = VOICE_PREFERENCE.findIndex(p => name.includes(p));
-    if (rank !== -1) s += 30 - rank * 2;
-    // Network voices generally beat the compact on-device ones.
-    if (v.localService === false) s += 15;
-    if (v.lang === "en-US") s += 5;
-    // Compact is Apple's explicitly low-quality tier.
-    if (name.includes("compact")) s -= 40;
-    return s;
-  };
-
-  return voices.slice().sort((a, b) => score(b) - score(a))[0] || null;
-
 }
 
 
@@ -68,39 +32,22 @@ function SpeakButton({ text }) {
     return () => window.speechSynthesis.removeEventListener("voiceschanged", warm);
   }, []);
 
-  const speak = () => {
+  const handleSpeak = () => {
 
-    if (!("speechSynthesis" in window)) return;
-
-    if (window.speechSynthesis.speaking) {
-      window.speechSynthesis.cancel();
+    if (isSpeaking()) {
+      stop();
       setSpeaking(false);
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(text);
-
-    const voice = pickVoice();
-    if (voice) {
-      utterance.voice = voice;
-      utterance.lang = voice.lang;
-    }
-
-    // Slightly slower than default reads far less clipped and mechanical.
-    utterance.rate = 0.97;
-    utterance.pitch = 1.0;
-
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-
     setSpeaking(true);
-    window.speechSynthesis.speak(utterance);
+    speak(text, { onEnd: () => setSpeaking(false) });
 
   };
 
   return (
     <button
-      onClick={speak}
+      onClick={handleSpeak}
       className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent"
       aria-label={speaking ? "Stop reading" : "Read aloud"}
     >

@@ -6,7 +6,7 @@ import {
   clearDeepThoughtProjectLink,
   deleteProjectRecord
 } from "./database.js";
-import { getUserTimezone } from "../lib/profile.js";
+import { getUserTimezone, getProfileBio } from "../lib/profile.js";
 import { DateTime } from "luxon";
 import { deleteGoogleTask } from "./googleTasks.js";
 import { deleteGoogleEvent } from "./googleCalendar.js";
@@ -47,7 +47,10 @@ export async function queryProjects({
   question
 } = {}) {
 
-  const tz = await getUserTimezone();
+  const [tz, bio] = await Promise.all([
+    getUserTimezone(),
+    getProfileBio()
+  ]);
 
   const projects = await getProjectsWithDetails();
 
@@ -75,6 +78,9 @@ export async function queryProjects({
 
         content: `
 You are PersonalOS answering a question about the user's active projects.
+
+Who you're talking to:
+${bio || "(no profile saved yet)"}
 
 Active projects (${projects.length}):
 
