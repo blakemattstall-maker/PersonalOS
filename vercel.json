@@ -19,6 +19,9 @@
     },
     "api/cron/reviewIntentions.js": {
       "maxDuration": 60
+    },
+    "api/deepThoughts/index.js": {
+      "maxDuration": 60
     }
   }
 }
