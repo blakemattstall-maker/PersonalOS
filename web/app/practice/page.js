@@ -71,7 +71,7 @@ export default async function Practice() {
           or record a pitch and get it graded.
         </p>
 
-        <section className="mt-8 rounded-2xl border border-border bg-surface p-6">
+        <div className="mt-8">
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
@@ -82,21 +82,22 @@ export default async function Practice() {
 
           {digest.length === 0 ? (
 
-            <p className="mt-4 text-sm text-muted">
+            <p className="mt-4 rounded-2xl border border-border bg-surface p-6 text-sm text-muted">
               Nothing framed yet today — the digest pulls fresh each morning.
               Real news, not invented: it needs live feeds to have run at
-              least once.
+              least once. Removed a topic you didn&apos;t want? Refresh finds
+              something else to fill the slot; anything you kept stays put.
             </p>
 
           ) : (
 
-            <div className="mt-4 space-y-6">
+            <div className="mt-4 space-y-4">
               {digest.map(item => <NewsCard key={item.id} item={item} />)}
             </div>
 
           )}
 
-        </section>
+        </div>
 
         <section className="mt-6 rounded-2xl border border-border bg-surface p-6">
           <h2 className="text-sm font-medium uppercase tracking-wide text-muted">

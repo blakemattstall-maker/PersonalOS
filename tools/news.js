@@ -225,3 +225,33 @@ export async function getTodaysDigest({ limit = 6 } = {}) {
   return data || [];
 
 }
+
+
+// "I don't want this one" — permanent, not a snooze. A refresh only ever adds
+// candidates that haven't been seen before (deduped on source_url), so
+// deleting a story is what actually frees its slot back up; leaving it would
+// mean the digest just grows unbounded every day instead of staying a
+// deliberately small, current list.
+export async function deleteNewsItem(id) {
+
+  if (!id) throw new Error("deleteNewsItem requires an id.");
+
+  // practice_sessions.news_item_id has no ON DELETE clause, so a story
+  // already debated would otherwise block deletion with a foreign-key error.
+  // The session and its transcript/feedback are worth keeping regardless of
+  // whether the source story is still around — just detach the reference.
+  await supabase
+    .from("practice_sessions")
+    .update({ news_item_id: null })
+    .eq("news_item_id", id);
+
+  const { error } = await supabase
+    .from("news_items")
+    .delete()
+    .eq("id", id);
+
+  if (error) throw new Error(error.message);
+
+  return { success: true };
+
+}

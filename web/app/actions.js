@@ -171,6 +171,17 @@ export async function submitPitchAction({ audio_base64, mime_type, topic }) {
 }
 
 
+export async function deleteNewsAction(news_item_id) {
+
+  const result = await backendPost("/api/practice", { action: "deleteNews", news_item_id });
+
+  revalidatePath("/practice");
+
+  return result;
+
+}
+
+
 export async function syncNewsAction() {
 
   const result = await backendGet("/api/practice?sync=1");

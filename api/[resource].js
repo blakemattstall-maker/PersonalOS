@@ -15,7 +15,7 @@ import { respondToThread, buildPlan } from "../tools/thread.js";
 import { getSettings, saveSettings, INTERRUPTION_LEVELS } from "../lib/settings.js";
 import { buildDiagnostics } from "../lib/diagnostics.js";
 import { sendPush } from "../lib/push.js";
-import { getTodaysDigest, syncNewsDigest } from "../tools/news.js";
+import { getTodaysDigest, syncNewsDigest, deleteNewsItem } from "../tools/news.js";
 import { startDebateSession, respondInDebate, endDebateSession } from "../tools/debate.js";
 import { submitPitch } from "../tools/pitch.js";
 
@@ -387,6 +387,10 @@ async function practice(req, res) {
 
     if (action === "submitPitch") {
       return res.status(200).json(await submitPitch(req.body));
+    }
+
+    if (action === "deleteNews") {
+      return res.status(200).json(await deleteNewsItem(req.body?.news_item_id));
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });
