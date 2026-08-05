@@ -4,7 +4,7 @@ import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { respondToThreadAction, buildPlanAction, resolveDeepThought, resetBuildAction } from "./actions.js";
 import { DeepThoughtBody } from "./shared.js";
-import { speak, isSpeaking, stop } from "./speech.js";
+import ReadAloud from "./ReadAloud.js";
 
 
 function Dots() {
@@ -15,46 +15,6 @@ function Dots() {
       <span className="pos-dot" />
     </span>
   );
-}
-
-
-function SpeakButton({ text }) {
-
-  const [speaking, setSpeaking] = useState(false);
-
-  // Safari populates the voice list asynchronously; without this the first
-  // press of the session always gets the default robotic voice.
-  useEffect(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    const warm = () => window.speechSynthesis.getVoices();
-    warm();
-    window.speechSynthesis.addEventListener("voiceschanged", warm);
-    return () => window.speechSynthesis.removeEventListener("voiceschanged", warm);
-  }, []);
-
-  const handleSpeak = () => {
-
-    if (isSpeaking()) {
-      stop();
-      setSpeaking(false);
-      return;
-    }
-
-    setSpeaking(true);
-    speak(text, { onEnd: () => setSpeaking(false) });
-
-  };
-
-  return (
-    <button
-      onClick={handleSpeak}
-      className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent"
-      aria-label={speaking ? "Stop reading" : "Read aloud"}
-    >
-      {speaking ? "◼" : "🔊"}
-    </button>
-  );
-
 }
 
 
@@ -174,7 +134,7 @@ export default function DeepThoughtThread({ thought, turns }) {
                     {turn.role === "user" ? "You" : "PersonalOS"}
                   </span>
                   <p className="flex-1 text-foreground">{turn.message}</p>
-                  {turn.role === "assistant" && <SpeakButton text={turn.message} />}
+                  {turn.role === "assistant" && <ReadAloud text={turn.message} title={thought.topic} />}
                 </div>
               ))}
             </div>

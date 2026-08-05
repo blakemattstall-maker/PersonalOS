@@ -18,8 +18,12 @@
   --color-accent: var(--accent);
 }
 
+/* Dark comes from the OS unless the user has explicitly chosen light. The
+   :not() is what lets the settings toggle override the system preference in
+   both directions — without it, picking "light" on a phone in dark mode would
+   be silently ignored. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #0b0d10;
     --surface: #14171c;
     --foreground: #e8e9ec;
@@ -27,6 +31,15 @@
     --border: #22262e;
     --accent: #5b9dff;
   }
+}
+
+:root[data-theme="dark"] {
+  --background: #0b0d10;
+  --surface: #14171c;
+  --foreground: #e8e9ec;
+  --muted: #8b92a1;
+  --border: #22262e;
+  --accent: #5b9dff;
 }
 
 body {

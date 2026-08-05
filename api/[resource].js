@@ -14,6 +14,7 @@ import { deleteProject } from "../tools/projects.js";
 import { respondToThread, buildPlan } from "../tools/thread.js";
 import { getSettings, saveSettings, INTERRUPTION_LEVELS } from "../lib/settings.js";
 import { buildDiagnostics } from "../lib/diagnostics.js";
+import { sendPush } from "../lib/push.js";
 
 
 // Every read/write endpoint the dashboard uses, behind ONE serverless function.
@@ -296,11 +297,28 @@ async function settings(req, res) {
 
 async function diag(req, res) {
 
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
+  if (req.method === "GET") {
+    return res.status(200).json(await buildDiagnostics());
   }
 
-  return res.status(200).json(await buildDiagnostics());
+  // A test push belongs here rather than anywhere else: the honest question is
+  // "does a notification actually arrive on the phone", and no amount of
+  // reading the database answers it. Bypasses the interruption level on
+  // purpose — it was explicitly asked for.
+  if (req.method === "POST" && req.body?.action === "testPush") {
+
+    const result = await sendPush({
+      title: "PersonalOS",
+      body: "Test notification — push is working.",
+      url: "/settings",
+      tag: "test"
+    });
+
+    return res.status(200).json({ success: true, ...result });
+
+  }
+
+  return res.status(405).json({ error: "Method not allowed" });
 
 }
 

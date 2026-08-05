@@ -92,7 +92,7 @@ export default function PushSetup() {
   };
 
 
-  if (state === "checking" || state === "unsupported") return null;
+  if (state === "checking") return null;
 
 
   return (
@@ -101,6 +101,16 @@ export default function PushSetup() {
       <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
         Notifications
       </h2>
+
+      {/* Previously this rendered nothing on an unsupported browser. On a
+          settings page that reads as a bug — the section the user came looking
+          for simply isn't there — so it now says why. */}
+      {state === "unsupported" && (
+        <p className="mt-3 text-sm text-muted">
+          This browser can&apos;t receive push notifications. Open the app on
+          your iPhone from the Home Screen icon to turn them on.
+        </p>
+      )}
 
       {state === "needs-install" && (
         <p className="mt-3 text-sm text-muted">

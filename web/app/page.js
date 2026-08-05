@@ -3,8 +3,7 @@ import { formatDate } from "./shared.js";
 import ResolveButton from "./ResolveButton.js";
 import DeepThoughtThread from "./DeepThoughtThread.js";
 import ProjectDeleteButton from "./ProjectDeleteButton.js";
-import VoicePicker from "./VoicePicker.js";
-import PushSetup from "./PushSetup.js";
+import ReadAloud from "./ReadAloud.js";
 import PromptCard from "./PromptCard.js";
 import { backendGet } from "./backend.js";
 
@@ -161,7 +160,15 @@ export default async function Home() {
               Manage Data
             </Link>
             <Link href="/history" className="text-sm text-muted hover:text-accent">
-              History →
+              History
+            </Link>
+            <Link
+              href="/settings"
+              aria-label="Settings"
+              title="Settings"
+              className="text-lg leading-none text-muted hover:text-accent"
+            >
+              ⚙
             </Link>
           </div>
         </div>
@@ -259,13 +266,18 @@ export default async function Home() {
 
         <section className="mt-6 rounded-2xl border border-border bg-surface p-6">
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
               Today
             </h2>
-            {brief.created_at && (
-              <span className="text-sm text-muted">{formatDate(brief.created_at)}</span>
-            )}
+            <div className="flex items-center gap-3">
+              {brief.created_at && (
+                <span className="text-sm text-muted">{formatDate(brief.created_at)}</span>
+              )}
+              {brief.hasBrief && (
+                <ReadAloud text={brief.content} title="Today's brief" label autoplay />
+              )}
+            </div>
           </div>
 
           <div className="mt-4 whitespace-pre-wrap text-foreground leading-relaxed">
@@ -275,10 +287,6 @@ export default async function Home() {
           </div>
 
         </section>
-
-        <PushSetup />
-
-        <VoicePicker />
 
       </main>
     </div>

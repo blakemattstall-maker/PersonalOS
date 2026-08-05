@@ -99,6 +99,38 @@ export async function subscribeToPushAction(subscription) {
 }
 
 
+export async function getSettingsAction() {
+
+  return backendGet("/api/settings");
+
+}
+
+
+export async function saveSettingsAction(patch) {
+
+  const result = await backendPost("/api/settings", patch);
+
+  revalidatePath("/settings");
+
+  return result;
+
+}
+
+
+export async function getDiagnosticsAction() {
+
+  return backendGet("/api/diag");
+
+}
+
+
+export async function sendTestPushAction() {
+
+  return backendPost("/api/diag", { action: "testPush" });
+
+}
+
+
 export async function answerPromptAction(id, answer) {
 
   const result = await backendPost("/api/data", { type: "prompt", id, answer });
