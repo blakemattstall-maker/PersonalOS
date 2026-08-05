@@ -15,6 +15,9 @@ import { respondToThread, buildPlan } from "../tools/thread.js";
 import { getSettings, saveSettings, INTERRUPTION_LEVELS } from "../lib/settings.js";
 import { buildDiagnostics } from "../lib/diagnostics.js";
 import { sendPush } from "../lib/push.js";
+import { getTodaysDigest, syncNewsDigest } from "../tools/news.js";
+import { startDebateSession, respondInDebate, endDebateSession } from "../tools/debate.js";
+import { submitPitch } from "../tools/pitch.js";
 
 
 // Every read/write endpoint the dashboard uses, behind ONE serverless function.
@@ -323,7 +326,79 @@ async function diag(req, res) {
 }
 
 
-const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag };
+async function practice(req, res) {
+
+  if (req.method === "GET") {
+
+    // Manual refresh from the dashboard — same function the daily cron calls,
+    // exposed here so a real digest exists to test/demo without waiting for
+    // the next scheduled run.
+    if (req.query.sync) {
+      return res.status(200).json(await syncNewsDigest());
+    }
+
+    if (req.query.sessions) {
+
+      const { data, error } = await supabase
+        .from("practice_sessions")
+        .select("id, type, topic, user_side, feedback, status, created_at, completed_at, news_items(headline)")
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (error) throw new Error(error.message);
+
+      return res.status(200).json({ success: true, sessions: data || [] });
+
+    }
+
+    if (req.query.session) {
+
+      const { data, error } = await supabase
+        .from("practice_sessions")
+        .select("*, news_items(headline, tension, side_a, side_b)")
+        .eq("id", req.query.session)
+        .single();
+
+      if (error) throw new Error(error.message);
+
+      return res.status(200).json({ success: true, session: data });
+
+    }
+
+    return res.status(200).json({ success: true, digest: await getTodaysDigest() });
+
+  }
+
+  if (req.method === "POST") {
+
+    const { action } = req.body || {};
+
+    if (action === "startDebate") {
+      return res.status(200).json(await startDebateSession(req.body));
+    }
+
+    if (action === "respondDebate") {
+      return res.status(200).json(await respondInDebate(req.body));
+    }
+
+    if (action === "endDebate") {
+      return res.status(200).json(await endDebateSession(req.body));
+    }
+
+    if (action === "submitPitch") {
+      return res.status(200).json(await submitPitch(req.body));
+    }
+
+    return res.status(400).json({ error: `Unknown action: ${action}` });
+
+  }
+
+  return res.status(405).json({ error: "Method not allowed" });
+
+}
+
+
+const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice };
 
 
 export default async function handler(req, res) {

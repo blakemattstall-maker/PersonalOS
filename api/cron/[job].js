@@ -8,18 +8,20 @@ import { regenerateBio } from "../../tools/profileEvolution.js";
 import { syncTaskCompletions } from "../../tools/completions.js";
 import { rollupDailyMetrics } from "../../tools/metrics.js";
 import { runDailyObservation } from "../../tools/observer.js";
+import { syncNewsDigest } from "../../tools/news.js";
 import { getUserTimezone } from "../../lib/profile.js";
 import { DateTime } from "luxon";
 
 
-// All three scheduled jobs behind one dynamic route.
+// All scheduled jobs behind one dynamic route.
 //
 // Vercel Hobby allows 12 serverless functions per deployment and the project
 // sat at exactly 12, which blocked every planned integration — banking needs a
 // link route and a webhook, location needs an ingest route. A dynamic segment
 // counts as ONE function while still matching /api/cron/morningBrief,
-// /api/cron/syncCanvas and /api/cron/reviewIntentions, so the schedules in
-// vercel.json are untouched and the cron paths keep working exactly as before.
+// /api/cron/syncCanvas, /api/cron/reviewIntentions and now
+// /api/cron/syncNews, so the schedules in vercel.json are untouched and the
+// cron paths keep working exactly as before.
 
 
 async function morningBrief() {
@@ -48,6 +50,13 @@ async function morningBrief() {
 async function syncCanvas() {
 
   return syncCanvasAssignments();
+
+}
+
+
+async function syncNews() {
+
+  return syncNewsDigest();
 
 }
 
@@ -122,7 +131,8 @@ async function reviewIntentions() {
 const JOBS = {
   morningBrief,
   syncCanvas,
-  reviewIntentions
+  reviewIntentions,
+  syncNews
 };
 
 

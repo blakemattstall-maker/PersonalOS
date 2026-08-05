@@ -156,6 +156,9 @@ export default async function Home() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold text-foreground">PersonalOS</h1>
           <div className="flex items-center gap-4">
+            <Link href="/practice" className="text-sm text-muted hover:text-accent">
+              Practice
+            </Link>
             <Link href="/data" className="text-sm text-muted hover:text-accent">
               Manage Data
             </Link>

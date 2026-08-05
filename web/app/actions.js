@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { backendPost } from "./backend.js";
+import { backendPost, backendGet } from "./backend.js";
 
 
 export async function resolveDeepThought(id) {
@@ -127,6 +127,57 @@ export async function getDiagnosticsAction() {
 export async function sendTestPushAction() {
 
   return backendPost("/api/diag", { action: "testPush" });
+
+}
+
+
+export async function startDebateAction(news_item_id, user_side) {
+
+  const result = await backendPost("/api/practice", { action: "startDebate", news_item_id, user_side });
+
+  revalidatePath("/practice");
+
+  return result;
+
+}
+
+
+export async function respondDebateAction(session_id, message) {
+
+  return backendPost("/api/practice", { action: "respondDebate", session_id, message });
+
+}
+
+
+export async function endDebateAction(session_id) {
+
+  const result = await backendPost("/api/practice", { action: "endDebate", session_id });
+
+  revalidatePath("/practice");
+
+  return result;
+
+}
+
+
+export async function submitPitchAction({ audio_base64, mime_type, topic }) {
+
+  const result = await backendPost("/api/practice", { action: "submitPitch", audio_base64, mime_type, topic });
+
+  revalidatePath("/practice");
+
+  return result;
+
+}
+
+
+export async function syncNewsAction() {
+
+  const result = await backendGet("/api/practice?sync=1");
+
+  revalidatePath("/practice");
+
+  return result;
 
 }
 
