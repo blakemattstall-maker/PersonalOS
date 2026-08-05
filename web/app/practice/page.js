@@ -2,6 +2,7 @@ import Link from "next/link";
 import { backendGet } from "../backend.js";
 import NewsCard from "../NewsCard.js";
 import PitchRecorder from "../PitchRecorder.js";
+import RefreshDigestButton from "../RefreshDigestButton.js";
 import { formatDate } from "../shared.js";
 
 
@@ -72,9 +73,12 @@ export default async function Practice() {
 
         <section className="mt-8 rounded-2xl border border-border bg-surface p-6">
 
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-            Debate — today&apos;s stories
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+              Debate — today&apos;s stories
+            </h2>
+            <RefreshDigestButton />
+          </div>
 
           {digest.length === 0 ? (
 

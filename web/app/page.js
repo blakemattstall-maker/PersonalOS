@@ -153,14 +153,17 @@ export default async function Home() {
     <div className="flex flex-1 flex-col bg-background">
       <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
 
-        <div className="flex items-center justify-between">
+        {/* flex-wrap on both levels: four nav items plus the title no longer
+            fit on one line on a phone. Wraps to a title row and a nav row
+            rather than overflowing or overlapping. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <h1 className="text-2xl font-semibold text-foreground">PersonalOS</h1>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <Link href="/practice" className="text-sm text-muted hover:text-accent">
               Practice
             </Link>
             <Link href="/data" className="text-sm text-muted hover:text-accent">
-              Manage Data
+              Data
             </Link>
             <Link href="/history" className="text-sm text-muted hover:text-accent">
               History

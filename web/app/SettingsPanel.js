@@ -2,14 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { readPrefs, writePrefs } from "./prefs.js";
-import { NEURAL_VOICES, listVoices, speakWith, speak, stop } from "./speech.js";
+import { NEURAL_VOICES, VOICE_PREVIEW_TEXT, listVoices, speakWith, playPreset, stop } from "./speech.js";
 import { saveSettingsAction, getDiagnosticsAction, sendTestPushAction } from "./actions.js";
 import PushSetup from "./PushSetup.js";
 
 
-const SAMPLE =
-  "Here's where things stand. You have three tasks due today and one of them " +
-  "is already late. Nothing on the calendar until two.";
+const SAMPLE = VOICE_PREVIEW_TEXT;
 
 
 const LEVELS = [
@@ -107,15 +105,14 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
   const update = (patch) => setPrefs(writePrefs(patch));
 
 
-  const previewNeural = async (voice) => {
+  const previewNeural = (voice) => {
 
     update({ voice });
     setPreviewing(voice);
 
-    await speak(SAMPLE, {
-      title: "Voice preview",
-      onEnd: () => setPreviewing(null)
-    });
+    // A static clip, not a live generation — see speech.js's playPreset for
+    // why this doesn't cost an OpenAI call on every tap while browsing.
+    playPreset(voice, 1, { onEnd: () => setPreviewing(null) });
 
   };
 
@@ -255,7 +252,16 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
           />
 
           <button
-            onClick={() => speak(SAMPLE, { title: "Speed check" })}
+            onClick={() => {
+              if (prefs.engine === "neural") {
+                // The preset's own fixed speed, adjusted by playbackRate —
+                // a slight pitch shift versus a true regeneration at this
+                // speed, traded for previewing instantly at zero cost.
+                playPreset(prefs.voice, prefs.rate);
+              } else {
+                speakWith(SAMPLE, prefs.deviceVoiceURI, prefs.rate);
+              }
+            }}
             className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs text-muted hover:border-accent hover:text-accent"
           >
             Hear this speed

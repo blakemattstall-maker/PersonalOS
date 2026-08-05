@@ -29,6 +29,14 @@ const NOVELTY = [
 const PREFERRED_NAMES = ["ava", "samantha", "allison", "susan", "zoe", "karen", "moira"];
 
 
+// The exact line every preset preview file (public/voice-samples/*.mp3) was
+// generated from — see scripts/generateVoiceSamples.mjs. Change this and the
+// files no longer match what they claim to preview; regenerate them too.
+export const VOICE_PREVIEW_TEXT =
+  "Here's where things stand. You have three tasks due today and one of them " +
+  "is already late. Nothing on the calendar until two.";
+
+
 export const NEURAL_VOICES = [
   { id: "sage",    name: "Sage",    blurb: "Even and unhurried. The best default for a long brief." },
   { id: "alloy",   name: "Alloy",   blurb: "Neutral and level." },
@@ -206,8 +214,37 @@ const SILENCE =
   "data:audio/wav;base64,UklGRjQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YRAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 let element = null;
-let objectUrl = null;
 let controller = null;
+
+// Replaying the same text shouldn't cost a second OpenAI call and a second
+// wait — stop, then play again, and this reuses what was already generated.
+// Keyed on the exact (voice, speed, text) combination, since any of those
+// changes what the audio actually is. A plain Map preserves insertion order,
+// which is enough for simple LRU: re-set an entry on hit to bump it to the
+// end, evict from the front once over the cap.
+const TTS_CACHE_LIMIT = 12;
+const ttsCache = new Map();
+
+function ttsCacheKey(text, voice, speed) {
+  return `${voice}::${speed}::${text}`;
+}
+
+function ttsCacheGet(key) {
+  const url = ttsCache.get(key);
+  if (!url) return null;
+  ttsCache.delete(key);
+  ttsCache.set(key, url);
+  return url;
+}
+
+function ttsCacheSet(key, url) {
+  ttsCache.set(key, url);
+  while (ttsCache.size > TTS_CACHE_LIMIT) {
+    const oldestKey = ttsCache.keys().next().value;
+    URL.revokeObjectURL(ttsCache.get(oldestKey));
+    ttsCache.delete(oldestKey);
+  }
+}
 
 
 function audio() {
@@ -219,14 +256,6 @@ function audio() {
 
   return element;
 
-}
-
-
-function releaseUrl() {
-  if (objectUrl) {
-    URL.revokeObjectURL(objectUrl);
-    objectUrl = null;
-  }
 }
 
 
@@ -254,6 +283,36 @@ function describeToOS(title, onStop) {
 }
 
 
+// Browsing voices ("tap one to hear it") and checking a speed used to mean a
+// live OpenAI call every single tap — the most repeated action in the whole
+// settings panel, and the one call in the entire system that gained nothing
+// from being fresh, since it always speaks the same fixed line. These are
+// static files instead (public/voice-samples/*.mp3, generated once — see
+// scripts/generateVoiceSamples.mjs). Speed is previewed via the audio
+// element's own playbackRate rather than regenerating at a different speed —
+// free and instant, at the honest cost of a slight pitch shift versus the
+// real thing, which uses OpenAI's own speed parameter and doesn't have that
+// artifact. Fine for "get a feel for it"; the actual brief playback is
+// unaffected either way.
+export function playPreset(voiceId, rate = 1, { onEnd } = {}) {
+
+  stop();
+
+  const el = audio();
+
+  el.src = `/voice-samples/${voiceId}.mp3`;
+  el.playbackRate = rate;
+
+  if (onEnd) {
+    el.onended = onEnd;
+    el.onerror = onEnd;
+  }
+
+  el.play().catch(() => onEnd?.());
+
+}
+
+
 export function stop() {
 
   if (supported()) window.speechSynthesis.cancel();
@@ -269,7 +328,9 @@ export function stop() {
     element.load();
   }
 
-  releaseUrl();
+  // Deliberately NOT revoking anything here — stopping playback must not
+  // destroy a cached clip that's meant to survive for the next play press.
+  // Cached URLs are only ever revoked on LRU eviction, in ttsCacheSet.
 
 }
 
@@ -291,10 +352,7 @@ export async function speak(text, { onEnd, onState, title } = {}) {
 
   stop();
 
-  const finish = () => {
-    releaseUrl();
-    onEnd?.();
-  };
+  const finish = () => onEnd?.();
 
 
   if (prefs.engine !== "neural") {
@@ -305,6 +363,29 @@ export async function speak(text, { onEnd, onState, title } = {}) {
 
 
   const el = audio();
+  const key = ttsCacheKey(text, prefs.voice, prefs.rate);
+  const cachedUrl = ttsCacheGet(key);
+
+  // Stop-then-play-again on the same text is the common case (the whole
+  // point of this cache), and it's genuinely synchronous — no fetch, no gap
+  // for iOS to have forgotten this was a user gesture — so it can skip the
+  // silence-unlock trick and the loading state entirely.
+  if (cachedUrl) {
+
+    el.src = cachedUrl;
+    el.onended = () => { onState?.("idle"); finish(); };
+    el.onerror = () => { onState?.("idle"); finish(); };
+
+    describeToOS(title, () => { stop(); onState?.("idle"); });
+
+    await el.play();
+
+    onState?.("speaking");
+
+    return { engine: "neural", cached: true };
+
+  }
+
 
   // Must happen synchronously, still inside the click that called us.
   el.src = SILENCE;
@@ -329,11 +410,11 @@ export async function speak(text, { onEnd, onState, title } = {}) {
     }
 
     const blob = await res.blob();
+    const freshUrl = URL.createObjectURL(blob);
 
-    releaseUrl();
-    objectUrl = URL.createObjectURL(blob);
+    ttsCacheSet(key, freshUrl);
 
-    el.src = objectUrl;
+    el.src = freshUrl;
     el.onended = () => { onState?.("idle"); finish(); };
     el.onerror = () => { onState?.("idle"); finish(); };
 

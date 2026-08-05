@@ -216,7 +216,7 @@ export default function PitchRecorder() {
         />
       )}
 
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-3">
 
         {state === "idle" && (
           <button
@@ -228,7 +228,7 @@ export default function PitchRecorder() {
         )}
 
         {state === "recording" && (
-          <>
+          <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={stop}
               className="rounded-lg border border-accent px-4 py-2 text-sm font-medium text-accent"
@@ -239,25 +239,31 @@ export default function PitchRecorder() {
               {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
               {seconds >= MAX_SECONDS - 10 && " — stopping soon"}
             </span>
-          </>
+          </div>
         )}
 
         {state === "recorded" && (
-          <>
-            <audio controls src={audioUrl} className="h-9" />
-            <button
-              onClick={submit}
-              className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
-            >
-              Get feedback
-            </button>
-            <button
-              onClick={reRecord}
-              className="shrink-0 rounded-md border border-border px-3 py-2 text-xs text-muted hover:border-accent hover:text-accent"
-            >
-              Re-record
-            </button>
-          </>
+          // Native <audio> controls render at an unpredictable width per
+          // browser — wide enough on iOS Safari alone to collide with
+          // buttons in the same row on a phone screen. Stacked on mobile,
+          // side by side once there's room for it.
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <audio controls src={audioUrl} className="h-9 w-full sm:w-auto" />
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={submit}
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
+              >
+                Get feedback
+              </button>
+              <button
+                onClick={reRecord}
+                className="rounded-md border border-border px-3 py-2 text-xs text-muted hover:border-accent hover:text-accent"
+              >
+                Re-record
+              </button>
+            </div>
+          </div>
         )}
 
         {state === "submitting" && (
