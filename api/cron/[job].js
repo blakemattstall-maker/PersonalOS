@@ -9,6 +9,7 @@ import { syncTaskCompletions } from "../../tools/completions.js";
 import { rollupDailyMetrics } from "../../tools/metrics.js";
 import { runDailyObservation } from "../../tools/observer.js";
 import { syncNewsDigest } from "../../tools/news.js";
+import { checkRelationshipCheckins } from "../../tools/people.js";
 import { getUserTimezone } from "../../lib/profile.js";
 import { DateTime } from "luxon";
 
@@ -71,9 +72,13 @@ async function reviewIntentions() {
   const completionResult = await syncTaskCompletions();
 
 
-  const [nudgeResult, projectResult] = await Promise.all([
+  const [nudgeResult, projectResult, relationshipResult] = await Promise.all([
     reviewIntentionsForNudges(),
-    checkProjectDeadlines()
+    checkProjectDeadlines(),
+    checkRelationshipCheckins().catch(error => {
+      console.error("RELATIONSHIP CHECK-IN REVIEW FAILED:", error.message);
+      return { success: false, error: error.message };
+    })
   ]);
 
 
@@ -122,6 +127,7 @@ async function reviewIntentions() {
     observation: observationResult,
     nudges: nudgeResult,
     projects: projectResult,
+    relationships: relationshipResult,
     profile: profileResult
   };
 

@@ -15,7 +15,8 @@ export async function createEvent({
   timezone = null,
   durationMinutes = 60,
   goal_id = null,
-  project_id = null
+  project_id = null,
+  person_id = null
 }) {
 
 
@@ -73,7 +74,8 @@ export async function createEvent({
     end_time: end.toISO(),
     timezone: tz,
     goal_id,
-    project_id
+    project_id,
+    person_id
   });
 
 

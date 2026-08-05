@@ -18,6 +18,7 @@ import { sendPush } from "../lib/push.js";
 import { getTodaysDigest, syncNewsDigest, deleteNewsItem } from "../tools/news.js";
 import { startDebateSession, respondInDebate, endDebateSession } from "../tools/debate.js";
 import { submitPitch } from "../tools/pitch.js";
+import { savePerson, getAllPeople, deletePerson, recordContact, answerRelationshipCheckin } from "../tools/people.js";
 
 
 // Every read/write endpoint the dashboard uses, behind ONE serverless function.
@@ -79,10 +80,18 @@ async function data(req, res) {
     if (type === "prompt") {
 
       const { data: prompt } = await supabase
-        .from("prompts").select("kind").eq("id", id).single();
+        .from("prompts").select("kind, payload").eq("id", id).single();
 
       if (prompt?.kind === "label_place" && answer && answer !== "dismissed") {
         return res.status(200).json(await answerPlaceLabel({ prompt_id: id, answer }));
+      }
+
+      if (prompt?.kind === "relationship_checkin") {
+        return res.status(200).json(await answerRelationshipCheckin({
+          prompt_id: id,
+          person_id: prompt.payload?.person_id,
+          answer
+        }));
       }
 
       await supabase
@@ -402,7 +411,43 @@ async function practice(req, res) {
 }
 
 
-const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice };
+async function people(req, res) {
+
+  if (req.method === "GET") {
+    return res.status(200).json({ success: true, people: await getAllPeople() });
+  }
+
+  if (req.method === "POST") {
+
+    const { action, id, name } = req.body || {};
+
+    if (action === "delete") {
+
+      if (!id) return res.status(400).json({ error: "Missing id" });
+
+      return res.status(200).json(await deletePerson(id));
+
+    }
+
+    if (action === "logContact") {
+
+      if (!name) return res.status(400).json({ error: "Missing name" });
+
+      return res.status(200).json(await recordContact({ name }));
+
+    }
+
+    // Default: create or update by name.
+    return res.status(200).json(await savePerson(req.body || {}));
+
+  }
+
+  return res.status(405).json({ error: "Method not allowed" });
+
+}
+
+
+const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice, people };
 
 
 export default async function handler(req, res) {

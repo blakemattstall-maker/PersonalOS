@@ -2,6 +2,16 @@ import supabase from "../lib/supabase.js";
 import { getUserTimezone } from "../lib/profile.js";
 
 
+function missingColumn(error) {
+  // PostgREST rejects an unknown column in the payload regardless of its
+  // value — so this has to be checked even when person_id is null, or every
+  // ordinary create_event call breaks the moment person_id is added here,
+  // for as long as docs/schema-people.sql hasn't been run yet.
+  return ["42703", "PGRST204"].includes(error?.code)
+    || /could not find.*column/i.test(error?.message || "");
+}
+
+
 export async function createCalendarEventRecord({
   title,
   start_time,
@@ -10,30 +20,36 @@ export async function createCalendarEventRecord({
   location = null,
   description = null,
   goal_id = null,
-  project_id = null
+  project_id = null,
+  person_id = null
 }) {
 
 
   const tz = timezone || await getUserTimezone();
 
+  const row = { title, start_time, end_time, timezone: tz, location, description, goal_id, project_id };
 
-  const { data, error } = await supabase
+  // Only attach person_id to the payload when it's actually used — the vast
+  // majority of events have nothing to do with a person, and this keeps
+  // every one of those calls immune to whether the migration has run.
+  if (person_id) row.person_id = person_id;
+
+
+  let { data, error } = await supabase
     .from("calendar_events")
-    .insert([
-      {
-        title,
-        start_time,
-        end_time,
-        timezone: tz,
-        location,
-        description,
-        goal_id,
-        project_id
-      }
-    ])
+    .insert([row])
     .select()
     .single();
 
+  if (error && person_id && missingColumn(error)) {
+
+    ({ data, error } = await supabase
+      .from("calendar_events")
+      .insert([{ title, start_time, end_time, timezone: tz, location, description, goal_id, project_id }])
+      .select()
+      .single());
+
+  }
 
   if (error) {
     throw new Error(error.message);

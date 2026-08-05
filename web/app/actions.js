@@ -193,6 +193,39 @@ export async function syncNewsAction() {
 }
 
 
+export async function savePersonAction(person) {
+
+  const result = await backendPost("/api/people", person);
+
+  revalidatePath("/people");
+
+  return result;
+
+}
+
+
+export async function deletePersonAction(id) {
+
+  const result = await backendPost("/api/people", { action: "delete", id });
+
+  revalidatePath("/people");
+
+  return result;
+
+}
+
+
+export async function logContactAction(name) {
+
+  const result = await backendPost("/api/people", { action: "logContact", name });
+
+  revalidatePath("/people");
+
+  return result;
+
+}
+
+
 export async function answerPromptAction(id, answer) {
 
   const result = await backendPost("/api/data", { type: "prompt", id, answer });

@@ -30,7 +30,10 @@ export default function PromptCard({ item }) {
     <div className="border-t border-border pt-4 first:border-t-0 first:pt-0">
 
       <div className="text-xs font-medium uppercase tracking-wide text-muted">
-        {item.kind === "label_place" ? "New place" : item.kind === "digest" ? "Today" : item.kind}
+        {item.kind === "label_place" ? "New place"
+          : item.kind === "digest" ? "Today"
+          : item.kind === "relationship_checkin" ? "Check in"
+          : item.kind}
       </div>
 
       {item.title && (
