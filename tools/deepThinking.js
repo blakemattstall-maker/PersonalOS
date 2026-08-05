@@ -8,7 +8,7 @@ async function runAnalysis({ id, topic }) {
 
   try {
 
-    const context = await buildRichContext();
+    const context = await buildRichContext({ query: topic });
 
     const response = await openai.chat.completions.create({
 

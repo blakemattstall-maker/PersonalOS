@@ -1,4 +1,20 @@
 import supabase from "../lib/supabase.js";
+import { embed } from "../lib/embeddings.js";
+
+
+function missingColumnOrFunction(error) {
+  // Undefined column (42703) or undefined function (42883) are Postgres's own
+  // codes; PGRST202/PGRST204 are PostgREST's, raised from its own schema
+  // cache before a query ever reaches Postgres — which is what actually fires
+  // here, with a message shaped like "Could not find the 'embedding' column
+  // of 'memories' in the schema cache", not the SQL-standard wording. Either
+  // family means the retrieval migration (docs/schema-memory-retrieval.sql)
+  // hasn't been run yet.
+  return ["42703", "42883", "PGRST202", "PGRST204"].includes(error?.code)
+    || /could not find.*column/i.test(error?.message || "")
+    || /column .*embedding.* does not exist/i.test(error?.message || "")
+    || /function match_memories/i.test(error?.message || "");
+}
 
 
 export async function saveMemory(
@@ -7,18 +23,35 @@ export async function saveMemory(
   importance = 5
 ) {
 
-  const { data, error } = await supabase
+  // Best-effort — a missing/misconfigured embeddings call must never cost the
+  // user their memory. Losing the semantic index for one row just means it
+  // falls back to the importance-ranked list for that row, same as today.
+  const embedding = await embed(content).catch(error => {
+    console.error("MEMORY EMBEDDING FAILED:", error.message);
+    return null;
+  });
+
+  const row = { type, content, importance };
+
+  if (embedding) row.embedding = embedding;
+
+  let { data, error } = await supabase
     .from("memories")
-    .insert([
-      {
-        type,
-        content,
-        importance
-      }
-    ])
+    .insert([row])
     .select()
     .single();
 
+  // The embedding column doesn't exist yet on this database — retry without
+  // it rather than losing the memory over a migration that hasn't landed.
+  if (error && embedding && missingColumnOrFunction(error)) {
+
+    ({ data, error } = await supabase
+      .from("memories")
+      .insert([{ type, content, importance }])
+      .select()
+      .single());
+
+  }
 
   if (error) {
     throw new Error(error.message);
@@ -57,6 +90,93 @@ export async function getMemories(
 
 
 
+// Retrieval, with a hard fallback to the old behaviour at every failure point:
+// no query, a missing embedding column, an OpenAI hiccup, or a network error
+// all land on the same blanket top-N-by-importance list this replaced. That
+// list is also genuinely correct (not just a fallback) when there's no single
+// topic to be relevant to — the daily observer scans everything at once, so
+// it deliberately never passes a query.
+export async function getRelevantMemories({ query, limit = 12, alwaysTop = 4 } = {}) {
+
+  if (!query) return getMemories(limit);
+
+  const embedding = await embed(query).catch(() => null);
+
+  if (!embedding) return getMemories(limit);
+
+  const { data, error } = await supabase.rpc("match_memories", {
+    query_embedding: embedding,
+    match_count: limit
+  });
+
+  if (error || !data) {
+
+    if (error && !missingColumnOrFunction(error)) {
+      console.error("MEMORY RETRIEVAL FAILED:", error.message);
+    }
+
+    return getMemories(limit);
+
+  }
+
+  // Blend in the handful of highest-importance memories even if they weren't
+  // semantically close to this query — a standing fact ("allergic to X")
+  // shouldn't disappear from every context just because today's question
+  // doesn't happen to mention it.
+  const important = await getMemories(alwaysTop).catch(() => []);
+
+  const seen = new Set(data.map(m => m.id));
+  const blended = [...data, ...important.filter(m => !seen.has(m.id))];
+
+  return blended.slice(0, limit);
+
+}
+
+
+// One-off: existing rows saved before this migration have no embedding.
+// Idempotent — only touches rows where embedding is still null, safe to
+// re-run. Not wired to any endpoint; run it once from a local script after
+// the SQL migration lands.
+export async function backfillMemoryEmbeddings() {
+
+  const { data: rows, error } = await supabase
+    .from("memories")
+    .select("id, content")
+    .is("embedding", null);
+
+  if (error) throw new Error(error.message);
+
+  let updated = 0;
+  const errors = [];
+
+  for (const row of rows || []) {
+
+    try {
+
+      const embedding = await embed(row.content);
+
+      if (!embedding) continue;
+
+      const { error: updateError } = await supabase
+        .from("memories")
+        .update({ embedding })
+        .eq("id", row.id);
+
+      if (updateError) throw new Error(updateError.message);
+
+      updated += 1;
+
+    } catch (error) {
+      errors.push({ id: row.id, error: error.message });
+    }
+
+  }
+
+  return { success: true, total: rows?.length || 0, updated, errors };
+
+}
+
+
 export async function deleteMemory(id) {
 
   const { error } = await supabase
@@ -73,11 +193,9 @@ export async function deleteMemory(id) {
 
 
 
-export async function getFormattedMemories(
-  limit = 20
-) {
+export async function getFormattedMemories({ query, limit = 20 } = {}) {
 
-  const memories = await getMemories(limit);
+  const memories = await getRelevantMemories({ query, limit });
 
 
   const grouped = {};

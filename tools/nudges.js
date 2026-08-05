@@ -1,5 +1,6 @@
 import openai from "../lib/openai.js";
 import { buildRichContext } from "../lib/context.js";
+import { getFormattedMemories } from "./memory.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
 import {
@@ -19,6 +20,14 @@ async function evaluateIntention(intention, context, tz) {
   const daysSinceSurfaced = intention.last_surfaced_at
     ? Math.floor(DateTime.now().diff(DateTime.fromISO(intention.last_surfaced_at), "days").days)
     : null;
+
+  // Each intention gets memories relevant to ITSELF, not the shared blanket
+  // list every other intention in this run also sees — "gym" and "call mom"
+  // shouldn't be judged against the same top-20-by-importance dump. The rest
+  // of context (bio, signals) is genuinely shared and fetched once by the
+  // caller; only the memory slice is worth re-fetching per intention.
+  const memories = await getFormattedMemories({ query: intention.content, limit: 10 })
+    .catch(() => context.memories);
 
   const response = await openai.chat.completions.create({
 
@@ -53,7 +62,7 @@ ${daysSinceSurfaced !== null ? `Last nudged about this ${daysSinceSurfaced} day(
 
 What you know about the user:
 Profile: ${context.bio || "(none)"}
-Recent memories: ${JSON.stringify(context.memories, null, 2)}
+Relevant memories: ${JSON.stringify(memories, null, 2)}
 
 Where things actually stand right now — real figures, already calculated:
 ${context.signals || "(none yet)"}

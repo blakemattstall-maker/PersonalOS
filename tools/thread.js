@@ -29,7 +29,7 @@ export async function respondToThread({
 
   const thought = await getDeepThoughtById(deep_thought_id);
   const priorTurns = await getThreadTurns(deep_thought_id);
-  const context = await buildRichContext();
+  const context = await buildRichContext({ query: `${thought.topic}. ${message}` });
 
 
   await createThreadTurn({ deep_thought_id, role: "user", message });
@@ -313,7 +313,7 @@ async function executePlanBuild({
     document = { reasoning: thought.content, deadline: null };
   }
 
-  const context = await buildRichContext();
+  const context = await buildRichContext({ query: thought.topic });
   const tz = await getUserTimezone();
 
   const today = DateTime.now().setZone(tz);

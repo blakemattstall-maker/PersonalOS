@@ -10,7 +10,7 @@ export async function answerQuestion({ question }) {
   }
 
 
-  const context = await buildRichContext();
+  const context = await buildRichContext({ query: question });
 
 
   const response = await openai.chat.completions.create({
