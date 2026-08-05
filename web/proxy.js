@@ -19,6 +19,11 @@ export function proxy(request) {
 }
 
 
+// sw.js, manifest.json and the icon must stay reachable without the cookie.
+// The browser fetches the service worker and manifest outside the page's
+// session, so gating them doesn't protect anything — it just makes the app
+// un-installable and push registration fail with no useful error. None of
+// the three contain anything private.
 export const config = {
-  matcher: ["/((?!login|_next/static|_next/image|favicon.ico).*)"]
+  matcher: ["/((?!login|_next/static|_next/image|favicon.ico|sw.js|manifest.json|icon.svg).*)"]
 };
