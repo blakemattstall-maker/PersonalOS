@@ -1,6 +1,7 @@
 import { toFile } from "openai";
 import openai from "../lib/openai.js";
 import supabase from "../lib/supabase.js";
+import { MODELS } from "../lib/models.js";
 
 
 // Skill-challenge half of the Practice tab. Record a pitch, get it
@@ -68,7 +69,7 @@ async function analyze(transcriptText, topic, fillerCounts) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     response_format: { type: "json_object" },
 

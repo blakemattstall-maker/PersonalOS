@@ -1,5 +1,6 @@
 import openai from "../lib/openai.js";
 import { buildRichContext } from "../lib/context.js";
+import { MODELS } from "../lib/models.js";
 
 
 export async function answerQuestion({ question }) {
@@ -15,7 +16,7 @@ export async function answerQuestion({ question }) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     messages: [
 

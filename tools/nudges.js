@@ -9,6 +9,7 @@ import {
   createNudge
 } from "./database.js";
 import { mapWithConcurrency } from "../lib/async.js";
+import { MODELS } from "../lib/models.js";
 
 
 async function evaluateIntention(intention, context, tz) {
@@ -31,7 +32,7 @@ async function evaluateIntention(intention, context, tz) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     response_format: { type: "json_object" },
 

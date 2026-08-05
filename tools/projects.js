@@ -11,6 +11,7 @@ import { DateTime } from "luxon";
 import { deleteGoogleTask } from "./googleTasks.js";
 import { deleteGoogleEvent } from "./googleCalendar.js";
 import { mapWithConcurrency } from "../lib/async.js";
+import { MODELS } from "../lib/models.js";
 
 
 export async function deleteProject({ project_id }) {
@@ -69,7 +70,7 @@ export async function queryProjects({
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     messages: [
 

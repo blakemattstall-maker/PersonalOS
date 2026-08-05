@@ -3,6 +3,7 @@ import openai from "../lib/openai.js";
 import supabase from "../lib/supabase.js";
 import { getUserTimezone, getProfileBio } from "../lib/profile.js";
 import { createEvent } from "./googleCalendar.js";
+import { MODELS } from "../lib/models.js";
 
 
 // Relationship management — Blake's framing, not a resurrection of anything
@@ -296,7 +297,7 @@ export async function queryPeople({ question } = {}) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.4-mini",
+    model: MODELS.EXTRACT,
 
     messages: [
 

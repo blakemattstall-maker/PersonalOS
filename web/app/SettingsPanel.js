@@ -379,6 +379,31 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
               </ul>
             </div>
 
+            {/* Supabase DDL can't be run from code, so every schema change is
+                a .sql file pasted in by hand — and every feature that depends
+                on a pending one degrades silently instead of failing. Without
+                this panel the only way to know retrieval memory was off was to
+                remember that the migration was never run. */}
+            {diag.schema && (
+              <div className="border-t border-border pt-3">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted">Database migrations</div>
+                <p className={`mt-1 ${diag.schema.pending?.length ? "text-accent" : "text-foreground"}`}>
+                  {diag.schema.verdict}
+                </p>
+                {diag.schema.pending?.length > 0 && (
+                  <ul className="mt-2 space-y-2 text-xs text-muted">
+                    {diag.schema.pending.map(m => (
+                      <li key={m.file}>
+                        <span className="text-foreground">{m.file.replace("docs/", "")}</span>
+                        {" — "}{m.purpose}
+                        <div className="mt-0.5">{m.breaksWithout}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
             <details className="border-t border-border pt-3">
               <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-muted">
                 What it knows about you

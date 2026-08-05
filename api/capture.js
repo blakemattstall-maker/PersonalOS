@@ -6,6 +6,7 @@ import { DateTime } from "luxon";
 import { getUserTimezone } from "../lib/profile.js";
 import { getPendingClarification, clearPendingClarification } from "../tools/pending.js";
 import { resumePendingClarification } from "../tools/modify.js";
+import { MODELS } from "../lib/models.js";
 
 export default async function handler(req, res) {
 
@@ -87,7 +88,7 @@ export default async function handler(req, res) {
       // way, with a third of the prompt. Memories used to be injected here
       // too — the router picks a tool and extracts arguments, and never needed
       // them; the tools that actually reason pull their own rich context.
-      model: "gpt-5.4-mini",
+      model: MODELS.ROUTER,
 
 
       messages: [

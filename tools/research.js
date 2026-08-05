@@ -1,5 +1,6 @@
 import openai from "../lib/openai.js";
 import { createNoteRecord } from "./database.js";
+import { MODELS } from "../lib/models.js";
 
 
 // Live web search — genuinely different from every other tool in this
@@ -14,9 +15,6 @@ import { createNoteRecord } from "./database.js";
 // requirements) and researching a PERSON (background before a meeting or
 // outreach) — both are just "a real question, answered with real sources,"
 // so one function covers both.
-
-const MODEL = "gpt-5.6-terra";
-
 
 function extractSources(response) {
 
@@ -46,7 +44,7 @@ export async function runWebSearch({ query }) {
   if (!query) throw new Error("runWebSearch requires a query.");
 
   const response = await openai.responses.create({
-    model: MODEL,
+    model: MODELS.JUDGMENT,
     tools: [{ type: "web_search" }],
     input: query
   });

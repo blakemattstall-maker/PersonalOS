@@ -2,6 +2,7 @@ import { waitUntil } from "@vercel/functions";
 import openai from "../lib/openai.js";
 import { buildRichContext } from "../lib/context.js";
 import { createDeepThoughtPlaceholder, updateDeepThoughtResult } from "./database.js";
+import { MODELS } from "../lib/models.js";
 
 
 async function runAnalysis({ id, topic }) {
@@ -12,7 +13,7 @@ async function runAnalysis({ id, topic }) {
 
     const response = await openai.chat.completions.create({
 
-      model: "gpt-5.6-sol",
+      model: MODELS.DEEP,
 
       response_format: { type: "json_object" },
 

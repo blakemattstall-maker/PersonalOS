@@ -119,6 +119,24 @@ export async function getRelevantMemories({ query, limit = 12, alwaysTop = 4 } =
 
   }
 
+  // Zero matches is not a valid retrieval result here, it's a symptom.
+  // match_memories() filters `where embedding is not null`, so an un-backfilled
+  // corpus returns [] for every query — and [] is truthy, so this used to sail
+  // past the guard above and fall through to the blend below, quietly handing
+  // every reasoning call only `alwaysTop` (4) memories instead of `limit` (12).
+  // No error, no log, no way to notice. Treat an empty result as "retrieval
+  // isn't working yet" and use the list that definitely does.
+  if (data.length === 0) {
+
+    console.warn(
+      "MEMORY RETRIEVAL returned no matches — memories are likely not embedded yet. " +
+      "Run backfillMemoryEmbeddings(). Falling back to top-N by importance."
+    );
+
+    return getMemories(limit);
+
+  }
+
   // Blend in the handful of highest-importance memories even if they weren't
   // semantically close to this query — a standing fact ("allergic to X")
   // shouldn't disappear from every context just because today's question

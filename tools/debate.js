@@ -1,5 +1,6 @@
 import openai from "../lib/openai.js";
 import supabase from "../lib/supabase.js";
+import { MODELS } from "../lib/models.js";
 
 
 // The sparring half of the Practice tab. The app argues a real position —
@@ -57,7 +58,7 @@ export async function startDebateSession({ news_item_id, user_side }) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     messages: [
 
@@ -136,7 +137,7 @@ export async function respondInDebate({ session_id, message }) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     messages: [
 
@@ -199,7 +200,7 @@ export async function endDebateSession({ session_id }) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     response_format: { type: "json_object" },
 

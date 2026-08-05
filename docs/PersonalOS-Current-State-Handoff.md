@@ -52,10 +52,55 @@ One cron file (`api/cron/[job].js`, dynamic route). `reviewIntentions` runs: com
 
 ---
 
+### Structural hardening (pre-mortem session, Aug 5)
+
+A full pre-mortem lives in `docs/PersonalOS-Premortem.md` — every way this project can
+fail, ordered fixes, and a rebuild brief in §3. Tier 0 of that list is done:
+
+- **`npm test` exists and passes (19 tests, offline, zero new dependencies).** Node's
+  built-in test runner. Covers the documented traps (Google Tasks date handling,
+  timezone-independent overdue classification, concurrency ordering, auth enforcement)
+  plus contract tests that catch a whole bug class: **every tool exposed to the model
+  must have a router case, and vice versa.** Forgetting the `lib/router.js` case for a
+  new tool used to surface only as a 500 on the phone.
+- **`npm run test:routing`** — the routing eval trap #5 asked for and nobody built. Runs
+  every phrase **4×**, and parses the live system prompt out of `api/capture.js` so it
+  can never drift from what production sends. Opt-in; it costs money.
+- **`lib/models.js`** — the model registry. All 20 hardcoded model strings across 20
+  files now resolve through one file, tiered by *what the call does* (`ROUTER`,
+  `EXTRACT`, `JUDGMENT`, `DEEP`, `EMBEDDING`). A test fails if anything hardcodes a
+  model string again. A provider deprecation is now a one-line edit.
+- **`lib/schema.js`** — probes which of the five `docs/schema-*.sql` files are actually
+  live, *and whether an applied one is doing anything*. Surfaced on `/settings`. This
+  found the inert-retrieval bug above within a minute.
+- **`package.json` was `"type": "commonjs"` while 100% of the source is ESM.** That is
+  why nothing in this repo could be run with plain `node`, which is why there were no
+  tests. Now `"module"`. Verified: zero `require`/`module.exports`/`__dirname` anywhere
+  in `tools/`, `lib/`, `api/`, `dev/`.
+- **`lib/supabase.js` now builds its client lazily.** It used to run `createClient` at
+  module scope, so importing *any* data-layer file threw without a full production
+  environment — the module graph was untestable by construction. In production this also
+  turned a missing env var into a cold-start crash before any handler ran; it now names
+  the missing variable at the point of use. Call sites are unchanged (a proxy forwards
+  property access).
+- **Fixed a real auth bug in `api/cron/[job].js`.** It compared
+  `` auth !== `Bearer ${process.env.CRON_SECRET}` ``, so with the variable unset the
+  literal string `Bearer undefined` authenticated anyone — letting a stranger trigger
+  `reviewIntentions` on demand: one LLM call per open intention, real push
+  notifications, and on Sundays `regenerateBio()`, the one destructive operation in the
+  system. Dormant-when-unset is preserved deliberately, but is now loud in the logs and
+  cannot be satisfied by a placeholder. Regression test included.
+
+**Still open from Tier 0:** verify the Vercel cron limit (see below).
+
+---
+
 ## Hard constraints — read before building
 
+- **✅ VERIFIED (Aug 5, fifth session): all four crons actually run on this account.** The pre-mortem's "~100-job cap" correction was itself checked directly rather than trusted — `npx vercel crons ls` shows all four registered, and Supabase has independent evidence of each firing on its own schedule the same day: `news_items` rows created at 11:36 UTC with no manual trigger (scheduled 11:00), a `briefs` row at 13:00:59 (scheduled 13:00), a `daily_metrics` rollup at 13:21 (scheduled 12:30). Timing runs ~30-50 minutes behind the exact minute, consistent with Hobby's documented "loose timing, may fire within the hour" — not evidence of a dropped job. Whatever cron-count limit applies to this specific account and plan, it is not currently binding. Re-verify only if a fifth cron gets added.
 - **`api/` is at 5/12 serverless functions**, down from 11 after the consolidation above. Plenty of headroom now — a new integration no longer forces a merge-or-block decision, but the dynamic-route pattern (`api/[resource].js`, `api/cron/[job].js`, `api/ingest/[kind].js`) is still the right shape for anything that's mostly reads behind one auth check.
-- **Supabase DDL is not reachable through PostgREST.** New tables require Blake to paste SQL into the Supabase dashboard. `docs/schema-additions.sql` and `docs/schema-settings.sql` are the precedent. **`app_settings` has NOT been run yet as of this writing** — `lib/settings.js` degrades gracefully (PGRST205 → defaults) rather than erroring, but the interruption dial won't persist until it exists.
+- **Supabase DDL is not reachable through PostgREST.** New tables require Blake to paste SQL into the Supabase dashboard. `docs/schema-additions.sql` and `docs/schema-settings.sql` are the precedent.
+- **Stop tracking migration state in this document — ask the database.** `lib/schema.js` probes for the real objects and reports which of the five `docs/schema-*.sql` files are live; the answer is on `/settings` and available from the CLI (see the README). This doc was wrong about it twice in one day, in both directions: `app_settings` was recorded as un-run and had in fact been applied, and `schema-memory-retrieval.sql` was recorded as un-run and had *also* been applied — while being completely inert (see below). Prose is not a migration ledger.
 - **`web/` is a separate Vercel project with its own function budget.** No longer "largely unused" — it now has its own serverless route (`/api/tts`) and needs its own env vars. **`OPENAI_API_KEY` was not yet set on the `web` project as of this session** — Blake was adding it himself; until it is, `/api/tts` returns 501 and the client falls back to the device voice.
 - **`web/` does not auto-deploy.** After changing it: `cd web && npx vercel --prod --yes`.
 - **Auth is live, and `API_SECRET`/`BACKEND_KEY`/`SITE_PASSPHRASE` are marked "sensitive" in Vercel.** That means `vercel env pull` returns a `[Encrypted]` placeholder for them, not the real value — **there is no CLI/API way to read them back**, by design. Don't waste time trying. Test authenticated backend routes either through the live web dashboard (which holds `BACKEND_KEY` server-side) or by running both projects locally via `vercel dev` with those vars unset (auth is dormant when unset, same pattern as always). Location ingest still additionally accepts `?key=` with a **separate scoped token** (`LOCATION_INGEST_KEY`) because Overland cannot send headers — that one wasn't marked sensitive and is still readable locally.
@@ -100,7 +145,7 @@ One cron file (`api/cron/[job].js`, dynamic route). `reviewIntentions` runs: com
 ## Agreed direction, in order
 
 1. ~~Consolidate the remaining `api/` files.~~ **Done, third Aug 5 session.** No Google Cloud Console redirect URI change was actually needed — the OAuth dynamic route matches the same two paths the old two files did.
-2. ~~Retrieval-based memory (S6).~~ **Code done and deployed, fourth Aug 5 session — `docs/schema-memory-retrieval.sql` has NOT been run yet.** Falls back to the old blanket-top-N behavior until it is (verified against the live pre-migration database, including one real bug caught in the fallback's own error detection before it shipped). Once Blake runs the SQL, existing memories still need a one-time backfill — `backfillMemoryEmbeddings()` in `tools/memory.js`, not wired to any endpoint, run it from a local script.
+2. ~~Retrieval-based memory (S6).~~ **Done, and now genuinely live as of the Aug 5 pre-mortem session.** The migration had in fact already been applied — but **no memory had ever been embedded**, so `match_memories()` (which filters `where embedding is not null`) returned zero rows for every query, forever. Zero rows is truthy, so it sailed past the error guard in `getRelevantMemories()` and fell through to the blend step, quietly handing every reasoning call **4 memories instead of 12**, with no error and no log anywhere. Fixed in three places: `getRelevantMemories()` now treats an empty result as a symptom rather than an answer; `lib/schema.js` reports "applied but inert" as its own state; and the backfill has been run (7/7 embedded, semantic ranking verified — a gym query now ranks "prefers evening workouts" top at 0.397). **This is the canonical instance of the failure mode in pre-mortem §1.3: a feature reported as shipped, silently degraded, for an unknown number of days.**
 3. **News/debate + skill challenges — Blake wants these bundled, Aug 5 fourth session.** He noticed they share a core model: both are "the app engages you in an interactive practice loop and gives feedback," not "the app shows you information." Proposed as one feature area with one dashboard tab rather than two separate builds — naming/shape not yet confirmed with him (see below). **Do this after retrieval memory, before the two below** — his explicit ordering, given as a demo-strength argument for memory.
 4. **Relationship management (new scope, Aug 5 fourth session).** Blake's framing: a people/contacts table other features can reference, not a standalone feature — think of it as an entity the rest of the system points at. He wants it able to (a) create calendar events for things involving that person, (b) run periodic check-in nudges keyed to a relationship rather than a task or intention. Not yet scoped into a real table design — genuinely new work, not a resurrection of something half-built.
 5. **Live web search (approved long ago, scope sharpened Aug 5 fourth session).** Two concrete use cases now, not just "planning materials": researching a *project* (unchanged) and researching a *person* — which is the natural link to item 4 above, e.g. looking someone up before a relationship check-in or an intro.

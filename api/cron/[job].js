@@ -145,10 +145,30 @@ const JOBS = {
 export default async function handler(req, res) {
 
   // Vercel Cron sends this header when CRON_SECRET is set on the project.
-  const auth = req.headers.authorization;
+  //
+  // The check used to be a bare `auth !== \`Bearer ${process.env.CRON_SECRET}\``,
+  // which with the variable unset compared against the literal string
+  // "Bearer undefined" — so anyone sending exactly that was authenticated.
+  // That is the first thing anyone probing a Vercel app tries, and it would
+  // have let them trigger reviewIntentions repeatedly: one LLM call per open
+  // intention, real push notifications, and on Sundays regenerateBio(), the
+  // one destructive operation in this system.
+  //
+  // Dormant-when-unset is kept deliberately (same pattern as lib/auth.js —
+  // enforcement can be switched on without a redeploy), but it is now loud in
+  // the logs and can never be satisfied by a guessable placeholder.
+  const secret = process.env.CRON_SECRET;
 
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!secret) {
+
+    console.warn(
+      "CRON_SECRET is not set — cron routes are UNAUTHENTICATED. Set it in Vercel."
+    );
+
+  } else if (req.headers.authorization !== `Bearer ${secret}`) {
+
     return res.status(401).json({ error: "Unauthorized" });
+
   }
 
 

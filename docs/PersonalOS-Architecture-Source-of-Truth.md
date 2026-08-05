@@ -55,8 +55,8 @@ Every domain has a query tool. Result budgets are respected (limits on notes/mem
 ### S2. Two-way sync — still not built, and lower priority than v1.1 assumed
 The original reasoning ("Google is written to and never read from, silent divergence") turned out to be less urgent in practice, because the query tools read **live from Google**, not from Supabase's copy. Supabase's task/event rows are mostly used for idempotency (`google_task_id`/`google_event_id` uniqueness) and project linkage (`project_id`, `sequence_order`), not as the thing the user actually queries. Revisit if something starts depending on Supabase's completion-status field specifically.
 
-### S3. Background execution — ✅ done
-Three daily crons on Hobby (well under the ~100-job cap). `waitUntil` (`@vercel/functions`) is also in active use for a different purpose than originally scoped in v1.1 — not just "cron jobs," but **deferred work within a request** (deep-thinking's ack-then-analyze pattern). This is a second background-execution primitive worth knowing about: cron for *scheduled* work, `waitUntil` for *request-triggered-but-slow* work that shouldn't block the response.
+### S3. Background execution — ✅ done, with one unverified assumption
+Four daily crons on Hobby. **The "~100-job cap" this document previously claimed is an Enterprise figure — Vercel Hobby is documented at 2 cron jobs.** This was never checked against the actual account and may mean two of the four schedules have never fired. See the handoff doc's hard-constraints section; verify before adding a fifth. `waitUntil` (`@vercel/functions`) is also in active use for a different purpose than originally scoped in v1.1 — not just "cron jobs," but **deferred work within a request** (deep-thinking's ack-then-analyze pattern). This is a second background-execution primitive worth knowing about: cron for *scheduled* work, `waitUntil` for *request-triggered-but-slow* work that shouldn't block the response.
 
 ### S4. Scalable tool routing — ✅ done
 Native OpenAI tool calling, ~13 tools now. The predicted payoff (adding a tool is just a schema entry + router case, no prompt engineering) has held up repeatedly — every tool added since Phase F took minutes, not a prompt-tuning session.
@@ -66,8 +66,12 @@ v1.1 said "no web app yet, cron → Supabase → Shortcuts pull." That held for 
 
 **True push notifications were researched (Pushcut, ~$2-4/mo) and explicitly declined.** The fallback — native "Show Notification" + a Home Screen web-app icon — means "proactive" in practice still means "the phone pulls when you next open the dashboard," same core constraint as v1.1 identified, just with a nicer surface to pull into.
 
-### S6. Retrieval-based memory — still not built
-Blanket top-N by importance, unchanged from v1.1. Lower urgency than originally assumed — memory count hasn't grown large enough yet to dilute attention meaningfully. Revisit once it does.
+### S6. Retrieval-based memory — ✅ built, and it taught the most important lesson in this document
+Semantic retrieval via pgvector + `match_memories()`, with a blanket-top-N fallback at every failure point.
+
+**The lesson isn't the feature, it's how it failed.** The migration was applied and the code was deployed, and it did nothing at all for days: no memory had been embedded, so the RPC returned zero rows for every query — and zero rows is *truthy*, so it passed the error guard and fell through to a blend step that handed every reasoning call four memories instead of twelve. No error. No log. The system reported itself healthy the entire time.
+
+Generalise this: **a migration being applied is not the same as a feature being active, and graceful degradation without a health signal is indistinguishable from working.** Every "falls back safely" branch in this codebase is also a place the system can lie about itself. `lib/schema.js` now exists to ask the database directly rather than trusting a document — and it reports "applied but inert" as its own distinct state, because that is the state that looks healthiest and isn't.
 
 ### S7. Entity graph — partially emerged, not deliberately built
 `tasks.project_id`, `calendar_events.project_id`, `tasks.sequence_order`, `deep_thoughts.project_id` — direct FKs, not the generic `entity_links` table v1.1 recommended. This has been sufficient so far because the actual need (linking tasks/events to a project, in sequence) was narrower than the generic case v1.1 anticipated. Revisit the generic link-table idea only if a genuinely many-to-many relationship shows up (e.g., a task relevant to two projects).
@@ -90,7 +94,9 @@ Most of v1.1 §4's analysis held up well. Notable deltas:
 
 ## 5. Cost & model strategy — now real, not aspirational
 
-v1.1 recommended tiered model selection "invoked deliberately." That's now implemented and the builder has granted **standing discretion** to adjust it without asking:
+v1.1 recommended tiered model selection "invoked deliberately." That's now implemented and the builder has granted **standing discretion** to adjust it without asking.
+
+**The tiers now live in `lib/models.js`, not in twenty separate string literals.** Call sites name the tier by what the call *does* (`MODELS.ROUTER`, `MODELS.EXTRACT`, `MODELS.JUDGMENT`, `MODELS.DEEP`, `MODELS.EMBEDDING`), so re-tiering a whole class of work is a one-line edit and a provider deprecation is not a twenty-file sweep. A test in `tests/contract.test.js` fails if anything hardcodes a model string again. The mapping below is the policy that file encodes:
 
 - `gpt-4o-mini` — routing, `query_tasks`/`query_schedule`/`query_notes` (high-frequency, simple extraction/synthesis)
 - `gpt-5.6-terra` — `general_question` (carries full rich context now, needed more than mini could give), nudge evaluation, `query_projects`

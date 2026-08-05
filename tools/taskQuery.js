@@ -2,6 +2,7 @@ import openai from "../lib/openai.js";
 import { getTasks, taskDueDate } from "./googleTasks.js";
 import { getUserTimezone, getProfileBio } from "../lib/profile.js";
 import { DateTime } from "luxon";
+import { MODELS } from "../lib/models.js";
 
 
 export async function queryTasks({
@@ -62,7 +63,7 @@ export async function queryTasks({
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.4-mini",
+    model: MODELS.EXTRACT,
 
     messages: [
 

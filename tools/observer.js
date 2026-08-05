@@ -6,6 +6,7 @@ import { getRecentMetrics } from "./metrics.js";
 import { sendPush } from "../lib/push.js";
 import { pushAllowed } from "../lib/settings.js";
 import { getUserTimezone } from "../lib/profile.js";
+import { MODELS } from "../lib/models.js";
 
 
 // The observer — the part that makes this an app that initiates rather than one
@@ -92,7 +93,7 @@ export async function runDailyObservation({ dryRun = false } = {}) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     response_format: { type: "json_object" },
 

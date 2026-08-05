@@ -17,6 +17,7 @@ import { createTask } from "./googleTasks.js";
 import { createEvent } from "./googleCalendar.js";
 import { mapWithConcurrency } from "../lib/async.js";
 import { runWebSearch } from "./research.js";
+import { MODELS } from "../lib/models.js";
 
 
 export async function respondToThread({
@@ -48,7 +49,7 @@ export async function respondToThread({
     // action, same extracted facts, comparably sharp reply — at 9.7s vs 13.4s
     // and $0.0077 vs $0.0165 per turn. The opening deep-thinking analysis,
     // which is occasional and higher-stakes, stays on sol.
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     response_format: { type: "json_object" },
 
@@ -328,7 +329,7 @@ async function executePlanBuild({
     // analysis into a sequenced task list is structured generation, not the
     // hard judgment call sol is worth paying for; terra does it in ~13s.
     // The deep thinking itself stays on sol.
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     response_format: { type: "json_object" },
 

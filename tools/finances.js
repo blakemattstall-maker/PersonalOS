@@ -2,6 +2,7 @@ import openai from "../lib/openai.js";
 import { DateTime } from "luxon";
 import { getFinancialData } from "../lib/simplefin.js";
 import { getUserTimezone, getProfileBio } from "../lib/profile.js";
+import { MODELS } from "../lib/models.js";
 
 
 // Every number here is computed in code, never by the model. Asking a language
@@ -99,7 +100,7 @@ export async function queryFinances({ question, days = 30 } = {}) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     messages: [
 

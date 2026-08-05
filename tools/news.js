@@ -1,6 +1,7 @@
 import Parser from "rss-parser";
 import openai from "../lib/openai.js";
 import supabase from "../lib/supabase.js";
+import { MODELS } from "../lib/models.js";
 
 
 // The daily news digest behind the Practice tab's debate mode.
@@ -90,7 +91,7 @@ async function frame(candidate) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     response_format: { type: "json_object" },
 

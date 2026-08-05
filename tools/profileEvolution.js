@@ -3,6 +3,7 @@ import { getProfile, clearProfileCache } from "../lib/profile.js";
 import { getMemories } from "./memory.js";
 import { logActivity } from "./activityLog.js";
 import supabase from "../lib/supabase.js";
+import { MODELS } from "../lib/models.js";
 
 
 // The bio is the single richest thing the system knows about the user, and it
@@ -39,7 +40,7 @@ export async function regenerateBio() {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.6-terra",
+    model: MODELS.JUDGMENT,
 
     messages: [
 

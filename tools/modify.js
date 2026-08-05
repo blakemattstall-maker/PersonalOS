@@ -4,6 +4,7 @@ import { getUserTimezone } from "../lib/profile.js";
 import { getTasks, completeTaskByGoogleId, rescheduleTaskByGoogleId, deleteTaskByGoogleId, taskDueDate } from "./googleTasks.js";
 import { getEvents, rescheduleEventByGoogleId, deleteEventByGoogleId } from "./googleCalendar.js";
 import { savePendingClarification } from "./pending.js";
+import { MODELS } from "../lib/models.js";
 
 
 // The system could create things but never change them. The functions to
@@ -31,7 +32,7 @@ async function resolveTarget({ description, candidates, kind }) {
 
   const response = await openai.chat.completions.create({
 
-    model: "gpt-5.4-mini",
+    model: MODELS.EXTRACT,
 
     response_format: { type: "json_object" },
 
