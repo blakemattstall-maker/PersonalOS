@@ -16,6 +16,7 @@ import { saveMemory } from "./memory.js";
 import { createTask } from "./googleTasks.js";
 import { createEvent } from "./googleCalendar.js";
 import { mapWithConcurrency } from "../lib/async.js";
+import { runWebSearch } from "./research.js";
 
 
 export async function respondToThread({
@@ -364,9 +365,14 @@ Generate:
 3. Mark any task that's tied to a specific time (not just a day) with
    needs_calendar_event: true and a time_of_day ("HH:MM", 24-hour).
 4. Any planning material worth writing now — a short brief or
-   checklist. (Live web research isn't available yet — if research
-   would genuinely help, say so in a material instead of pretending to
-   have looked it up.)
+   checklist. If a material genuinely needs current, real-world
+   information you don't actually know — specific prices, real vendors
+   or businesses, a person's public background, anything time-sensitive
+   — set its type to "research" and its content to the SPECIFIC
+   question to search, not an invented answer. A real web search will
+   run on that exact question and replace it with grounded, cited
+   results before this is saved. Everything else is type "document",
+   written normally.
 
 Return ONLY JSON:
 {
@@ -383,7 +389,8 @@ Return ONLY JSON:
     }
   ],
   "materials": [
-    { "type": "document", "title": "...", "content": "..." }
+    { "type": "document", "title": "...", "content": "..." },
+    { "type": "research", "title": "...", "content": "the search question" }
   ]
 }
 `
@@ -483,7 +490,38 @@ Return ONLY JSON:
   });
 
 
-  await mapWithConcurrency(plan.materials || [], (m) =>
+  // A material the model marked "research" carries a search QUESTION in
+  // content, not an answer — this is where that actually gets asked, for
+  // real, against the live web, before anything is saved. If the search
+  // itself fails, the material still gets created (a build shouldn't die
+  // over one lookup), just honestly marked as unresolved rather than
+  // silently saving the question as if it were the answer.
+  const resolvedMaterials = await mapWithConcurrency(plan.materials || [], async (m) => {
+
+    if (m.type !== "research") return m;
+
+    try {
+
+      const result = await runWebSearch({ query: m.content });
+
+      const content = result.sources.length
+        ? `${result.answer}\n\nSources:\n${result.sources.map(s => `- ${s.title}: ${s.url}`).join("\n")}`
+        : result.answer;
+
+      return { ...m, type: "document", content };
+
+    } catch (error) {
+
+      console.error("PLAN RESEARCH FAILED:", error.message);
+
+      return { ...m, type: "document", content: `Research on "${m.content}" didn't complete (${error.message}) — worth looking up by hand.` };
+
+    }
+
+  });
+
+
+  await mapWithConcurrency(resolvedMaterials, (m) =>
     createProjectMaterial({
       project_id: project.id,
       type: m.type,
