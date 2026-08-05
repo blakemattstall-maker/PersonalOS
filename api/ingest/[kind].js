@@ -46,9 +46,27 @@ const HANDLERS = { location, push };
 
 export default async function handler(req, res) {
 
-  if (!requireAuth(req, res)) return;
+  const kind = req.query.kind;
 
-  const run = HANDLERS[req.query.kind];
+  // Overland has no way to send a custom header — it just POSTs to whatever
+  // URL you give it. So location ingest also accepts a token in the query
+  // string, which is normally the wrong place for a credential: query strings
+  // end up in server logs and referrers.
+  //
+  // The mitigation is that this is a DIFFERENT secret from API_SECRET and is
+  // accepted on this path only. If it leaks from a log it lets someone insert
+  // fake GPS points — bad, but bounded — rather than read the profile,
+  // finances and deep-thinking history that API_SECRET protects.
+  const scopedKey = process.env.LOCATION_INGEST_KEY;
+
+  const viaScopedKey =
+    kind === "location" &&
+    scopedKey &&
+    req.query.key === scopedKey;
+
+  if (!viaScopedKey && !requireAuth(req, res)) return;
+
+  const run = HANDLERS[kind];
 
   if (!run) {
     return res.status(404).json({ error: `Unknown ingest kind: ${req.query.kind}` });
