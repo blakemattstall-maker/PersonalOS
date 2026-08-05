@@ -55,6 +55,9 @@ What you know about the user:
 Profile: ${context.bio || "(none)"}
 Recent memories: ${JSON.stringify(context.memories, null, 2)}
 
+Where things actually stand right now — real figures, already calculated:
+${context.signals || "(none yet)"}
+
 Return ONLY JSON:
 {
   "should_nudge": boolean,

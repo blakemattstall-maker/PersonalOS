@@ -37,6 +37,9 @@ Recent memories:
 
 ${JSON.stringify(context.memories, null, 2)}
 
+Where things actually stand right now — real figures, already calculated:
+${context.signals || "(none yet)"}
+
 
 ANSWER STYLE:
 

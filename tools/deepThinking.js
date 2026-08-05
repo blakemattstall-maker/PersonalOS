@@ -47,6 +47,10 @@ ${context.bodyweightTrend || "(no bodyweight data yet)"}
 Recent memories:
 ${JSON.stringify(context.memories, null, 2)}
 
+Where things actually stand right now — real figures, already calculated,
+use them as fact and never re-total them:
+${context.signals || "(no cross-domain data yet)"}
+
 Return ONLY a JSON object with this exact shape:
 
 {
