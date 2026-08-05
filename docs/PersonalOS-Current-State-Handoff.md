@@ -1,7 +1,7 @@
 # PersonalOS — Current State Handoff
 
-**Date:** August 5, 2026
-**Purpose:** Bring a new assistant up to speed on exactly where this project stands. Read alongside `PersonalOS-Architecture-Source-of-Truth.md` (the *why*). The system changed enormously across two long sessions on Aug 4–5 — **do not trust anything dated before Aug 5 without checking it against live code.**
+**Date:** August 5, 2026 (updated same day, third session)
+**Purpose:** Bring a new assistant up to speed on exactly where this project stands. Read alongside `PersonalOS-Architecture-Source-of-Truth.md` (the *why*). The system changed enormously across three sessions on Aug 4–5 — **do not trust anything dated before this without checking it against live code.**
 
 ---
 
@@ -43,15 +43,22 @@ Create tasks/events. **`modify_task` / `modify_event`** complete, reschedule, de
 ### Background
 One cron file (`api/cron/[job].js`, dynamic route). `reviewIntentions` runs: completions → nudges + cascade → metrics → observer → (Sundays) bio regeneration.
 
+### Settings, diagnostics, neural TTS (new, third Aug 5 session)
+- **`api/[resource].js`** collapsed `data`/`history`/`projects`/`nudges`/`deepThoughts` into one dynamic route, and `api/auth/google/[step].js` collapsed the OAuth pair. **No public URL changed** — Shortcut and web dashboard call the exact same paths as before; `/api/brief/latest` survives via a `vercel.json` rewrite to `/api/brief` since it's two path segments and can't match a one-segment dynamic file.
+- **`lib/settings.js`** — `app_settings` table (not yet created — see below) holds the interruption dial (`silent` / `digest` / `digest_plus_urgent` / `everything`). `tools/observer.js` now calls `pushAllowed()` before sending a push; the observation is still written either way, only the buzz is gated.
+- **`lib/diagnostics.js`** — one real answer to "is this actually working": Overland delivery history (every attempt now logged via `logActivity` in `api/ingest/[kind].js`, success or empty), push subscription state, last cron run ages, table row counts. Surfaced at `/settings`.
+- **Neural TTS** — `web/app/api/tts/route.js`, `gpt-4o-mini-tts` with a `tts-1` fallback. Built because **iOS does not expose downloaded Enhanced/Premium voices to the Web Speech API on any web page** — the old picker's "Bubbles/Cello" problem was a WebKit wall, not a bug. This is why it's server-side now. Device voices remain as an offline fallback with novelty voices filtered out. Lives in the `web/` project, not the API backend.
+- **Gear icon on the dashboard** opens `/settings`: appearance (light/dark/system, via a blocking inline script so it never flashes), reading voice, notifications, interruption dial, diagnostics.
+
 ---
 
 ## Hard constraints — read before building
 
-- **`api/` is at 11/12 serverless functions.** Vercel Hobby caps at 12. Any new endpoint must fold into an existing file or a dynamic route. `api/ingest/[kind].js` and `api/cron/[job].js` are the patterns.
-- **Supabase DDL is not reachable through PostgREST.** New tables require Blake to paste SQL into the Supabase dashboard. `docs/schema-additions.sql` is the precedent.
-- **`web/` is a separate Vercel project with its own function budget, largely unused.** Read-only dashboards can query Supabase directly and cost zero backend functions.
+- **`api/` is at 5/12 serverless functions**, down from 11 after the consolidation above. Plenty of headroom now — a new integration no longer forces a merge-or-block decision, but the dynamic-route pattern (`api/[resource].js`, `api/cron/[job].js`, `api/ingest/[kind].js`) is still the right shape for anything that's mostly reads behind one auth check.
+- **Supabase DDL is not reachable through PostgREST.** New tables require Blake to paste SQL into the Supabase dashboard. `docs/schema-additions.sql` and `docs/schema-settings.sql` are the precedent. **`app_settings` has NOT been run yet as of this writing** — `lib/settings.js` degrades gracefully (PGRST205 → defaults) rather than erroring, but the interruption dial won't persist until it exists.
+- **`web/` is a separate Vercel project with its own function budget.** No longer "largely unused" — it now has its own serverless route (`/api/tts`) and needs its own env vars. **`OPENAI_API_KEY` was not yet set on the `web` project as of this session** — Blake was adding it himself; until it is, `/api/tts` returns 501 and the client falls back to the device voice.
 - **`web/` does not auto-deploy.** After changing it: `cd web && npx vercel --prod --yes`.
-- **Auth is live.** All data endpoints require `x-pos-key`. Location ingest additionally accepts `?key=` with a **separate scoped token** (`LOCATION_INGEST_KEY`) because Overland cannot send headers.
+- **Auth is live, and `API_SECRET`/`BACKEND_KEY`/`SITE_PASSPHRASE` are marked "sensitive" in Vercel.** That means `vercel env pull` returns a `[Encrypted]` placeholder for them, not the real value — **there is no CLI/API way to read them back**, by design. Don't waste time trying. Test authenticated backend routes either through the live web dashboard (which holds `BACKEND_KEY` server-side) or by running both projects locally via `vercel dev` with those vars unset (auth is dormant when unset, same pattern as always). Location ingest still additionally accepts `?key=` with a **separate scoped token** (`LOCATION_INGEST_KEY`) because Overland cannot send headers — that one wasn't marked sensitive and is still readable locally.
 - **`sw.js`, `manifest.json`, `icon.svg` must stay excluded from the `proxy.js` matcher** — the browser fetches them outside the page session.
 
 ---
@@ -64,6 +71,7 @@ One cron file (`api/cron/[job].js`, dynamic route). `reviewIntentions` runs: com
 4. **A client timeout does not mean the server failed.** A timed-out `buildPlan` had succeeded; the retry built a second project with real Google tasks.
 5. **Single-sample evals hide flakiness.** "Move my dentist appointment to Thursday" passed once and still failed in production. Run routing evals 4× per phrase, and have the eval parse the real prompt out of `api/capture.js` so it can't drift.
 6. **Completed Google tasks are invisible to the normal read path** — test residue survives cleanup and pollutes completion history.
+7. **Overland stopping after ~15–20 minutes backgrounded** almost always means iOS Location Services for it is set to "While Using the App" instead of "Always" — that grace period before iOS cuts background delivery lines up with the timing exactly. Distinct from force-quitting the app (swiping it away in the app switcher), which kills background location instantly and unfixably by any app-level setting — that's an OS rule, not a bug. The `/settings` diagnostics page shows live point age, which is the fast way to confirm a fix actually worked instead of waiting to be told.
 
 ---
 
@@ -91,11 +99,12 @@ One cron file (`api/cron/[job].js`, dynamic route). `reviewIntentions` runs: com
 
 ## Agreed direction, in order
 
-1. **Consolidate the remaining `api/` files.** Auth pair → one (**needs Blake to update the Google Cloud Console redirect URI**), six resource endpoints → one or two (needs `web/` updated in the same change).
+1. ~~Consolidate the remaining `api/` files.~~ **Done, third Aug 5 session.** No Google Cloud Console redirect URI change was actually needed — the OAuth dynamic route matches the same two paths the old two files did.
 2. **Retrieval-based memory (S6).** Now the budget control, not a nice-to-have.
-3. **Correlation engine** — once `daily_metrics` has 4–8 weeks. **Do not ship trend claims before then.**
-4. **Skill challenges** — record a 1-min pitch, analyse filler words/contradictions. Deferred by agreement until push and location are proven.
+3. **Correlation engine** — once `daily_metrics` has 4–8 weeks of *paired* history. Location started actually delivering this session (see below), so the clock on this has meaningfully started. **Do not ship trend claims before then.**
+4. **Skill challenges** — record a 1-min pitch, analyse filler words/contradictions. Was deferred until push and location were proven; **both are proven now**, so this is unblocked.
 5. Live web search for planning materials (approved long ago, never built).
+6. **News/debate feature (new idea, Aug 5, not yet scoped or built).** Blake wants a low-effort-entry way to build world-affairs knowledge and debate skill — a small daily digest (RSS/wire sources) with good-faith framing of multiple sides plus a "why this matters" primer, and a sparring mode where the app argues a real position and grades his response. Fits the existing architecture cheaply (one more cron job, one small table, one dashboard section) but needs a real spec before building — don't start without checking in on the shape first.
 
 ### Product decisions already made — don't re-litigate
 - **Interruption budget: one digest a day + genuinely urgent only.** He said twenty a week "takes the magic out of it". A muted app kills every other feature.
@@ -108,7 +117,7 @@ One cron file (`api/cron/[job].js`, dynamic route). `reviewIntentions` runs: com
 
 ## Honest state of the data
 
-This is a system that has been **built far faster than it has been lived in.** As of Aug 5: 7 memories, 1 intention, 0 projects, 2 deep thoughts, 9 recovered task completions, 30 days of transactions, 0 location points.
+This is a system that has been **built far faster than it has been lived in.** As of the third Aug 5 session: 7 memories, 1 intention, 0 projects, 2 deep thoughts, 9 recovered task completions, 30 days of transactions. Location flipped from 0 to real, live data mid-session — Overland started delivering ~900 points in a single afternoon once configured correctly, roughly one every 10 minutes. Whether it keeps delivering after the phone is left alone for real depends on the "While Using" vs "Always" permission fix above.
 
 **Every proactive feature works and is waiting on data.** The observer will be quiet and the correlations will be absent until weeks of history accumulate. That is correct behaviour, not a bug — and the system is explicitly instructed not to invent patterns below 14 days of history, because a fabricated correlation is how it would permanently lose his trust.
 
