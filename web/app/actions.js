@@ -74,3 +74,37 @@ export async function deleteProjectAction(id) {
   return result;
 
 }
+
+
+export async function getVapidKeyAction() {
+
+  const key = process.env.BACKEND_KEY;
+
+  const res = await fetch(`${process.env.BACKEND_URL}/api/ingest/push`, {
+    cache: "no-store",
+    headers: key ? { "x-pos-key": key } : {}
+  });
+
+  return res.json();
+
+}
+
+
+export async function subscribeToPushAction(subscription) {
+
+  const result = await backendPost("/api/ingest/push", { subscription });
+
+  return result;
+
+}
+
+
+export async function answerPromptAction(id, answer) {
+
+  const result = await backendPost("/api/data", { type: "prompt", id, answer });
+
+  revalidatePath("/");
+
+  return result;
+
+}

@@ -24,6 +24,8 @@
     "googleapis": "^173.0.0",
     "luxon": "^3.7.2",
     "node-ical": "^0.27.1",
-    "openai": "^7.3.0"
+    "openai": "^7.3.0",
+    "tz-lookup": "^6.1.25",
+    "web-push": "^3.6.7"
   }
 }

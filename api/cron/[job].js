@@ -6,6 +6,8 @@ import { reviewIntentionsForNudges } from "../../tools/nudges.js";
 import { checkProjectDeadlines } from "../../tools/projectCheckup.js";
 import { regenerateBio } from "../../tools/profileEvolution.js";
 import { syncTaskCompletions } from "../../tools/completions.js";
+import { rollupDailyMetrics } from "../../tools/metrics.js";
+import { runDailyObservation } from "../../tools/observer.js";
 import { getUserTimezone } from "../../lib/profile.js";
 import { DateTime } from "luxon";
 
@@ -84,9 +86,31 @@ async function reviewIntentions() {
   }
 
 
+  // Metrics roll up after completions and the cascade so the day's row
+  // reflects them, and the observer runs last so it sees the fresh numbers.
+  let metricsResult = null;
+  let observationResult = null;
+
+  try {
+    metricsResult = await rollupDailyMetrics();
+  } catch (error) {
+    console.error("METRICS ROLLUP FAILED:", error.message);
+    metricsResult = { success: false, error: error.message };
+  }
+
+  try {
+    observationResult = await runDailyObservation();
+  } catch (error) {
+    console.error("DAILY OBSERVATION FAILED:", error.message);
+    observationResult = { success: false, error: error.message };
+  }
+
+
   return {
     success: true,
     completions: completionResult,
+    metrics: metricsResult,
+    observation: observationResult,
     nudges: nudgeResult,
     projects: projectResult,
     profile: profileResult

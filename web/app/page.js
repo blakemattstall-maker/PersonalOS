@@ -4,6 +4,8 @@ import ResolveButton from "./ResolveButton.js";
 import DeepThoughtThread from "./DeepThoughtThread.js";
 import ProjectDeleteButton from "./ProjectDeleteButton.js";
 import VoicePicker from "./VoicePicker.js";
+import PushSetup from "./PushSetup.js";
+import PromptCard from "./PromptCard.js";
 import { backendGet } from "./backend.js";
 
 
@@ -55,6 +57,23 @@ async function getPendingDeepThoughts() {
     );
 
     return withTurns;
+
+  } catch (error) {
+
+    return [];
+
+  }
+
+}
+
+
+async function getPendingPrompts() {
+
+  try {
+
+    const data = await backendGet("/api/data?prompts=1");
+
+    return data.prompts || [];
 
   } catch (error) {
 
@@ -117,16 +136,18 @@ function NudgeCard({ item }) {
 
 export default async function Home() {
 
-  const [brief, pendingThoughts, pendingNudges, projects] = await Promise.all([
+  const [brief, pendingThoughts, pendingNudges, projects, prompts] = await Promise.all([
     getBrief(),
     getPendingDeepThoughts(),
     getPendingNudges(),
-    getActiveProjects()
+    getActiveProjects(),
+    getPendingPrompts()
   ]);
 
   const needsYou = [
     ...pendingThoughts.map(t => ({ ...t, kind: "thought" })),
-    ...pendingNudges.map(n => ({ ...n, kind: "nudge" }))
+    ...pendingNudges.map(n => ({ ...n, kind: "nudge" })),
+    ...prompts.map(p => ({ ...p, kind: "prompt" }))
   ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   return (
@@ -163,7 +184,9 @@ export default async function Home() {
               {needsYou.map((item) => (
                 item.kind === "thought"
                   ? <DeepThoughtThread key={`thought-${item.id}`} thought={item} turns={item.turns || []} />
-                  : <NudgeCard key={`nudge-${item.id}`} item={item} />
+                  : item.kind === "prompt"
+                    ? <PromptCard key={`prompt-${item.id}`} item={item} />
+                    : <NudgeCard key={`nudge-${item.id}`} item={item} />
               ))}
             </div>
 
@@ -252,6 +275,8 @@ export default async function Home() {
           </div>
 
         </section>
+
+        <PushSetup />
 
         <VoicePicker />
 
