@@ -4,6 +4,7 @@ import { DateTime } from "luxon";
 import { buildRichContext } from "../lib/context.js";
 import { getRecentMetrics } from "./metrics.js";
 import { sendPush } from "../lib/push.js";
+import { pushAllowed } from "../lib/settings.js";
 import { getUserTimezone } from "../lib/profile.js";
 
 
@@ -189,17 +190,25 @@ Return ONLY JSON:
     .single();
 
 
-  const push = await sendPush({
-    title: verdict.title || "PersonalOS",
-    body: verdict.body,
-    url: "/",
-    tag: "daily-digest"
-  });
+  // The prompt row is written either way. Turning notifications off should mean
+  // "stop buzzing my phone", not "stop thinking" — the observation still shows
+  // up on the dashboard next time it's opened.
+  const allowed = await pushAllowed("digest");
+
+  const push = allowed
+    ? await sendPush({
+        title: verdict.title || "PersonalOS",
+        body: verdict.body,
+        url: "/",
+        tag: "daily-digest"
+      })
+    : { sent: 0, skipped: "interruption level is silent" };
 
 
   return {
     success: true,
     notified: true,
+    pushed: allowed,
     prompt_id: prompt?.id,
     push,
     verdict

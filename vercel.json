@@ -13,14 +13,14 @@
       "schedule": "30 12 * * *"
     }
   ],
+  "rewrites": [
+    {
+      "source": "/api/brief/latest",
+      "destination": "/api/brief"
+    }
+  ],
   "functions": {
-    "api/capture.js": {
-      "maxDuration": 60
-    },
-    "api/deepThoughts/index.js": {
-      "maxDuration": 60
-    },
-    "api/projects.js": {
+    "api/*.js": {
       "maxDuration": 60
     },
     "api/cron/*.js": {
