@@ -33,29 +33,13 @@ async function getPendingDeepThoughts() {
 
   try {
 
+    // Turns come embedded now — the backend used to need one extra round
+    // trip per pending thought to fetch them separately, and each of those
+    // was a full hop to a different Vercel project, not just a Supabase
+    // query. See getPendingDeepThoughts in tools/database.js.
     const data = await backendGet("/api/deepThoughts");
 
-    const thoughts = data.thoughts || [];
-
-    const withTurns = await Promise.all(
-      thoughts.map(async (t) => {
-
-        try {
-
-          const turnsData = await backendGet(`/api/deepThoughts?turns=${t.id}`);
-
-          return { ...t, turns: turnsData.turns || [] };
-
-        } catch (error) {
-
-          return { ...t, turns: [] };
-
-        }
-
-      })
-    );
-
-    return withTurns;
+    return data.thoughts || [];
 
   } catch (error) {
 

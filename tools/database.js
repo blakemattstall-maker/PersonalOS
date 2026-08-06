@@ -429,6 +429,13 @@ export async function updateDeepThoughtResult({
 
 
 
+// Turns embedded via PostgREST's foreign-table select rather than a separate
+// query per thought. The home page used to fetch this list, then fire one
+// more backendGet per pending thought to fetch its turns — every one of those
+// is a full separate round trip through a completely different Vercel
+// project, each paying its own routing and invocation overhead regardless of
+// how small the actual query is. With normally 1-3 pending threads that was
+// 2-4 chained network hops for what is now one.
 export async function getPendingDeepThoughts({
   limit = 10
 } = {}) {
@@ -436,9 +443,10 @@ export async function getPendingDeepThoughts({
 
   const { data, error } = await supabase
     .from("deep_thoughts")
-    .select("*")
+    .select("*, thread_turns(*)")
     .in("status", ["thinking", "pending_review"])
     .order("created_at", { ascending: false })
+    .order("created_at", { ascending: true, foreignTable: "thread_turns" })
     .limit(limit);
 
 
@@ -447,7 +455,12 @@ export async function getPendingDeepThoughts({
   }
 
 
-  return data || [];
+  // Renamed to `turns` to match what every caller already expects — the web
+  // page used to build this shape itself out of two separate responses.
+  return (data || []).map(({ thread_turns, ...thought }) => ({
+    ...thought,
+    turns: thread_turns || []
+  }));
 
 }
 
