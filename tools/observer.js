@@ -54,8 +54,33 @@ async function openPrompts() {
     .from("prompts")
     .select("id, kind, title, body")
     .eq("status", "pending")
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(10);
+
+  return data || [];
+
+}
+
+
+// What it has already said, answered or not.
+//
+// Without this the observer has no memory of its own output: it only ever saw
+// prompts still pending, so the moment one was dismissed the same observation
+// could be raised again the next day, and the next. Repeating yourself is the
+// fastest way for a once-a-day notification to become noise — the whole budget
+// is one message, and spending it on something already said is worse than
+// silence.
+async function recentlySaid(days = 14) {
+
+  const since = DateTime.now().minus({ days }).toISO();
+
+  const { data } = await supabase
+    .from("prompts")
+    .select("title, body, created_at, status")
+    .eq("kind", "digest")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(14);
 
   return data || [];
 
@@ -66,10 +91,11 @@ export async function runDailyObservation({ dryRun = false } = {}) {
 
   const tz = await getUserTimezone();
 
-  const [context, metrics, pending] = await Promise.all([
+  const [context, metrics, pending, alreadySaid] = await Promise.all([
     buildRichContext(),
     getRecentMetrics({ days: 30 }),
-    openPrompts()
+    openPrompts(),
+    recentlySaid()
   ]);
 
 
@@ -123,6 +149,13 @@ ${context.bodyweightTrend || "(none)"}
 
 Open questions already waiting for them:
 ${pending.length ? pending.map(p => `- [${p.kind}] ${p.body}`).join("\n") : "(none)"}
+
+WHAT YOU HAVE ALREADY TOLD THEM in the last two weeks — do not repeat any of
+these, or say the same thing in different words. If the only thing worth
+saying today is something below, stay silent instead:
+${alreadySaid.length
+  ? alreadySaid.map(p => `- ${DateTime.fromISO(p.created_at).toFormat("MMM d")}: ${p.title} — ${p.body}`).join("\n")
+  : "(nothing yet)"}
 
 RULES — the first two matter more than being interesting:
 
