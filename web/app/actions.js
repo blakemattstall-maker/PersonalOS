@@ -44,13 +44,20 @@ export async function respondToThreadAction(id, message) {
 }
 
 
-export async function buildPlanAction(id) {
+export async function buildPlanAction(id, tools = null) {
 
-  const result = await backendPost("/api/deepThoughts", { action: "buildPlan", id });
+  const result = await backendPost("/api/deepThoughts", { action: "buildPlan", id, tools });
 
   revalidatePath("/");
 
   return result;
+
+}
+
+
+export async function transcribeAction({ audio_base64, mime_type }) {
+
+  return backendPost("/api/deepThoughts", { action: "transcribe", audio_base64, mime_type });
 
 }
 

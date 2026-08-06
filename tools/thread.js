@@ -17,6 +17,9 @@ import { createTask } from "./googleTasks.js";
 import { createEvent } from "./googleCalendar.js";
 import { mapWithConcurrency } from "../lib/async.js";
 import { runWebSearch } from "./research.js";
+import { draftEmail } from "./gmail.js";
+import { exportToDoc } from "./googleDocs.js";
+import { normalisePlanTools, describeEnabledTools } from "../lib/planTools.js";
 import { MODELS } from "../lib/models.js";
 
 
@@ -229,12 +232,15 @@ async function persistLearnings(learnedRaw) {
 // background. Same ack-then-work shape as start_deep_thinking: mark it
 // building, return immediately, do the work after the response is sent.
 export async function buildPlan({
-  deep_thought_id
+  deep_thought_id,
+  tools = null
 }) {
 
   if (!deep_thought_id) {
     throw new Error("buildPlan requires deep_thought_id.");
   }
+
+  const enabled = normalisePlanTools(tools);
 
   const thought = await getDeepThoughtById(deep_thought_id);
 
@@ -265,19 +271,21 @@ export async function buildPlan({
     thread_status: "building"
   });
 
-  waitUntil(runPlanBuild({ deep_thought_id }));
+  waitUntil(runPlanBuild({ deep_thought_id, enabled }));
 
   return {
     success: true,
     building: true,
-    message: "Building your plan now — it'll appear under Projects in a moment.",
-    data: { deep_thought_id }
+    message: `Building your plan now using ${describeEnabledTools(enabled)}. It'll appear under Projects in a moment.`,
+    data: { deep_thought_id, tools: enabled }
   };
 
 }
 
 
-async function runPlanBuild({ deep_thought_id }) {
+async function runPlanBuild({ deep_thought_id, enabled = null }) {
+
+  const tools = normalisePlanTools(enabled);
 
   try {
 
@@ -392,8 +400,14 @@ Return ONLY JSON:
   "materials": [
     { "type": "document", "title": "...", "content": "..." },
     { "type": "research", "title": "...", "content": "the search question" }
+  ],
+  "emails": [
+    { "to": "who it goes to, a name is fine", "about": "what it needs to say, with the specifics" }
   ]
 }
+${tools.gmail
+  ? `\nIf this plan genuinely requires emailing someone — an outreach, a request, a follow-up — put it in "emails". Each becomes a Gmail DRAFT for the user to review; nothing is ever sent automatically. Only include emails the plan actually calls for; an empty array is the normal answer.`
+  : `\nLeave "emails" empty. Email drafting is switched off for this plan.`}
 `
       }
 
@@ -459,36 +473,42 @@ Return ONLY JSON:
   });
 
 
-  const createdTasks = await mapWithConcurrency(plannedTasks, async (t) => {
+  // Each capability is gated separately. With tasks off, the schedule is still
+  // computed and still stored on the project — the plan is the same plan, it
+  // just doesn't push anything into Google. Turning a tool off must never
+  // change the thinking, only where the output lands.
+  const createdTasks = tools.tasks
+    ? await mapWithConcurrency(plannedTasks, async (t) => {
 
-    const taskResult = await createTask({
-      title: t.title,
-      year: t.due.year,
-      month: t.due.month,
-      day: t.due.day,
-      hour: t.hour,
-      minute: t.minute,
-      project_id: project.id,
-      sequence_order: t.sequence_order
-    });
+        const taskResult = await createTask({
+          title: t.title,
+          year: t.due.year,
+          month: t.due.month,
+          day: t.due.day,
+          hour: t.hour,
+          minute: t.minute,
+          project_id: project.id,
+          sequence_order: t.sequence_order
+        });
 
-    if (t.needs_calendar_event) {
+        if (t.needs_calendar_event && tools.events) {
 
-      await createEvent({
-        title: t.title,
-        year: t.due.year,
-        month: t.due.month,
-        day: t.due.day,
-        hour: t.hour,
-        minute: t.minute,
-        project_id: project.id
-      });
+          await createEvent({
+            title: t.title,
+            year: t.due.year,
+            month: t.due.month,
+            day: t.due.day,
+            hour: t.hour,
+            minute: t.minute,
+            project_id: project.id
+          });
 
-    }
+        }
 
-    return taskResult;
+        return taskResult;
 
-  });
+      })
+    : [];
 
 
   // A material the model marked "research" carries a search QUESTION in
@@ -500,6 +520,16 @@ Return ONLY JSON:
   const resolvedMaterials = await mapWithConcurrency(plan.materials || [], async (m) => {
 
     if (m.type !== "research") return m;
+
+    // Research off: keep the question rather than dropping the material or
+    // pretending an unanswered question is an answer.
+    if (!tools.research) {
+      return {
+        ...m,
+        type: "document",
+        content: `Worth looking up: ${m.content}\n\n(Web research was switched off for this plan.)`
+      };
+    }
 
     try {
 
@@ -532,6 +562,51 @@ Return ONLY JSON:
   );
 
 
+  // Materials are always stored on the project. Exporting them to Docs is the
+  // extra step — worth it when a material is something to read properly or
+  // hand to someone, which is why it's opt-in per plan rather than automatic.
+  const exportedDocs = tools.docs
+    ? (await mapWithConcurrency(resolvedMaterials, async (m) => {
+
+        try {
+
+          const result = await exportToDoc({
+            title: `${plan.project_name} — ${m.title}`,
+            markdown: `# ${m.title}\n\n${m.content}`
+          });
+
+          return { title: m.title, url: result.data.url };
+
+        } catch (error) {
+          console.error("PLAN DOC EXPORT FAILED:", error.message);
+          return null;
+        }
+
+      }, 2)).filter(Boolean)
+    : [];
+
+
+  // Drafts only, always — draftEmail cannot send, by construction. A plan that
+  // proposes an email produces something sitting in Gmail waiting to be read
+  // and edited, never something that has already gone out.
+  const draftedEmails = tools.gmail
+    ? (await mapWithConcurrency(plan.emails || [], async (e) => {
+
+        try {
+
+          const result = await draftEmail({ about: e.about, to: e.to || null });
+
+          return { subject: result.data.subject, to: result.data.to, url: result.data.url };
+
+        } catch (error) {
+          console.error("PLAN EMAIL DRAFT FAILED:", error.message);
+          return null;
+        }
+
+      }, 2)).filter(Boolean)
+    : [];
+
+
   await updateDeepThoughtThread({
     id: deep_thought_id,
     thread_status: "active",
@@ -539,13 +614,27 @@ Return ONLY JSON:
   });
 
 
+  const summary = [
+    `Built the plan: "${plan.project_name}"`,
+    tools.tasks ? `${createdTasks.length} tasks` : "no tasks (switched off)",
+    exportedDocs.length ? `${exportedDocs.length} doc(s)` : null,
+    draftedEmails.length ? `${draftedEmails.length} draft email(s)` : null
+  ].filter(Boolean).join(", ");
+
+
   return {
 
     success: true,
 
-    message: `Built the plan: "${plan.project_name}" with ${createdTasks.length} tasks.`,
+    message: `${summary}.`,
 
-    data: { project_id: project.id, taskCount: createdTasks.length }
+    data: {
+      project_id: project.id,
+      taskCount: createdTasks.length,
+      docs: exportedDocs,
+      emails: draftedEmails,
+      tools
+    }
 
   };
 

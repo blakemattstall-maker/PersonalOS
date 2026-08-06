@@ -18,6 +18,33 @@ function missingColumn(error) {
 }
 
 
+// Exported so anything that takes speech can reuse the same negotiated
+// primary/fallback path — deep-thinking replies now do, rather than depending
+// on iOS's built-in dictation, which has no punctuation model worth the name
+// and drops the end of a long sentence when you pause to think.
+export async function transcribeAudio({ audio_base64, mime_type }) {
+
+  if (!audio_base64) throw new Error("transcribeAudio requires audio_base64.");
+
+  const buffer = Buffer.from(audio_base64, "base64");
+
+  // Vercel Hobby rejects a request body over 4.5MB before this code runs, and
+  // base64 inflates by ~33%.
+  if (buffer.length > 2 * 1024 * 1024) {
+    throw new Error("Recording is too long for one upload — keep it under a couple of minutes.");
+  }
+
+  const { text, model } = await transcribe(buffer, mime_type);
+
+  if (!text || text.trim().length < 2) {
+    throw new Error("Couldn't make out any speech in that recording — try again somewhere quieter.");
+  }
+
+  return { success: true, text: text.trim(), model };
+
+}
+
+
 async function transcribe(audioBuffer, mimeType) {
 
   const ext = mimeType?.includes("mp4") ? "mp4" : mimeType?.includes("wav") ? "wav" : "webm";

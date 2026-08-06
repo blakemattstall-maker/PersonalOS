@@ -12,12 +12,13 @@ import {
 } from "../tools/database.js";
 import { deleteProject } from "../tools/projects.js";
 import { respondToThread, buildPlan } from "../tools/thread.js";
+import { PLAN_TOOLS } from "../lib/planTools.js";
 import { getSettings, saveSettings, INTERRUPTION_LEVELS } from "../lib/settings.js";
 import { buildDiagnostics } from "../lib/diagnostics.js";
 import { sendPush } from "../lib/push.js";
 import { getNewsFeed, syncNewsDigest, deleteNewsItem } from "../tools/news.js";
 import { startDebateSession, respondInDebate, endDebateSession } from "../tools/debate.js";
-import { submitPitch, generatePitchTopic } from "../tools/pitch.js";
+import { submitPitch, generatePitchTopic, transcribeAudio } from "../tools/pitch.js";
 import { getDebateTopics, ensureTopicsFramed, retireDebateTopic } from "../tools/debateTopics.js";
 import { savePerson, getAllPeople, deletePerson, recordContact, answerRelationshipCheckin } from "../tools/people.js";
 
@@ -192,7 +193,13 @@ async function deepThoughts(req, res) {
       return res.status(200).json({ success: true, turns: await getThreadTurns(req.query.turns) });
     }
 
-    return res.status(200).json({ success: true, thoughts: await getPendingDeepThoughts() });
+    // The toggle list is served rather than duplicated in the frontend, so
+    // adding a capability doesn't need a matching edit in the dashboard.
+    return res.status(200).json({
+      success: true,
+      thoughts: await getPendingDeepThoughts(),
+      planTools: PLAN_TOOLS
+    });
 
   }
 
@@ -226,7 +233,23 @@ async function deepThoughts(req, res) {
 
       if (!id) return res.status(400).json({ error: "Missing id" });
 
-      return res.status(200).json(await buildPlan({ deep_thought_id: id }));
+      return res.status(200).json(await buildPlan({
+        deep_thought_id: id,
+        tools: req.body?.tools ?? null
+      }));
+
+    }
+
+
+    // Speech for a thread reply. Same transcription path the pitch recorder
+    // uses — better punctuation than iOS dictation, and it doesn't give up
+    // when you pause mid-thought, which is most of what happens here.
+    if (action === "transcribe") {
+
+      return res.status(200).json(await transcribeAudio({
+        audio_base64: req.body?.audio_base64,
+        mime_type: req.body?.mime_type
+      }));
 
     }
 

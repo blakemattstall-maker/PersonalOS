@@ -3,6 +3,8 @@
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { respondToThreadAction, buildPlanAction, resolveDeepThought, resetBuildAction } from "./actions.js";
+import { PLAN_TOOLS } from "./planTools.js";
+import VoiceInput from "./VoiceInput.js";
 import { DeepThoughtBody } from "./shared.js";
 import ReadAloud from "./ReadAloud.js";
 
@@ -30,6 +32,12 @@ export default function DeepThoughtThread({ thought, turns }) {
 
   const isBuilding = thought.thread_status === "building";
   const [buildStalled, setBuildStalled] = useState(false);
+
+  const [showTools, setShowTools] = useState(false);
+
+  const [tools, setTools] = useState(() =>
+    Object.fromEntries(Object.entries(PLAN_TOOLS).map(([k, v]) => [k, v.default]))
+  );
 
   // The build runs in the background on the server now, so the page has to
   // come back and look. Stops as soon as thread_status moves off "building".
@@ -83,9 +91,11 @@ export default function DeepThoughtThread({ thought, turns }) {
 
   const handleBuildPlan = () => {
 
+    setShowTools(false);
+
     startTransition(async () => {
 
-      await buildPlanAction(thought.id);
+      await buildPlanAction(thought.id, tools);
 
       router.refresh();
 
@@ -179,16 +189,22 @@ export default function DeepThoughtThread({ thought, turns }) {
           ) : (
 
             <>
-              <div className="mt-3 flex items-center gap-2">
+              {/* A textarea, not an input: replies here are paragraphs, and a
+                  single-line box that scrolls sideways makes it impossible to
+                  reread what you just said before sending it. */}
+              <div className="mt-3 flex items-start gap-2">
 
-                <input
-                  type="text"
+                <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
-                  placeholder="Respond — tap the mic on your keyboard to dictate"
+                  onKeyDown={(e) => {
+                    // Enter sends, shift+Enter breaks the line.
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+                  }}
+                  rows={2}
+                  placeholder="Respond — or record instead, below"
                   disabled={isPending}
-                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent disabled:opacity-50"
+                  className="flex-1 resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm leading-relaxed text-foreground outline-none focus:border-accent disabled:opacity-50"
                 />
 
                 <button
@@ -201,15 +217,69 @@ export default function DeepThoughtThread({ thought, turns }) {
 
               </div>
 
+              {/* Appends rather than replaces, so several bursts of thinking
+                  can be stacked up before sending — and anything already typed
+                  isn't destroyed by hitting record. */}
+              <div className="mt-2">
+                <VoiceInput
+                  disabled={isPending}
+                  onTranscript={(text) =>
+                    setInput(prev => (prev.trim() ? `${prev.trim()} ${text}` : text))
+                  }
+                />
+              </div>
+
+              {/* What the build is allowed to touch. Shown before the build,
+                  not buried in settings, because the right answer differs per
+                  plan — some want the whole toolbox, some want the thinking
+                  and nothing written anywhere. */}
+              {showTools && lastAction === "propose_plan" && (
+
+                <div className="mt-3 rounded-lg border border-accent/40 bg-background p-4">
+
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                    What should it be allowed to do?
+                  </p>
+
+                  <div className="mt-3 space-y-2">
+                    {Object.entries(PLAN_TOOLS).map(([key, tool]) => (
+                      <label key={key} className="flex cursor-pointer items-start gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={!!tools[key]}
+                          onChange={(e) => setTools(t => ({ ...t, [key]: e.target.checked }))}
+                          disabled={isPending}
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent,#000)]"
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-sm text-foreground">{tool.label}</span>
+                          <span className="block text-xs leading-snug text-muted">{tool.hint}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={handleBuildPlan}
+                    disabled={isPending}
+                    className="mt-4 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    {isPending ? "Starting…" : "Build it"}
+                  </button>
+
+                </div>
+
+              )}
+
               <div className="mt-3 flex flex-wrap gap-2">
 
                 {lastAction === "propose_plan" && (
                   <button
-                    onClick={handleBuildPlan}
+                    onClick={() => setShowTools(s => !s)}
                     disabled={isPending}
                     className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
                   >
-                    {isPending ? "Starting…" : "Build the plan"}
+                    {isPending ? "Starting…" : showTools ? "Hide options" : "Build the plan"}
                   </button>
                 )}
 
