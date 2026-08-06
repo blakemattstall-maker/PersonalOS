@@ -162,9 +162,6 @@ export default async function Home() {
             <Link href="/news" className="text-sm text-muted hover:text-accent">
               News
             </Link>
-            <Link href="/fund" className="text-sm text-muted hover:text-accent">
-              Fund
-            </Link>
             <Link href="/practice" className="text-sm text-muted hover:text-accent">
               Practice
             </Link>

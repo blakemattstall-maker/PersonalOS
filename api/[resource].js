@@ -13,7 +13,6 @@ import {
 import { deleteProject } from "../tools/projects.js";
 import { respondToThread, buildPlan } from "../tools/thread.js";
 import { PLAN_TOOLS } from "../lib/planTools.js";
-import { getFundSnapshot, getRecentDispatches, runFundDay } from "../tools/fund.js";
 import { getSettings, saveSettings, INTERRUPTION_LEVELS } from "../lib/settings.js";
 import { buildDiagnostics } from "../lib/diagnostics.js";
 import { sendPush } from "../lib/push.js";
@@ -479,45 +478,6 @@ async function news(req, res) {
 }
 
 
-// The Fund. Paper positions, real prices, and a manager with opinions.
-async function fund(req, res) {
-
-  if (req.method === "GET") {
-
-    const [snapshot, dispatches] = await Promise.all([
-      getFundSnapshot(),
-      getRecentDispatches()
-    ]);
-
-    if (!snapshot) {
-      return res.status(200).json({
-        success: false,
-        needsMigration: "docs/schema-fund.sql",
-        dispatches: []
-      });
-    }
-
-    return res.status(200).json({ success: true, ...snapshot, dispatches });
-
-  }
-
-  if (req.method === "POST") {
-
-    // Manual run, so the fund can be started without waiting for tomorrow's
-    // cron. `force` re-files today's dispatch instead of skipping.
-    if (req.body?.action === "run") {
-      return res.status(200).json(await runFundDay({ force: req.body?.force === true }));
-    }
-
-    return res.status(400).json({ error: `Unknown action: ${req.body?.action}` });
-
-  }
-
-  return res.status(405).json({ error: "Method not allowed" });
-
-}
-
-
 async function people(req, res) {
 
   if (req.method === "GET") {
@@ -554,7 +514,7 @@ async function people(req, res) {
 }
 
 
-const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice, people, news, fund };
+const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice, people, news };
 
 
 export default async function handler(req, res) {

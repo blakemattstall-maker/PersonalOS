@@ -14,7 +14,6 @@ import { checkRelationshipCheckins, materialiseUpcomingDateReminders } from "../
 import { getUserTimezone } from "../../lib/profile.js";
 import { sendPush } from "../../lib/push.js";
 import { pushAllowed } from "../../lib/settings.js";
-import { runFundDay, getRecentDispatches } from "../../tools/fund.js";
 import { DateTime } from "luxon";
 
 
@@ -42,22 +41,7 @@ async function morningBrief() {
   ]);
 
 
-  // The Fund files its dispatch in the 12:30 job, half an hour before this
-  // one, so today's is already waiting. It rides along in the brief rather
-  // than getting its own notification — it's a side plot, and a side plot that
-  // buzzes your phone separately every morning stops being one.
-  const dispatches = await getRecentDispatches({ limit: 1 }).catch(() => []);
-
-  const todaysDispatch = dispatches[0]
-    && DateTime.fromISO(dispatches[0].created_at).setZone(tz).toFormat("yyyy-MM-dd") === today
-    ? dispatches[0]
-    : null;
-
-  const content = [
-    `Schedule: ${schedule.message}`,
-    `Tasks: ${tasks.message}`,
-    todaysDispatch ? `The Fund — ${todaysDispatch.headline}\n${todaysDispatch.content}` : null
-  ].filter(Boolean).join("\n\n");
+  const content = `Schedule: ${schedule.message}\n\nTasks: ${tasks.message}`;
 
   const brief = await createBrief({ content });
 
@@ -192,21 +176,6 @@ async function reviewIntentions() {
   }
 
 
-  // The Fund runs here, half an hour before the brief, so today's dispatch
-  // exists by the time the brief is written and can be quoted in it. It runs
-  // last because it reads the same overdue tasks and quiet contacts everything
-  // above has just finished updating — funding it from stale numbers would
-  // charge for failures that were fixed this morning.
-  let fundResult = null;
-
-  try {
-    fundResult = await runFundDay();
-  } catch (error) {
-    console.error("FUND RUN FAILED:", error.message);
-    fundResult = { success: false, error: error.message };
-  }
-
-
   return {
     success: true,
     completions: completionResult,
@@ -214,7 +183,6 @@ async function reviewIntentions() {
     observation: observationResult,
     nudges: nudgeResult,
     projects: projectResult,
-    fund: fundResult,
     relationships: relationshipResult,
     dateReminders: dateReminderResult,
     profile: profileResult
