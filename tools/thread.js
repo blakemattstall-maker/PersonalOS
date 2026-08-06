@@ -244,11 +244,19 @@ export async function buildPlan({
 
   const thought = await getDeepThoughtById(deep_thought_id);
 
-  if (thought.thread_status === "active" && thought.project_id) {
+  // project_id gets attached to the thread the moment executePlanBuild creates
+  // it (see the updateDeepThoughtThread call right after createProject), well
+  // before thread_status flips to "active". So this alone — not the status —
+  // is what catches a build that failed partway through: the project exists,
+  // thread_status reverted to "ready_to_build", and without this check a
+  // retry would create a second project rather than pointing back at it.
+  if (thought.project_id) {
     return {
       success: true,
       duplicate: true,
-      message: "A plan was already built for this — check your Projects section.",
+      message: thought.thread_status === "active"
+        ? "A plan was already built for this — check your Projects section."
+        : "A previous attempt already created a project for this before failing — check your Projects section for it rather than building again.",
       data: { project_id: thought.project_id }
     };
   }
@@ -424,6 +432,16 @@ ${tools.gmail
     name: plan.project_name,
     description: plan.project_description,
     next_action: plan.next_action
+  });
+
+  // Record the project against the thread the moment it exists, not just on
+  // full success below. Everything after this point (tasks, research, docs,
+  // emails) can still throw, but a retry needs to see this project_id so it
+  // refuses to create a second one rather than orphaning this one — see the
+  // project_id check in buildPlan().
+  await updateDeepThoughtThread({
+    id: deep_thought_id,
+    project_id: project.id
   });
 
 
