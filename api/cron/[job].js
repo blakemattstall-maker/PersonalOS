@@ -12,6 +12,8 @@ import { syncNewsDigest } from "../../tools/news.js";
 import { ensureTopicsFramed } from "../../tools/debateTopics.js";
 import { checkRelationshipCheckins, materialiseUpcomingDateReminders } from "../../tools/people.js";
 import { getUserTimezone } from "../../lib/profile.js";
+import { sendPush } from "../../lib/push.js";
+import { pushAllowed } from "../../lib/settings.js";
 import { DateTime } from "luxon";
 
 
@@ -44,7 +46,36 @@ async function morningBrief() {
   const brief = await createBrief({ content });
 
 
-  return { success: true, brief_id: brief.id, content };
+  // The brief was written to the database and then waited to be collected.
+  // Nothing delivered it — the only thing that ever did was a Shortcut polling
+  // /api/brief/latest on a phone-side automation, which is a manual workaround
+  // for a job the server should be doing itself.
+  //
+  // A push body gets truncated hard by every platform, so this deliberately
+  // sends a short lead and links to the dashboard for the full thing rather
+  // than trying to cram schedule and tasks into a notification.
+  const lead = schedule.message?.trim() || "Your brief is ready.";
+
+  const allowed = await pushAllowed("digest");
+
+  const push = allowed
+    ? await sendPush({
+        title: "Today",
+        body: lead.length > 140 ? `${lead.slice(0, 137)}…` : lead,
+        url: "/",
+        // Same tag every day, so an unread brief is replaced rather than
+        // stacked — yesterday's is worthless once today's exists.
+        tag: "morning-brief"
+      }).catch(error => {
+        // The brief itself is already saved. A push failure must not fail the
+        // job or the dashboard loses today's brief over a delivery problem.
+        console.error("BRIEF PUSH FAILED:", error.message);
+        return { sent: 0, error: error.message };
+      })
+    : { sent: 0, skipped: "interruption level" };
+
+
+  return { success: true, brief_id: brief.id, content, push };
 
 }
 
