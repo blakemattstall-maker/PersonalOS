@@ -289,7 +289,7 @@ async function runPlanBuild({ deep_thought_id, enabled = null }) {
 
   try {
 
-    return await executePlanBuild({ deep_thought_id });
+    return await executePlanBuild({ deep_thought_id, tools });
 
   } catch (error) {
 
@@ -308,7 +308,8 @@ async function runPlanBuild({ deep_thought_id, enabled = null }) {
 
 
 async function executePlanBuild({
-  deep_thought_id
+  deep_thought_id,
+  tools
 }) {
 
   const thought = await getDeepThoughtById(deep_thought_id);
