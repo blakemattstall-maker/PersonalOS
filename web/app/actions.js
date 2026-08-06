@@ -285,3 +285,15 @@ export async function answerPromptAction(id, answer) {
   return result;
 
 }
+
+
+export async function runFundAction(force = false) {
+
+  const result = await backendPost("/api/fund", { action: "run", force });
+
+  revalidatePath("/fund");
+  revalidatePath("/");
+
+  return result;
+
+}
