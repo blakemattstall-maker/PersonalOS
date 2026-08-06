@@ -45,9 +45,47 @@ export async function transcribeAudio({ audio_base64, mime_type }) {
 }
 
 
+// OpenAI decides how to decode the upload from its FILENAME, so the extension
+// has to be right or a perfectly good recording is rejected as corrupt.
+//
+// This matters most for the iOS Shortcut: the Record Audio action produces
+// audio/m4a, and the previous check looked for the substring "mp4" — which
+// "m4a" does not contain — so every voice capture from the phone would have
+// been uploaded as pitch.webm and refused. Ordered longest-match-first because
+// "mp4" is a substring of nothing here but "mpeg" and "mpga" overlap.
+const MIME_EXTENSIONS = [
+  ["m4a", "m4a"],
+  ["x-m4a", "m4a"],
+  ["mp4", "mp4"],
+  ["mpeg", "mp3"],
+  ["mpga", "mp3"],
+  ["mp3", "mp3"],
+  ["wav", "wav"],
+  ["flac", "flac"],
+  ["ogg", "ogg"],
+  ["oga", "ogg"],
+  ["webm", "webm"]
+];
+
+
+export function extensionFor(mimeType) {
+
+  const type = String(mimeType || "").toLowerCase();
+
+  for (const [needle, ext] of MIME_EXTENSIONS) {
+    if (type.includes(needle)) return ext;
+  }
+
+  // Browsers that report no type at all are, in practice, Chrome recording
+  // webm — which is also what MediaRecorder defaults to.
+  return "webm";
+
+}
+
+
 async function transcribe(audioBuffer, mimeType) {
 
-  const ext = mimeType?.includes("mp4") ? "mp4" : mimeType?.includes("wav") ? "wav" : "webm";
+  const ext = extensionFor(mimeType);
 
   const file = await toFile(audioBuffer, `pitch.${ext}`, { type: mimeType || "audio/webm" });
 

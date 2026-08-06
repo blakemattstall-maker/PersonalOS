@@ -112,3 +112,43 @@ test("curly and straight apostrophes are the same fact", () => {
   );
 
 });
+
+
+// ---------------------------------------------------------------------------
+// Audio upload filenames
+// ---------------------------------------------------------------------------
+
+import { extensionFor } from "../tools/pitch.js";
+
+
+test("iOS Shortcut recordings get a filename OpenAI will accept", () => {
+
+  // The whole point. iOS's Record Audio action reports audio/m4a, and an
+  // earlier substring check for "mp4" did not match it — so every voice
+  // capture from the phone would have been uploaded as .webm and rejected as
+  // corrupt, with an error that says nothing about filenames.
+  assert.equal(extensionFor("audio/m4a"), "m4a");
+  assert.equal(extensionFor("audio/x-m4a"), "m4a");
+
+});
+
+
+test("the browser recorders still map correctly", () => {
+
+  // iOS Safari records mp4; Chrome/Android record webm. Both go through the
+  // pitch recorder and must keep working.
+  assert.equal(extensionFor("audio/mp4"), "mp4");
+  assert.equal(extensionFor("audio/webm;codecs=opus"), "webm");
+  assert.equal(extensionFor("audio/wav"), "wav");
+  assert.equal(extensionFor("audio/mpeg"), "mp3");
+
+});
+
+
+test("an unknown or missing type falls back to webm rather than throwing", () => {
+
+  assert.equal(extensionFor(null), "webm");
+  assert.equal(extensionFor(""), "webm");
+  assert.equal(extensionFor("application/octet-stream"), "webm");
+
+});
