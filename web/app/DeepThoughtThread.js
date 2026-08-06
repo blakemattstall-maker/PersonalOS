@@ -48,6 +48,14 @@ export default function DeepThoughtThread({ thought, turns }) {
   const wasBuildingRef = useRef(false);
   const [buildFailed, setBuildFailed] = useState(false);
 
+  // buildPlan() now detects a previous failed attempt itself (it keys off
+  // project_id, set the moment the project is created, not thread_status) and
+  // refuses to build again — returning immediately with `duplicate: true`
+  // rather than ever entering "building". That response never touches
+  // thread_status, so the polling effect below has nothing to see; this is
+  // the one case that has to be handled from the click itself.
+  const [buildResultMessage, setBuildResultMessage] = useState(null);
+
   const [showTools, setShowTools] = useState(false);
 
   const [tools, setTools] = useState(() =>
@@ -121,10 +129,18 @@ export default function DeepThoughtThread({ thought, turns }) {
   const handleBuildPlan = () => {
 
     setShowTools(false);
+    setBuildResultMessage(null);
+    setBuildFailed(false);
 
     startTransition(async () => {
 
-      await buildPlanAction(thought.id, tools);
+      const result = await buildPlanAction(thought.id, tools);
+
+      // A duplicate is a complete answer on its own — nothing was started,
+      // so there's nothing for the polling effect to watch for.
+      if (result?.duplicate) {
+        setBuildResultMessage(result.message);
+      }
 
       router.refresh();
 
@@ -218,17 +234,26 @@ export default function DeepThoughtThread({ thought, turns }) {
           ) : (
 
             <>
+              {buildResultMessage && (
+                // The immediate, synchronous answer from buildPlan() itself —
+                // covers the case where it refused to start at all because a
+                // previous attempt (this one or an earlier failure) already
+                // has a project. Distinct from buildFailed below, which is
+                // inferred later from polling a build that DID start.
+                <div className="mt-3 rounded-lg border border-border bg-surface px-4 py-3">
+                  <p className="text-sm text-foreground">{buildResultMessage}</p>
+                </div>
+              )}
+
               {buildFailed && (
                 <div className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3">
                   <p className="text-sm font-medium text-foreground">
                     That build didn&apos;t finish.
                   </p>
                   <p className="mt-1 text-xs text-muted">
-                    Something failed partway through. If it had already
-                    started creating the project before it failed, check{" "}
-                    <a href="/" className="underline hover:text-accent">Projects</a>{" "}
-                    for a half-built one before trying again, so you don&apos;t
-                    end up with two.
+                    Something failed partway through. Safe to try again below —
+                    if it had already started creating the project, retrying
+                    will point you at that one instead of making a second.
                   </p>
                 </div>
               )}
