@@ -62,7 +62,7 @@ Four daily crons on Hobby. **The "~100-job cap" this document previously claimed
 Native OpenAI tool calling, ~13 tools now. The predicted payoff (adding a tool is just a schema entry + router case, no prompt engineering) has held up repeatedly — every tool added since Phase F took minutes, not a prompt-tuning session.
 
 ### S5. Output surface — ✅ resolved differently than v1.1 predicted
-v1.1 said "no web app yet, cron → Supabase → Shortcuts pull." That held for exactly one feature (the morning brief) before the interactive-threads requirement (a genuine back-and-forth conversation, dictated input, tap-to-play output) made a real web app unavoidable — Shortcuts fundamentally cannot do that interaction. Built as a **separate Vercel project** from the API backend, deliberately, so frontend iteration never risks the working backend. Passphrase-gated at the frontend; backend API itself is still unauthenticated (see Known Limitations in the handoff doc).
+v1.1 said "no web app yet, cron → Supabase → Shortcuts pull." That held for exactly one feature (the morning brief) before the interactive-threads requirement (a genuine back-and-forth conversation, dictated input, tap-to-play output) made a real web app unavoidable — Shortcuts fundamentally cannot do that interaction. Built as a **separate Vercel project** from the API backend, deliberately, so frontend iteration never risks the working backend. Passphrase-gated at the frontend; the backend API is separately gated by `API_SECRET` (see §6).
 
 **True push notifications were researched (Pushcut, ~$2-4/mo) and explicitly declined.** The fallback — native "Show Notification" + a Home Screen web-app icon — means "proactive" in practice still means "the phone pulls when you next open the dashboard," same core constraint as v1.1 identified, just with a nicer surface to pull into.
 
@@ -110,7 +110,7 @@ The one real, unaddressed cost risk: `reviewIntentionsForNudges()` calls the mod
 
 Still true from v1.1: service key bypasses RLS (fine, server-only, single-user), never send secrets/tokens to the LLM, `activity_logs` stores full input/output (consider redaction if genuinely sensitive data starts flowing through).
 
-**New:** the web frontend has app-level passphrase auth; the backend API does not. This asymmetry is intentional for now (the frontend is the newer, more "browsable" surface; the backend is Shortcut-only and the builder has repeatedly, deliberately deferred fixing it). Don't let "well the frontend has auth now" become an argument for treating the backend as covered — it isn't.
+**Updated:** the web frontend has app-level passphrase auth, and **the backend API is now authenticated too** (`API_SECRET`, checked via `x-pos-key` in `lib/auth.js`, confirmed set in production). Both surfaces are covered. `requireAuth` stays dormant-when-unset by design — so the Shortcut and the server can be switched over independently — but it is loud about it in the logs, and cannot be satisfied by a guessable placeholder (see the cron-auth bug fixed in `api/cron/[job].js`, same pattern).
 
 ---
 
@@ -129,10 +129,12 @@ Still true from v1.1: service key bypasses RLS (fine, server-only, single-user),
 4. Location tracking — explicitly declined, not deferred.
 5. Push notifications — Pushcut researched and declined on cost; native notification + Home Screen icon is the accepted fallback.
 
+### ✅ Resolved since (Aug 6)
+6. Backend API authentication — **live**, `API_SECRET` set in production.
+7. Live web search integration — **built**, on the Responses API's hosted `web_search` tool (`tools/research.js`), backing `research_query`, plan-building materials, and Docs export.
+
 ### ⬜ Still open
-6. Sync conflict rule (S2) — moot until two-way sync actually gets built, which is now lower-priority than v1.1 assumed.
-7. Backend API authentication — timing explicitly left to the builder to decide, not a technical open question.
-8. Live web search integration — approved in principle, not yet built (Responses API, different surface than the rest of the codebase).
+8. Sync conflict rule (S2) — moot until two-way sync actually gets built, which is now lower-priority than v1.1 assumed.
 9. Whether the generic `entity_links` table (S7) is ever actually needed, or whether direct FKs keep being sufficient.
 
 ---

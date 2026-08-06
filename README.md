@@ -13,11 +13,11 @@ Single-user by design, running on free tiers, at roughly **$7/month all-in**.
 ```
 iPhone Shortcut ──voice──▶ /api/capture ──▶ router (LLM picks a tool)
                                              │
-web dashboard  ──────────▶ /api/[resource]   ├──▶ ~20 tools ──▶ Supabase
-   (Next.js, separate                        │                  Google Calendar
-    Vercel project)                          │                  Google Tasks
-                                             │                  SimpleFIN
-Vercel Cron    ──────────▶ /api/cron/[job] ──┘                  OpenAI
+web dashboard  ──────────▶ /api/[resource]   ├──▶ 22 tools ──▶ Supabase
+   (Next.js, separate                        │                 Google Calendar/Tasks/Docs/Gmail
+    Vercel project)                          │                 SimpleFIN (12h cache)
+                                             │                 OpenAI
+Vercel Cron    ──────────▶ /api/cron/[job] ──┘
 Overland (GPS) ──────────▶ /api/ingest/[kind]
 ```
 

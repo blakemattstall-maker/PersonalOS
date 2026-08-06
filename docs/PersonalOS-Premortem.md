@@ -276,26 +276,30 @@ that already bit.
 
 ---
 
-### 1.8 — HIGH: The Vercel Hobby cron limit is very likely being exceeded
+### 1.8 — RESOLVED: The Vercel Hobby cron limit concern
 
 **Category:** technical
 
-`vercel.json` declares **four** cron jobs. The architecture doc says three crons are
-*"well under the ~100-job cap."*
+**Status: checked directly against the live account, not assumed either way.**
+`vercel.json` declares **four** cron jobs. Whatever theoretical limit applies to a
+Hobby account, it is not binding on this one: `npx vercel crons ls` shows all four
+registered, and Supabase has independent same-day evidence of each firing on its own
+schedule with no manual trigger (a `news_items` row created ~30-50 minutes after its
+0 11 * * * schedule, a `briefs` row ~1 minute after 13:00, a `daily_metrics` rollup
+~50 minutes after 12:30). The lag is consistent with Hobby's documented "loose timing,
+may fire within the hour," not a dropped job.
 
-100 is Vercel's **Enterprise** figure. Hobby is documented at **2 cron jobs**, invoked
-at most once per day, with loose timing guarantees (Vercel may fire them anywhere within
-the hour).
+Since this was resolved, `syncNews` and `reviewIntentions` have each gained additional
+work riding on the same schedule (debate-topic framing, relationship date-reminder
+materialisation, the Fund's now-removed daily run) rather than new cron entries — the
+right pattern, established here for exactly this reason: adding a fifth `vercel.json`
+cron entry is the thing that would actually need re-verifying, not adding more work to
+an existing one.
 
-If that limit applies to this account, two of the four crons are not running, and — this
-is the important part — **nothing in the system would tell you.** `lib/diagnostics.js`
-tracks `morningBrief` (via last brief) and `reviewIntentions` (via last daily_metrics
-row) but not `syncCanvas` or `syncNews`, and every background job in this system is
-designed so that silence is a valid output.
-
-**Action required: verify this against the actual Vercel account before assuming the
-docs are right.** The "~100-job cap" claim in the architecture doc appears to be an
-error inherited from an earlier session and should be corrected either way.
+**If a fifth distinct schedule is ever genuinely needed** (not just more work on an
+existing one), re-run this check rather than trusting this paragraph — `npx vercel
+crons ls` plus a same-day Supabase timestamp is a five-minute check, not a research
+project.
 
 ---
 
