@@ -3,11 +3,19 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { answerPromptAction } from "./actions.js";
+import { ItemCard, btn, field } from "./ui.js";
 
 
 // Things the app raised on its own: a place it wants named, a daily
 // observation, an alert. Anything with a question gets an answer box; anything
 // that's just telling you something gets dismissed.
+
+const HEADINGS = {
+  label_place: "What is this place?",
+  digest: "Something worth noticing",
+  relationship_checkin: "Time to check in"
+};
+
 
 export default function PromptCard({ item }) {
 
@@ -27,35 +35,24 @@ export default function PromptCard({ item }) {
 
 
   return (
-    <div className="border-t border-border pt-4 first:border-t-0 first:pt-0">
+    <ItemCard kind="prompt" title={item.title || HEADINGS[item.kind]}>
 
-      <div className="text-xs font-medium uppercase tracking-wide text-muted">
-        {item.kind === "label_place" ? "New place"
-          : item.kind === "digest" ? "Today"
-          : item.kind === "relationship_checkin" ? "Check in"
-          : item.kind}
-      </div>
-
-      {item.title && (
-        <h3 className="mt-1 font-medium text-foreground">{item.title}</h3>
-      )}
-
-      <p className="mt-1 text-foreground leading-relaxed">{item.body}</p>
+      <p className="mt-2 leading-relaxed text-ink">{item.body}</p>
 
       {item.payload?.maps_url && (
         <a
           href={item.payload.maps_url}
           target="_blank"
           rel="noreferrer"
-          className="mt-1 inline-block text-xs text-accent"
+          className="mt-2 block w-fit text-[0.82rem] font-medium text-ink-soft underline decoration-[var(--line)] underline-offset-4 hover:text-ink"
         >
-          See it on a map →
+          See it on a map
         </a>
       )}
 
       {needsAnswer ? (
 
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-4 flex items-end gap-2">
           <input
             type="text"
             value={answer}
@@ -63,30 +60,33 @@ export default function PromptCard({ item }) {
             onKeyDown={(e) => { if (e.key === "Enter" && answer.trim()) submit(answer); }}
             placeholder="e.g. Schroeder Hall — math 9am, english 3pm"
             disabled={isPending}
-            className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent disabled:opacity-50"
+            aria-label="Name this place"
+            className={field("flex-1")}
           />
           <button
             onClick={() => answer.trim() && submit(answer)}
             disabled={isPending || !answer.trim()}
-            className="shrink-0 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className={`${btn("ember", "md")} shrink-0`}
           >
-            Save
+            {isPending ? "Saving…" : "Save name"}
           </button>
         </div>
 
       ) : (
 
-        <button
-          onClick={() => submit("dismissed")}
-          disabled={isPending}
-          className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs text-muted hover:border-accent hover:text-accent disabled:opacity-50"
-        >
-          Got it
-        </button>
+        <div className="mt-4">
+          <button
+            onClick={() => submit("dismissed")}
+            disabled={isPending}
+            className={btn("quiet")}
+          >
+            {isPending ? "Clearing…" : "Got it"}
+          </button>
+        </div>
 
       )}
 
-    </div>
+    </ItemCard>
   );
 
 }

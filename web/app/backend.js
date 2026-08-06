@@ -23,6 +23,19 @@ function headers(extra = {}) {
 
 export async function backendGet(path) {
 
+  // Local design fixtures. POS_FIXTURES is set only by the `web-preview` entry
+  // in .claude/launch.json — never in .env.local and never in Vercel — so this
+  // branch is dead code in every deployed build. See fixtures.js.
+  if (process.env.POS_FIXTURES === "1") {
+
+    const { fixtureFor } = await import("./fixtures.js");
+
+    const canned = fixtureFor(path);
+
+    if (canned) return canned;
+
+  }
+
   const res = await fetch(`${BACKEND_URL()}${path}`, {
     cache: "no-store",
     headers: headers()

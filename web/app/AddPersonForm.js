@@ -53,11 +53,11 @@ export default function AddPersonForm() {
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-6">
+    <div className="rounded-card bg-card p-5 shadow-lift">
 
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex w-full items-center justify-between text-sm font-medium uppercase tracking-wide text-muted hover:text-accent"
+        className="flex w-full items-center justify-between pos-display text-[1.05rem] text-ink hover:text-ink"
       >
         <span>Add or update someone</span>
         <span className="text-xs normal-case">{open ? "Hide" : "Open"}</span>
@@ -67,7 +67,7 @@ export default function AddPersonForm() {
 
         <form onSubmit={submit} className="mt-4 space-y-3">
 
-          <p className="text-xs text-muted">
+          <p className="text-xs text-ink-soft">
             Saving a name that already exists updates them instead of creating a duplicate.
           </p>
 
@@ -77,7 +77,7 @@ export default function AddPersonForm() {
             value={form.name}
             onChange={set("name")}
             required
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+            className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
           />
 
           <input
@@ -85,7 +85,7 @@ export default function AddPersonForm() {
             placeholder="Relationship — e.g. college friend, coworker"
             value={form.relationship}
             onChange={set("relationship")}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+            className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
           />
 
           <textarea
@@ -93,7 +93,7 @@ export default function AddPersonForm() {
             value={form.notes}
             onChange={set("notes")}
             rows={2}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+            className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -102,23 +102,23 @@ export default function AddPersonForm() {
               placeholder="Email (optional)"
               value={form.email}
               onChange={set("email")}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+              className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
             />
             <input
               type="tel"
               placeholder="Phone (optional)"
               value={form.phone}
               onChange={set("phone")}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+              className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
             />
           </div>
 
           <div>
-            <label className="text-xs text-muted">Check in every</label>
+            <label className="text-xs text-ink-soft">Check in every</label>
             <select
               value={form.check_in_days}
               onChange={set("check_in_days")}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+              className="mt-1 w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
             >
               <option value="">Don&apos;t remind me</option>
               <option value="7">Week</option>
@@ -132,12 +132,12 @@ export default function AddPersonForm() {
           </div>
 
           <div>
-            <label className="text-xs text-muted">Important date (optional — birthday, anniversary)</label>
+            <label className="text-xs text-ink-soft">Important date (optional — birthday, anniversary)</label>
             <div className="mt-1 grid grid-cols-3 gap-2">
               <select
                 value={form.important_date_month}
                 onChange={set("important_date_month")}
-                className="rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground outline-none focus:border-accent"
+                className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
               >
                 <option value="">Month</option>
                 {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
@@ -151,18 +151,18 @@ export default function AddPersonForm() {
                 placeholder="Day"
                 value={form.important_date_day}
                 onChange={set("important_date_day")}
-                className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+                className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
               />
               <input
                 type="text"
                 placeholder="Label"
                 value={form.important_date_label}
                 onChange={set("important_date_label")}
-                className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+                className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
               />
             </div>
             {form.important_date_month && form.important_date_day && (
-              <p className="mt-1 text-xs text-muted">
+              <p className="mt-1 text-xs text-ink-soft">
                 Adds a calendar reminder on the next occurrence — real, on your actual calendar.
               </p>
             )}
@@ -171,12 +171,12 @@ export default function AddPersonForm() {
           <button
             type="submit"
             disabled={isPending || !form.name.trim()}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-2.5 text-[0.88rem] font-medium text-paper transition-colors hover:opacity-90 disabled:opacity-45 disabled:opacity-50"
           >
             {isPending ? "Saving…" : "Save"}
           </button>
 
-          {note && <p className="text-xs text-muted">{note}</p>}
+          {note && <p className="text-xs text-ink-soft">{note}</p>}
 
         </form>
 

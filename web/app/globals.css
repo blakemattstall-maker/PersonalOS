@@ -1,21 +1,50 @@
 @import "tailwindcss";
 
-:root {
-  --background: #f7f7f8;
-  --surface: #ffffff;
-  --foreground: #16181d;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --accent: #2563eb;
-}
+/* ─────────────────────────────────────────────────────────────────────────
+   PersonalOS design tokens
 
-@theme inline {
-  --color-background: var(--background);
-  --color-surface: var(--surface);
-  --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-border: var(--border);
-  --color-accent: var(--accent);
+   Palette is the one Blake supplied, used with a rule rather than spread
+   evenly: slate and moss carry the structure, sage does borders and inactive
+   tracks and never text, and EMBER IS RESERVED. Orange appears in exactly one
+   circumstance anywhere in this app — something is waiting on him. Not links,
+   not headings, not focus rings, not "primary" buttons that merely save a
+   form. When the app is caught up there is no orange on screen at all, which
+   is the whole point: an assistant whose job is to interrupt sparingly should
+   look like one.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Surfaces */
+  --paper: #efeee9;          /* page ground */
+  --card: #fdfcf9;           /* widgets sit on the ground, slightly lifted */
+  --sunken: #e7e5de;         /* inputs, inactive tracks, wells */
+
+  /* Text */
+  --ink: #37424a;            /* primary */
+  --ink-soft: #5e6a70;       /* secondary. Derived, not from the supplied
+                                palette, and set here rather than lighter
+                                because it carries real body copy: at #6e7a80
+                                it measured 3.8:1 on --paper, under AA. This
+                                is 4.7:1. */
+  --line: #b9c0bf;           /* borders and dividers only, never text */
+
+  /* Meaning */
+  --moss: #4a6b62;           /* settled, running, done */
+  --ember: #e07038;          /* RESERVED: awaiting you */
+  --ember-wash: #f7e3d7;     /* ember at rest, for tiles and fills */
+  --moss-wash: #dde5e1;
+  --slate-wash: #e3e6e6;     /* neutral tile — always LIGHTER than --card in
+                                dark mode, so a tile reads as a raised chip
+                                rather than a hole punched in the widget */
+
+  /* Form */
+  --r-card: 24px;
+  --r-item: 16px;
+  --r-tile: 13px;
+  --r-pill: 999px;
+
+  --lift: 0 1px 2px rgba(55, 66, 74, 0.04), 0 10px 26px -14px rgba(55, 66, 74, 0.18);
+  --lift-sm: 0 1px 2px rgba(55, 66, 74, 0.05);
 }
 
 /* Dark comes from the OS unless the user has explicitly chosen light. The
@@ -24,28 +53,94 @@
    be silently ignored. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --background: #0b0d10;
-    --surface: #14171c;
-    --foreground: #e8e9ec;
-    --muted: #8b92a1;
-    --border: #22262e;
-    --accent: #5b9dff;
+    --paper: #20272b;
+    --card: #2b343a;
+    --sunken: #1a2024;
+    --ink: #efeee9;
+    --ink-soft: #9aa5a5;
+    --line: #3c484e;
+    --moss: #7ba396;
+    --ember: #f0824a;
+    --ember-wash: #46332a;
+    --moss-wash: #2f3d39;
+    --slate-wash: #3a464c;
+    --lift: 0 1px 2px rgba(0, 0, 0, 0.2), 0 10px 26px -14px rgba(0, 0, 0, 0.5);
+    --lift-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
   }
 }
 
 :root[data-theme="dark"] {
-  --background: #0b0d10;
-  --surface: #14171c;
-  --foreground: #e8e9ec;
-  --muted: #8b92a1;
-  --border: #22262e;
-  --accent: #5b9dff;
+  --paper: #20272b;
+  --card: #2b343a;
+  --sunken: #1a2024;
+  --ink: #efeee9;
+  --ink-soft: #9aa5a5;
+  --line: #3c484e;
+  --moss: #7ba396;
+  --ember: #f0824a;
+  --ember-wash: #46332a;
+  --moss-wash: #2f3d39;
+  --slate-wash: #3a464c;
+  --lift: 0 1px 2px rgba(0, 0, 0, 0.2), 0 10px 26px -14px rgba(0, 0, 0, 0.5);
+  --lift-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-sunken: var(--sunken);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-line: var(--line);
+  --color-moss: var(--moss);
+  --color-ember: var(--ember);
+  --color-ember-wash: var(--ember-wash);
+  --color-moss-wash: var(--moss-wash);
+  --color-slate-wash: var(--slate-wash);
+
+  --radius-card: var(--r-card);
+  --radius-item: var(--r-item);
+  --radius-tile: var(--r-tile);
+
+  --shadow-lift: var(--lift);
+  --shadow-lift-sm: var(--lift-sm);
+
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-data: var(--font-dm-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Display face is set tight and heavy — it does the work the old uppercase
+   letter-spaced eyebrows were doing, without shouting. */
+.pos-display {
+  font-family: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+}
+
+/* Numbers, times, counts and dates. This is an operating system; its readings
+   should look like readings. Tabular figures keep columns from jittering as
+   values change between renders. */
+.pos-data {
+  font-family: var(--font-dm-mono), ui-monospace, SFMono-Regular, monospace;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+}
+
+/* One visible focus treatment for the whole app, on the element itself rather
+   than a ring colour per component — so nothing can quietly ship without it. */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 /* Thinking indicator. Three dots that rise in sequence, so a slow model call
@@ -67,6 +162,33 @@ body {
 .pos-dot:nth-child(2) { animation-delay: 0.16s; }
 .pos-dot:nth-child(3) { animation-delay: 0.32s; }
 
+/* The ember dot. The single piece of ornament in the app, and it means one
+   thing: this is waiting on you. The halo is a slow, shallow pulse — enough to
+   catch the eye on a glance, not enough to nag while reading. */
+@keyframes pos-ember-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 112, 56, 0.45); }
+  70%      { box-shadow: 0 0 0 5px rgba(224, 112, 56, 0); }
+}
+
+.pos-ember-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--ember);
+  animation: pos-ember-pulse 2.8s infinite ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .pos-dot { animation-duration: 0.01ms; animation-iteration-count: 1; opacity: 0.6; }
+  .pos-dot {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    opacity: 0.6;
+  }
+  .pos-ember-dot { animation: none; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { resolveDeepThought, resolveNudge } from "./actions.js";
+import { btn } from "./ui.js";
 
 
 export default function ResolveButton({ type, id }) {
@@ -26,9 +27,9 @@ export default function ResolveButton({ type, id }) {
     <button
       onClick={handleClick}
       disabled={isPending}
-      className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+      className={`${btn("quiet")} mt-4`}
     >
-      {isPending ? "Resolving…" : "Mark resolved"}
+      {isPending ? "Clearing…" : "Mark resolved"}
     </button>
   );
 

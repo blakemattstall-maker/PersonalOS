@@ -22,7 +22,7 @@ export default function DeleteButton({ type, id }) {
     <button
       onClick={handleClick}
       disabled={isPending}
-      className="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs text-muted hover:border-red-500 hover:text-red-500 disabled:opacity-50"
+      className="shrink-0 inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ember hover:text-ember disabled:opacity-45"
     >
       {isPending ? "…" : "Delete"}
     </button>

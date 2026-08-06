@@ -2,6 +2,7 @@ import Link from "next/link";
 import { backendGet } from "../backend.js";
 import NewsCard from "../NewsCard.js";
 import RefreshDigestButton from "../RefreshDigestButton.js";
+import { Page, PageHeader, Empty, Meta, link } from "../ui.js";
 
 
 export const dynamic = "force-dynamic";
@@ -48,67 +49,54 @@ export default async function News() {
   const present = CATEGORY_ORDER.filter(c => counts[c]);
 
   return (
-    <div className="flex flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
+    <Page>
 
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-foreground">News</h1>
-          <Link href="/" className="text-sm text-muted hover:text-accent">
-            ← Back
-          </Link>
+      <PageHeader title="News">
+        Ordered by what matters to you, not by what ran most recently.
+      </PageHeader>
+
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+
+        {/* The spread, as readings. Not filters — see the note above. */}
+        <div className="flex flex-wrap gap-1.5">
+          {present.map(c => (
+            <span
+              key={c}
+              className="inline-flex items-center gap-1.5 rounded-[var(--r-pill)] bg-[var(--sunken)] px-2.5 py-1 text-[0.72rem] text-ink-soft"
+            >
+              {CATEGORY_LABELS[c]}
+              <span className="pos-data text-ink">{counts[c]}</span>
+            </span>
+          ))}
         </div>
 
-        <p className="mt-2 text-sm text-muted">
-          Real stories from live feeds, ordered by what actually matters to you
-          — not by what a wire service ran most recently. Each one carries the
-          background and however many honest readings it genuinely has.
-        </p>
+        <RefreshDigestButton />
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+      </div>
 
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
-            {present.length > 0
-              ? present.map(c => (
-                  <span key={c}>{CATEGORY_LABELS[c]} {counts[c]}</span>
-                ))
-              : null}
-          </div>
+      {items.length === 0 ? (
 
-          <RefreshDigestButton />
+        <Empty>
+          Nothing in the feed yet. Pull from the live sources now with
+          Refresh — after that it runs on its own each morning. Stories always
+          come from published feeds, never from a model recalling the news.
+        </Empty>
 
+      ) : (
+
+        <div className="space-y-3">
+          {items.map(item => <NewsCard key={item.id} item={item} />)}
         </div>
 
-        {items.length === 0 ? (
+      )}
 
-          <div className="mt-4 rounded-2xl border border-border bg-surface p-6 text-sm text-muted">
-            <p>
-              Nothing in the feed yet. Tap <strong className="text-foreground">Refresh</strong> to
-              pull from the live sources now — it runs on its own each morning
-              after that.
-            </p>
-            <p className="mt-2">
-              The news itself is always real, fetched from published feeds. It
-              is never a model recalling &ldquo;what happened today&rdquo;, which
-              would be stale or invented.
-            </p>
-          </div>
+      <p className="mt-8 text-[0.82rem] leading-relaxed text-ink-soft">
+        Want to argue one of these instead of read it?{" "}
+        <Link href="/practice" className={link()}>Practice</Link>{" "}
+        has standing questions built for that — no briefing required.
+      </p>
 
-        ) : (
-
-          <div className="mt-4 space-y-4">
-            {items.map(item => <NewsCard key={item.id} item={item} />)}
-          </div>
-
-        )}
-
-        <p className="mt-8 text-xs leading-relaxed text-muted">
-          Want to argue one of these instead of read it?{" "}
-          <Link href="/practice" className="text-accent">Practice</Link>{" "}
-          has standing questions built for that — no briefing required.
-        </p>
-
-      </main>
-    </div>
+    </Page>
   );
 
 }

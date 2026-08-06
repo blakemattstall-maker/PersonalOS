@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { formatDate, DeepThoughtBody } from "../shared.js";
 import { backendGet } from "../backend.js";
+import { Page, PageHeader, ItemCard, Empty } from "../ui.js";
 
 
 async function getHistory() {
@@ -29,63 +29,62 @@ export default async function History() {
   ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   return (
-    <div className="flex flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
+    <Page>
 
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-foreground">History</h1>
-          <Link href="/" className="text-sm text-muted hover:text-accent">
-            ← Dashboard
-          </Link>
+      <PageHeader title="Earlier">
+        Briefs you&apos;ve already read and everything you&apos;ve cleared,
+        newest first.
+      </PageHeader>
+
+      {items.length === 0 ? (
+
+        <Empty>
+          Nothing here yet. Anything you resolve on Today lands here, along
+          with every morning brief.
+        </Empty>
+
+      ) : (
+
+        <div className="space-y-3">
+          {items.map((item) => (
+
+            // waiting={false} throughout — the whole page is things already
+            // dealt with, and the ember dot means the opposite of that.
+            <ItemCard
+              key={`${item.kind}-${item.id}`}
+              kind={item.kind}
+              waiting={false}
+              title={item.kind === "thought" ? item.topic : undefined}
+              meta={formatDate(item.created_at)}
+            >
+
+              {item.kind === "thought" && <DeepThoughtBody content={item.content} />}
+
+              {item.kind === "nudge" && (
+                <>
+                  <p className="mt-3 leading-relaxed text-ink">{item.message}</p>
+                  {item.intentions?.content && (
+                    <p className="mt-2 text-[0.82rem] text-ink-soft">
+                      Because you said: {item.intentions.content}
+                    </p>
+                  )}
+                </>
+              )}
+
+              {item.kind === "brief" && (
+                <div className="mt-3 whitespace-pre-wrap leading-relaxed text-ink">
+                  {item.content}
+                </div>
+              )}
+
+            </ItemCard>
+
+          ))}
         </div>
 
-        {items.length === 0 ? (
+      )}
 
-          <p className="mt-8 text-muted">Nothing resolved yet.</p>
-
-        ) : (
-
-          <div className="mt-8 space-y-8">
-            {items.map((item) => (
-              <div key={`${item.kind}-${item.id}`} className="rounded-2xl border border-border bg-surface p-6">
-
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                    {item.kind === "thought" ? "Deep Thinking" : item.kind === "nudge" ? "Nudge" : "Brief"}
-                  </span>
-                  <span className="text-xs text-muted">{formatDate(item.created_at)}</span>
-                </div>
-
-                {item.kind === "thought" && (
-                  <>
-                    <h3 className="mt-2 font-medium text-foreground">{item.topic}</h3>
-                    <DeepThoughtBody content={item.content} />
-                  </>
-                )}
-
-                {item.kind === "nudge" && (
-                  <>
-                    <p className="mt-2 text-foreground leading-relaxed">{item.message}</p>
-                    {item.intentions?.content && (
-                      <p className="mt-1 text-xs text-muted">Re: {item.intentions.content}</p>
-                    )}
-                  </>
-                )}
-
-                {item.kind === "brief" && (
-                  <div className="mt-2 whitespace-pre-wrap text-foreground leading-relaxed">
-                    {item.content}
-                  </div>
-                )}
-
-              </div>
-            ))}
-          </div>
-
-        )}
-
-      </main>
-    </div>
+    </Page>
   );
 
 }

@@ -72,13 +72,13 @@ export default function TopicCard({ topic }) {
   if (retired) return null;
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-6">
+    <div className="rounded-card bg-card p-5 shadow-lift">
 
       <div className="flex items-start justify-between gap-3">
 
         <div className="min-w-0">
-          <h3 className="font-medium text-foreground">{topic.title}</h3>
-          <p className="mt-1 text-xs uppercase tracking-wide text-muted">
+          <h3 className="font-medium text-ink">{topic.title}</h3>
+          <p className="mt-1 text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
             {CATEGORY_LABELS[topic.category] || topic.category}
             {topic.used_count > 0 && ` · argued ${topic.used_count}×`}
           </p>
@@ -89,27 +89,27 @@ export default function TopicCard({ topic }) {
           disabled={isPending}
           aria-label="Remove this topic"
           title="Hide this topic — your past sessions on it are kept"
-          className="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs text-muted hover:border-red-500 hover:text-red-500 disabled:opacity-50"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ember hover:text-ember disabled:opacity-45"
         >
           {isPending ? "…" : "Remove"}
         </button>
 
       </div>
 
-      <p className="mt-3 text-sm leading-relaxed text-foreground">{topic.tension}</p>
+      <p className="mt-3 text-sm leading-relaxed text-ink">{topic.tension}</p>
 
       <button
         onClick={() => setExpanded(e => !e)}
-        className="mt-2 text-xs text-accent"
+        className="mt-2 text-[0.75rem] font-medium text-ink underline decoration-[var(--line)] decoration-1 underline-offset-[3px] hover:decoration-[var(--ink)]"
       >
         {expanded ? "Hide background" : "Background first"}
       </button>
 
       {expanded && (
-        <p className="mt-2 text-sm leading-relaxed text-muted">{topic.context}</p>
+        <p className="mt-2 text-sm leading-relaxed text-ink-soft">{topic.context}</p>
       )}
 
-      <p className="mt-4 text-xs uppercase tracking-wide text-muted">
+      <p className="mt-4 text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
         Pick the side you&apos;ll argue
       </p>
 
@@ -118,7 +118,7 @@ export default function TopicCard({ topic }) {
         <button
           onClick={() => pick("side_a")}
           disabled={isPending}
-          className="rounded-lg border border-border px-3 py-2 text-left text-sm leading-relaxed text-foreground hover:border-accent disabled:opacity-50"
+          className="rounded-lg border border-[var(--line)] px-3 py-2 text-left text-sm leading-relaxed text-ink hover:border-ink disabled:opacity-50"
         >
           {topic.side_a}
         </button>
@@ -126,15 +126,15 @@ export default function TopicCard({ topic }) {
         <button
           onClick={() => pick("side_b")}
           disabled={isPending}
-          className="rounded-lg border border-border px-3 py-2 text-left text-sm leading-relaxed text-foreground hover:border-accent disabled:opacity-50"
+          className="rounded-lg border border-[var(--line)] px-3 py-2 text-left text-sm leading-relaxed text-ink hover:border-ink disabled:opacity-50"
         >
           {topic.side_b}
         </button>
 
       </div>
 
-      {isPending && <p className="mt-2 text-xs text-muted">Working…</p>}
-      {error && <p className="mt-2 text-xs text-foreground">{error}</p>}
+      {isPending && <p className="mt-2 text-xs text-ink-soft">Working…</p>}
+      {error && <p className="mt-2 text-xs text-ink">{error}</p>}
 
     </div>
   );

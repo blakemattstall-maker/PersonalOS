@@ -36,11 +36,11 @@ export default function RefreshDigestButton() {
       <button
         onClick={refresh}
         disabled={isPending}
-        className="text-xs text-muted hover:text-accent disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-45"
       >
         {isPending ? "Checking sources…" : "Refresh"}
       </button>
-      {note && <span className="text-xs text-muted">{note}</span>}
+      {note && <span className="text-xs text-ink-soft">{note}</span>}
     </div>
   );
 

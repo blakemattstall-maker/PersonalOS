@@ -6,6 +6,16 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "web", "--", "--port", "3010"],
       "port": 3010
+    },
+    {
+      "name": "web-preview",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "SITE_PASSPHRASE=local-preview-only",
+        "POS_FIXTURES=1",
+        "npm", "run", "dev", "--prefix", "web", "--", "--port", "3011"
+      ],
+      "port": 3011
     }
   ]
 }

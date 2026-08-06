@@ -182,7 +182,7 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
           onClick={start}
           disabled={disabled}
           title="Record instead of typing"
-          className="rounded-md border border-border px-2.5 py-1 text-xs text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-45"
         >
           ● Speak
         </button>
@@ -193,11 +193,11 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
           <button
             type="button"
             onClick={stop}
-            className="rounded-md border border-accent px-2.5 py-1 text-xs font-medium text-accent"
+            className="inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-ember px-3 py-1 text-[0.75rem] font-medium text-ember"
           >
             ◼ Stop
           </button>
-          <span className="text-xs text-muted">
+          <span className="text-xs text-ink-soft">
             {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
             {seconds >= MAX_SECONDS - 15 && " — stopping soon"}
           </span>
@@ -205,10 +205,10 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
       )}
 
       {state === "working" && (
-        <span className="text-xs text-muted">Transcribing…</span>
+        <span className="text-xs text-ink-soft">Transcribing…</span>
       )}
 
-      {error && <span className="text-xs text-foreground">{error}</span>}
+      {error && <span className="text-xs text-ink">{error}</span>}
 
     </div>
   );

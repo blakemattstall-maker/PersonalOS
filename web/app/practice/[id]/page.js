@@ -3,6 +3,7 @@ import { backendGet } from "../../backend.js";
 import DebateSession from "../../DebateSession.js";
 import FeedbackCard from "../../FeedbackCard.js";
 import ReadAloud from "../../ReadAloud.js";
+import { Page, PageHeader, Card, Empty } from "../../ui.js";
 
 
 export const dynamic = "force-dynamic";
@@ -48,65 +49,76 @@ export default async function PracticeSession({ params }) {
     : "Debate";
 
   return (
-    <div className="flex flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
+    <Page>
 
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
-          <Link href="/practice" className="text-sm text-muted hover:text-accent">
-            ← Practice
-          </Link>
-        </div>
+      {/* The one place a back link still earns its keep: this is a detail view
+          under /practice, and the tab bar can only return you to the list's
+          root. Everywhere else the tab bar replaced it. */}
+      <Link
+        href="/practice"
+        className="mb-4 inline-flex items-center gap-1.5 text-[0.8rem] font-medium text-ink-soft hover:text-ink"
+      >
+        <span aria-hidden="true">‹</span> All practice
+      </Link>
 
-        {!session ? (
+      <PageHeader title={title} />
 
-          <p className="mt-8 text-sm text-muted">Couldn&apos;t find that session.</p>
+      {!session ? (
 
-        ) : session.type === "debate" ? (
+        <Empty>
+          Couldn&apos;t find that session. It may have been removed — the list
+          on Practice shows everything still saved.
+        </Empty>
 
-          <>
-            <div className="mt-4 rounded-2xl border border-border bg-surface p-6">
-              <h2 className="font-medium text-foreground">{subject?.title}</h2>
-              <p className="mt-2 text-sm text-muted">{subject?.tension}</p>
-              <p className="mt-2 text-xs text-muted">
-                You&apos;re arguing: <span className="text-foreground">
-                  {session.user_side === "side_a" ? subject?.side_a : subject?.side_b}
-                </span>
+      ) : session.type === "debate" ? (
+
+        <>
+          <Card>
+            <h2 className="pos-display text-[1.15rem] text-ink">{subject?.title}</h2>
+            <p className="mt-2 text-[0.87rem] leading-relaxed text-ink-soft">{subject?.tension}</p>
+            <div className="mt-3 rounded-item bg-[var(--sunken)] px-4 py-3">
+              <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
+                You&apos;re arguing
+              </div>
+              <p className="mt-1 text-[0.9rem] leading-snug text-ink">
+                {session.user_side === "side_a" ? subject?.side_a : subject?.side_b}
               </p>
             </div>
+          </Card>
 
-            <DebateSession session={session} />
-          </>
+          <DebateSession session={session} />
+        </>
 
-        ) : (
+      ) : (
 
-          <div className="mt-4 rounded-2xl border border-border bg-surface p-6">
+        <Card>
 
-            {session.topic && <p className="text-sm text-muted">Topic: {session.topic}</p>}
+          {session.topic && (
+            <p className="text-[0.85rem] text-ink-soft">Topic: {session.topic}</p>
+          )}
 
-            {/* The brief he was working from, when this was a generated
-                explainer — the feedback below is unreadable without it. */}
-            {session.prompt && (
-              <p className="mt-2 rounded-lg border border-border p-3 text-sm leading-relaxed text-foreground">
-                {session.prompt}
-              </p>
-            )}
+          {/* The brief he was working from, when this was a generated
+              explainer — the feedback below is unreadable without it. */}
+          {session.prompt && (
+            <p className="mt-2 rounded-item bg-[var(--sunken)] p-4 text-[0.87rem] leading-relaxed text-ink">
+              {session.prompt}
+            </p>
+          )}
 
-            <div className="mt-3 flex items-start justify-between gap-3">
-              <p className="whitespace-pre-wrap text-sm text-foreground leading-relaxed">
-                {session.transcript?.[0]?.message}
-              </p>
-              <ReadAloud text={session.transcript?.[0]?.message || ""} title="Pitch transcript" />
-            </div>
-
-            {session.feedback && <FeedbackCard type="pitch" feedback={session.feedback} />}
-
+          <div className="mt-4 flex items-start justify-between gap-3">
+            <p className="whitespace-pre-wrap text-[0.87rem] leading-relaxed text-ink">
+              {session.transcript?.[0]?.message}
+            </p>
+            <ReadAloud text={session.transcript?.[0]?.message || ""} title="Pitch transcript" />
           </div>
 
-        )}
+          {session.feedback && <FeedbackCard type="pitch" feedback={session.feedback} />}
 
-      </main>
-    </div>
+        </Card>
+
+      )}
+
+    </Page>
   );
 
 }

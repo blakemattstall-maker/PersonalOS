@@ -96,9 +96,9 @@ export default function PushSetup() {
 
 
   return (
-    <div className="mt-6 rounded-2xl border border-border bg-surface p-6">
+    <div className="mt-6 rounded-card bg-card p-5 shadow-lift">
 
-      <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+      <h2 className="pos-display text-[1.05rem] text-ink">
         Notifications
       </h2>
 
@@ -106,45 +106,45 @@ export default function PushSetup() {
           settings page that reads as a bug — the section the user came looking
           for simply isn't there — so it now says why. */}
       {state === "unsupported" && (
-        <p className="mt-3 text-sm text-muted">
+        <p className="mt-3 text-sm text-ink-soft">
           This browser can&apos;t receive push notifications. Open the app on
           your iPhone from the Home Screen icon to turn them on.
         </p>
       )}
 
       {state === "needs-install" && (
-        <p className="mt-3 text-sm text-muted">
+        <p className="mt-3 text-sm text-ink-soft">
           To get notifications on iPhone, this has to be installed as an app
-          first: tap the Share button, then <span className="text-foreground">Add to Home Screen</span>,
+          first: tap the Share button, then <span className="text-ink">Add to Home Screen</span>,
           and open it from there. Safari tabs can&apos;t receive them.
         </p>
       )}
 
       {state === "subscribed" && (
-        <p className="mt-3 text-sm text-foreground">
+        <p className="mt-3 text-sm text-ink">
           On. You&apos;ll get one message a day at most, plus anything genuinely urgent.
         </p>
       )}
 
       {(state === "ready" || state === "working" || state === "denied") && (
         <>
-          <p className="mt-3 text-sm text-muted">
+          <p className="mt-3 text-sm text-ink-soft">
             One message a day at most, plus anything urgent — a large unexpected
             charge, a paycheck landing, something due today.
           </p>
 
           {state === "denied" && (
-            <p className="mt-2 text-sm text-foreground">
+            <p className="mt-2 text-sm text-ink">
               Notifications are blocked. Turn them back on in Settings, then reload.
             </p>
           )}
 
-          {error && <p className="mt-2 text-sm text-foreground">{error}</p>}
+          {error && <p className="mt-2 text-sm text-ink">{error}</p>}
 
           <button
             onClick={enable}
             disabled={state === "working"}
-            className="mt-3 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="mt-3 inline-flex items-center justify-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-2.5 text-[0.88rem] font-medium text-paper transition-colors hover:opacity-90 disabled:opacity-45 disabled:opacity-50"
           >
             {state === "working" ? "Turning on…" : "Turn on notifications"}
           </button>

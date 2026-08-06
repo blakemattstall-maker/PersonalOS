@@ -39,41 +39,60 @@ export function DeepThoughtBody({ content }) {
   // Older entries (before structured output) were saved as plain text.
   if (!parsed) {
     return (
-      <div className="mt-2 whitespace-pre-wrap text-foreground leading-relaxed">
+      <div className="mt-3 whitespace-pre-wrap leading-relaxed text-ink">
         {content}
       </div>
     );
   }
 
   return (
-    <div className="mt-3 space-y-4">
+    <div className="mt-4 space-y-4">
 
-      <div className="rounded-lg border border-accent/40 bg-accent/10 px-4 py-3">
-        <div className="text-xs font-medium uppercase tracking-wide text-accent">Verdict</div>
-        <div className="mt-1 font-medium text-foreground">{parsed.verdict}</div>
+      {/* Moss, not ember. A verdict is a conclusion the app has already
+          reached — the thing still waiting on Blake is the reply box further
+          down, and that's where the one ember dot on this card lives. */}
+      <div className="rounded-item bg-moss-wash px-4 py-3.5">
+        <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-moss">
+          Verdict
+        </div>
+        <div className="pos-display mt-1.5 text-[1.05rem] text-ink">{parsed.verdict}</div>
       </div>
 
       {parsed.reasoning && (
-        <p className="text-foreground leading-relaxed">{parsed.reasoning}</p>
+        <p className="leading-relaxed text-ink">{parsed.reasoning}</p>
       )}
 
       {(parsed.pros?.length > 0 || parsed.cons?.length > 0) && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
 
           {parsed.pros?.length > 0 && (
             <div>
-              <div className="text-xs font-medium uppercase tracking-wide text-muted">Pros</div>
-              <ul className="mt-1 space-y-1 text-sm text-foreground">
-                {parsed.pros.map((p, i) => <li key={i}>+ {p}</li>)}
+              <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
+                For
+              </div>
+              <ul className="mt-1.5 space-y-1.5 text-[0.85rem] leading-snug text-ink">
+                {parsed.pros.map((p, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="text-moss" aria-hidden="true">+</span>
+                    <span>{p}</span>
+                  </li>
+                ))}
               </ul>
             </div>
           )}
 
           {parsed.cons?.length > 0 && (
             <div>
-              <div className="text-xs font-medium uppercase tracking-wide text-muted">Cons</div>
-              <ul className="mt-1 space-y-1 text-sm text-foreground">
-                {parsed.cons.map((c, i) => <li key={i}>− {c}</li>)}
+              <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
+                Against
+              </div>
+              <ul className="mt-1.5 space-y-1.5 text-[0.85rem] leading-snug text-ink">
+                {parsed.cons.map((c, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="text-ink-soft" aria-hidden="true">−</span>
+                    <span>{c}</span>
+                  </li>
+                ))}
               </ul>
             </div>
           )}
@@ -82,10 +101,17 @@ export function DeepThoughtBody({ content }) {
       )}
 
       {parsed.open_questions?.length > 0 && (
-        <div>
-          <div className="text-xs font-medium uppercase tracking-wide text-muted">Worth answering yourself</div>
-          <ul className="mt-1 space-y-1 text-sm text-muted">
-            {parsed.open_questions.map((q, i) => <li key={i}>? {q}</li>)}
+        <div className="rounded-item bg-[var(--sunken)] px-4 py-3.5">
+          <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
+            Worth answering yourself
+          </div>
+          <ul className="mt-1.5 space-y-1.5 text-[0.85rem] leading-snug text-ink">
+            {parsed.open_questions.map((q, i) => (
+              <li key={i} className="flex gap-2">
+                <span className="text-ink-soft" aria-hidden="true">?</span>
+                <span>{q}</span>
+              </li>
+            ))}
           </ul>
         </div>
       )}

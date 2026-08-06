@@ -1,6 +1,7 @@
 import Link from "next/link";
 import SettingsPanel from "../SettingsPanel.js";
 import { backendGet } from "../backend.js";
+import { Page, PageHeader, Card } from "../ui.js";
 
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,22 @@ async function safeGet(path, fallback) {
 }
 
 
+// The two pages that don't earn a tab of their own. Both are "look back or
+// clean up" jobs, which is what this page already is.
+const ELSEWHERE = [
+  {
+    href: "/data",
+    title: "What it knows",
+    blurb: "Every memory, note and intention it has saved. Delete anything wrong."
+  },
+  {
+    href: "/history",
+    title: "Earlier",
+    blurb: "Past briefs, and everything you've already cleared."
+  }
+];
+
+
 export default async function Settings() {
 
   const [settings, diagnostics] = await Promise.all([
@@ -29,23 +46,36 @@ export default async function Settings() {
   ]);
 
   return (
-    <div className="flex flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
+    <Page>
 
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
-          <Link href="/" className="text-sm text-muted hover:text-accent">
-            ← Back
-          </Link>
+      <PageHeader title="Settings" />
+
+      <Card className="mb-2">
+        <div className="-my-1">
+          {ELSEWHERE.map(entry => (
+            <Link
+              key={entry.href}
+              href={entry.href}
+              className="flex items-center gap-3 border-t border-[var(--line)] py-3.5 first:border-t-0"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-[0.92rem] font-medium text-ink">{entry.title}</span>
+                <span className="mt-0.5 block text-[0.8rem] leading-snug text-ink-soft">
+                  {entry.blurb}
+                </span>
+              </span>
+              <span className="shrink-0 text-ink-soft" aria-hidden="true">›</span>
+            </Link>
+          ))}
         </div>
+      </Card>
 
-        <SettingsPanel
-          initialSettings={settings?.settings || null}
-          initialDiagnostics={diagnostics}
-        />
+      <SettingsPanel
+        initialSettings={settings?.settings || null}
+        initialDiagnostics={diagnostics}
+      />
 
-      </main>
-    </div>
+    </Page>
   );
 
 }

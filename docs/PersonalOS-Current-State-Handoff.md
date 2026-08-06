@@ -82,6 +82,19 @@ Debate used to run off the morning's news digest, which meant topics were whatev
 - **`lib/diagnostics.js` / `lib/schema.js`** — one real answer to "is this actually working" and "which migrations are actually live, and are they doing anything." Surfaced at `/settings`. **Check this before believing any doc's claim about state, including this one.**
 - **Neural TTS** — `web/app/api/tts/route.js`, `gpt-4o-mini-tts` with a `tts-1` fallback, in the `web/` project (needs its own `OPENAI_API_KEY`).
 
+### The dashboard was redesigned (Aug 6, branch `ui-redesign`)
+
+Blake supplied a reference screenshot (a habit-tracker with soft widget cards) and a five-colour palette, and asked for usability and clutter fixes. **Read `web/app/globals.css` and `web/app/ui.js` before restyling anything** — both open with the reasoning, and the rules below are load-bearing rather than decorative.
+
+- **The ember rule.** `--ember` (`#e07038`) appears in exactly one circumstance app-wide: something is waiting on Blake. Not links, not headings, not focus rings, not "primary" buttons that merely save a form. When the queue is clear there is no orange on screen at all. This is what fixes the old problem where every section carried identical weight. If you need emphasis for something that isn't awaiting him, use `--moss` (settled/running/done) or `--ink`. **Don't spend ember on a new feature because it looks good.**
+- **Palette** is Blake's, unchanged: `#37424a` ink, `#4a6b62` moss, `#b9c0bf` line, `#e07038` ember, `#efeee9` paper. `--ink-soft` is derived and was deliberately darkened to `#5e6a70` for AA contrast on paper. **Known and accepted tradeoff:** `--line` at Blake's `#b9c0bf` is ~1.8:1 on card, under the 3:1 WCAG wants for control boundaries. His palette choice won; buttons carry readable labels regardless.
+- **Type**: Bricolage Grotesque (display, via `.pos-display`), Inter (body), DM Mono (readings — counts, dates, times, via `.pos-data`). Loaded through `next/font/google` in `layout.js`, self-hosted at build.
+- **Navigation is a persistent bottom tab bar** (`TabBar.js`): Today / News / Practice / People / Settings. The old six-link header existed only on home while every other page offered `← Back`, so News→Practice meant a round trip through home at 700ms–1.5s a hop. History and Manage data are reached contextually (from the brief card, and from the top of Settings) rather than getting tabs.
+- **Home is reordered and state-dependent.** The headline is the triage count ("Four things need you." / "You're clear."), which replaced the reference's greeting-plus-week-strip — Blake disliked the date component, and nothing in this app is browsable per-day, so a week strip would have been decoration in the most valuable space. When the queue is non-empty it renders above the brief; when empty it renders nothing and the brief becomes the first card, with no special-casing. The brief used to be dead last.
+- **Thoughts, nudges and prompts are now visually distinct** — separate widgets with their own icon tiles, instead of one undifferentiated list separated by hairlines and distinguished only by a small grey eyebrow word.
+- **Debug copy naming `.sql` files was removed from user-facing empty states.** `/practice` used to tell Blake to paste `docs/schema-practice-split.sql` into Supabase. Those strings still exist in `tools/` where they belong (server responses, Diagnostics).
+- **Fixture mode** — `POS_FIXTURES=1` + `web/app/fixtures.js`, wired to the `web-preview` launch config. A local dev server can't reach the backend (`API_SECRET` is live, `BACKEND_KEY` isn't in `.env.local`), so without this every page renders empty and design work is blind. Paints an orange "nothing here is real" bar. Set nowhere but that one launch entry.
+
 ---
 
 ## The Fund — built, then removed (Aug 6)

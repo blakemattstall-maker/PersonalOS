@@ -55,24 +55,24 @@ export default function NewsCard({ item }) {
   const viewpoints = Array.isArray(item.viewpoints) ? item.viewpoints : [];
 
   return (
-    <article className="rounded-2xl border border-border bg-surface p-6">
+    <article className="rounded-card bg-card p-5 shadow-lift">
 
       <div className="flex items-start justify-between gap-3">
 
         <div className="min-w-0">
 
-          <p className="text-xs uppercase tracking-wide text-muted">
+          <p className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
             {CATEGORY_LABELS[item.category] || item.source}
             {item.category && ` · ${item.source}`}
           </p>
 
-          <h3 className="mt-1 font-medium leading-snug text-foreground">
+          <h3 className="mt-1 font-medium leading-snug text-ink">
             {item.source_url ? (
               <a
                 href={item.source_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="hover:text-accent"
+                className="hover:text-ink"
               >
                 {item.headline}
               </a>
@@ -86,7 +86,7 @@ export default function NewsCard({ item }) {
           disabled={isPending}
           aria-label="Remove this story"
           title="Remove this story"
-          className="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs text-muted hover:border-red-500 hover:text-red-500 disabled:opacity-50"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ember hover:text-ember disabled:opacity-45"
         >
           {isPending ? "…" : "Remove"}
         </button>
@@ -94,13 +94,13 @@ export default function NewsCard({ item }) {
       </div>
 
       {item.summary && (
-        <p className="mt-3 text-sm leading-relaxed text-foreground">{item.summary}</p>
+        <p className="mt-3 text-sm leading-relaxed text-ink">{item.summary}</p>
       )}
 
       {/* Why it's in HIS feed. Only rendered when the sync found a real link —
           the model is instructed to leave it out rather than invent one. */}
       {item.relevance && (
-        <p className="mt-3 border-l-2 border-accent pl-3 text-sm leading-relaxed text-muted">
+        <p className="mt-3 border-l-2 border-moss pl-3 text-sm leading-relaxed text-ink-soft">
           {item.relevance}
         </p>
       )}
@@ -108,7 +108,7 @@ export default function NewsCard({ item }) {
       {(item.context || viewpoints.length > 0) && (
         <button
           onClick={() => setExpanded(e => !e)}
-          className="mt-3 text-xs text-accent"
+          className="mt-3 text-[0.75rem] font-medium text-ink underline decoration-[var(--line)] decoration-1 underline-offset-[3px] hover:decoration-[var(--ink)]"
         >
           {expanded
             ? "Less"
@@ -124,10 +124,10 @@ export default function NewsCard({ item }) {
 
           {item.context && (
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted">
+              <p className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
                 How we got here
               </p>
-              <p className="mt-1 text-sm leading-relaxed text-muted">{item.context}</p>
+              <p className="mt-1 text-sm leading-relaxed text-ink-soft">{item.context}</p>
             </div>
           )}
 
@@ -135,15 +135,15 @@ export default function NewsCard({ item }) {
 
             <div>
 
-              <p className="text-xs font-medium uppercase tracking-wide text-muted">
+              <p className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
                 How it&apos;s being read
               </p>
 
               <div className="mt-2 space-y-2">
                 {viewpoints.map((v, i) => (
-                  <div key={i} className="rounded-lg border border-border p-3">
-                    <p className="text-xs font-medium text-foreground">{v.label}</p>
-                    <p className="mt-1 text-sm leading-relaxed text-muted">{v.take}</p>
+                  <div key={i} className="rounded-item bg-[var(--sunken)] p-3">
+                    <p className="text-xs font-medium text-ink">{v.label}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-ink-soft">{v.take}</p>
                   </div>
                 ))}
               </div>
@@ -156,7 +156,7 @@ export default function NewsCard({ item }) {
 
       )}
 
-      {error && <p className="mt-2 text-xs text-foreground">{error}</p>}
+      {error && <p className="mt-2 text-xs text-ink">{error}</p>}
 
     </article>
   );

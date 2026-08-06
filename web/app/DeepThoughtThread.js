@@ -7,6 +7,7 @@ import { PLAN_TOOLS } from "./planTools.js";
 import VoiceInput from "./VoiceInput.js";
 import { DeepThoughtBody } from "./shared.js";
 import ReadAloud from "./ReadAloud.js";
+import { ItemCard, btn, field } from "./ui.js";
 
 
 function Dots() {
@@ -163,16 +164,16 @@ export default function DeepThoughtThread({ thought, turns }) {
 
 
   return (
-    <div className="border-t border-border pt-4 first:border-t-0 first:pt-0">
-
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="font-medium text-foreground">{thought.topic}</h3>
-      </div>
+    <ItemCard
+      kind="thought"
+      title={thought.topic}
+      waiting={thought.status !== "thinking"}
+    >
 
       {thought.status === "thinking" ? (
 
-        <p className="mt-2 flex items-center gap-2 text-muted italic">
-          Still thinking this through <Dots />
+        <p className="mt-3 flex items-center gap-2 text-[0.9rem] text-ink-soft">
+          Still working this through <Dots />
         </p>
 
       ) : (
@@ -182,14 +183,25 @@ export default function DeepThoughtThread({ thought, turns }) {
 
           {turns.length > 0 && (
 
-            <div className="mt-4 space-y-2 border-t border-border pt-3">
+            <div className="mt-4 space-y-3 border-t border-[var(--line)] pt-4">
               {turns.map((turn) => (
-                <div key={turn.id} className="flex items-start gap-2 text-sm">
-                  <span className="mt-0.5 shrink-0 text-xs font-medium uppercase tracking-wide text-muted">
-                    {turn.role === "user" ? "You" : "PersonalOS"}
-                  </span>
-                  <p className="flex-1 text-foreground">{turn.message}</p>
-                  {turn.role === "assistant" && <ReadAloud text={turn.message} title={thought.topic} />}
+                <div
+                  key={turn.id}
+                  className={`rounded-item px-3.5 py-2.5 text-[0.87rem] leading-relaxed ${
+                    turn.role === "user"
+                      ? "bg-[var(--sunken)] text-ink"
+                      : "bg-moss-wash text-ink"
+                  }`}
+                >
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-[0.65rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
+                      {turn.role === "user" ? "You" : "PersonalOS"}
+                    </span>
+                    {turn.role === "assistant" && (
+                      <ReadAloud text={turn.message} title={thought.topic} />
+                    )}
+                  </div>
+                  <p>{turn.message}</p>
                 </div>
               ))}
             </div>
@@ -197,33 +209,38 @@ export default function DeepThoughtThread({ thought, turns }) {
           )}
 
           {isPending && (
-            <div className="mt-3 flex items-center gap-2 text-sm text-muted">
-              <span className="text-xs font-medium uppercase tracking-wide">PersonalOS</span>
+            <div className="mt-3 flex items-center gap-2 text-[0.8rem] text-ink-soft">
+              <span className="text-[0.65rem] font-medium uppercase tracking-[0.08em]">
+                PersonalOS
+              </span>
               <Dots />
             </div>
           )}
 
           {isBuilding ? (
 
-            <div className="mt-4 rounded-lg border border-accent/40 bg-accent/10 px-4 py-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-accent">
+            /* Sunken, not ember. The app is working — nothing is waiting on
+               Blake here, and lighting this up in the one colour that means
+               "act on me" would teach him to ignore it. */
+            <div className="mt-4 rounded-item bg-[var(--sunken)] px-4 py-3.5">
+              <div className="pos-display flex items-center gap-2 text-[0.95rem] text-ink">
                 Building your plan <Dots />
               </div>
-              <p className="mt-1 text-xs text-muted">
+              <p className="mt-1.5 text-[0.8rem] leading-relaxed text-ink-soft">
                 Writing the workback schedule and creating the tasks and calendar
                 events. This takes up to a minute — it&apos;ll appear under Projects
                 on its own.
               </p>
 
               {buildStalled && (
-                <div className="mt-3 border-t border-accent/30 pt-2">
-                  <p className="text-xs text-muted">
+                <div className="mt-3 border-t border-[var(--line)] pt-3">
+                  <p className="text-[0.8rem] text-ink-soft">
                     This is taking longer than it should.
                   </p>
                   <button
                     onClick={handleResetBuild}
                     disabled={isPending}
-                    className="mt-1 rounded-md border border-border px-3 py-1.5 text-xs text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+                    className={`${btn("quiet")} mt-2`}
                   >
                     Cancel and try again
                   </button>
@@ -240,17 +257,19 @@ export default function DeepThoughtThread({ thought, turns }) {
                 // previous attempt (this one or an earlier failure) already
                 // has a project. Distinct from buildFailed below, which is
                 // inferred later from polling a build that DID start.
-                <div className="mt-3 rounded-lg border border-border bg-surface px-4 py-3">
-                  <p className="text-sm text-foreground">{buildResultMessage}</p>
+                <div className="mt-3 rounded-item bg-[var(--sunken)] px-4 py-3.5">
+                  <p className="text-[0.87rem] leading-relaxed text-ink">{buildResultMessage}</p>
                 </div>
               )}
 
               {buildFailed && (
-                <div className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3">
-                  <p className="text-sm font-medium text-foreground">
+                /* Ember is allowed here: a failed build genuinely is waiting
+                   on him to retry it. */
+                <div className="mt-3 rounded-item bg-ember-wash px-4 py-3.5">
+                  <p className="pos-display text-[0.95rem] text-ink">
                     That build didn&apos;t finish.
                   </p>
-                  <p className="mt-1 text-xs text-muted">
+                  <p className="mt-1.5 text-[0.8rem] leading-relaxed text-ink-soft">
                     Something failed partway through. Safe to try again below —
                     if it had already started creating the project, retrying
                     will point you at that one instead of making a second.
@@ -261,7 +280,7 @@ export default function DeepThoughtThread({ thought, turns }) {
               {/* A textarea, not an input: replies here are paragraphs, and a
                   single-line box that scrolls sideways makes it impossible to
                   reread what you just said before sending it. */}
-              <div className="mt-3 flex items-start gap-2">
+              <div className="mt-4 flex items-end gap-2">
 
                 <textarea
                   value={input}
@@ -271,15 +290,16 @@ export default function DeepThoughtThread({ thought, turns }) {
                     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
                   }}
                   rows={2}
-                  placeholder="Respond — or record instead, below"
+                  placeholder="Reply, or record below"
                   disabled={isPending}
-                  className="flex-1 resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm leading-relaxed text-foreground outline-none focus:border-accent disabled:opacity-50"
+                  aria-label="Your reply"
+                  className={field("flex-1 resize-y leading-relaxed")}
                 />
 
                 <button
                   onClick={handleSend}
                   disabled={isPending || !input.trim()}
-                  className="shrink-0 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  className={`${btn("ember", "md")} shrink-0`}
                 >
                   {isPending ? <Dots /> : "Send"}
                 </button>
@@ -304,13 +324,13 @@ export default function DeepThoughtThread({ thought, turns }) {
                   and nothing written anywhere. */}
               {showTools && lastAction === "propose_plan" && (
 
-                <div className="mt-3 rounded-lg border border-accent/40 bg-background p-4">
+                <div className="mt-3 rounded-item bg-[var(--sunken)] p-4">
 
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                  <p className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
                     What should it be allowed to do?
                   </p>
 
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-3 space-y-2.5">
                     {Object.entries(PLAN_TOOLS).map(([key, tool]) => (
                       <label key={key} className="flex cursor-pointer items-start gap-2.5">
                         <input
@@ -318,11 +338,11 @@ export default function DeepThoughtThread({ thought, turns }) {
                           checked={!!tools[key]}
                           onChange={(e) => setTools(t => ({ ...t, [key]: e.target.checked }))}
                           disabled={isPending}
-                          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent,#000)]"
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--moss)]"
                         />
                         <span className="min-w-0">
-                          <span className="block text-sm text-foreground">{tool.label}</span>
-                          <span className="block text-xs leading-snug text-muted">{tool.hint}</span>
+                          <span className="block text-[0.87rem] text-ink">{tool.label}</span>
+                          <span className="block text-[0.78rem] leading-snug text-ink-soft">{tool.hint}</span>
                         </span>
                       </label>
                     ))}
@@ -331,7 +351,7 @@ export default function DeepThoughtThread({ thought, turns }) {
                   <button
                     onClick={handleBuildPlan}
                     disabled={isPending}
-                    className="mt-4 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    className={`${btn("solid", "md")} mt-4`}
                   >
                     {isPending ? "Starting…" : "Build it"}
                   </button>
@@ -340,13 +360,13 @@ export default function DeepThoughtThread({ thought, turns }) {
 
               )}
 
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-4 flex flex-wrap gap-2">
 
                 {lastAction === "propose_plan" && (
                   <button
                     onClick={() => setShowTools(s => !s)}
                     disabled={isPending}
-                    className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    className={btn("solid")}
                   >
                     {isPending ? "Starting…" : showTools ? "Hide options" : "Build the plan"}
                   </button>
@@ -355,7 +375,7 @@ export default function DeepThoughtThread({ thought, turns }) {
                 <button
                   onClick={handleResolve}
                   disabled={isPending}
-                  className="rounded-md border border-border px-3 py-1.5 text-xs text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+                  className={btn("quiet")}
                 >
                   Mark resolved
                 </button>
@@ -368,7 +388,7 @@ export default function DeepThoughtThread({ thought, turns }) {
 
       )}
 
-    </div>
+    </ItemCard>
   );
 
 }

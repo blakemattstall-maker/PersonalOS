@@ -4,6 +4,7 @@ import TopicCard from "../TopicCard.js";
 import PitchRecorder from "../PitchRecorder.js";
 import LoadTopicsButton from "../LoadTopicsButton.js";
 import { formatDate } from "../shared.js";
+import { Page, PageHeader, Card, SectionTitle, Empty, Meta, link } from "../ui.js";
 
 
 export const dynamic = "force-dynamic";
@@ -26,8 +27,8 @@ function SessionRow({ session }) {
     : (session.topic || "Pitch");
 
   const kind = session.type === "debate"
-    ? "debate"
-    : (session.mode === "explainer" ? "explainer" : "pitch");
+    ? "Debate"
+    : (session.mode === "explainer" ? "Explainer" : "Pitch");
 
   const status = session.status === "completed"
     ? (session.type === "debate" ? "Graded" : "Reviewed")
@@ -36,13 +37,13 @@ function SessionRow({ session }) {
   return (
     <Link
       href={`/practice/${session.id}`}
-      className="flex items-center justify-between gap-3 border-t border-border py-3 text-sm first:border-t-0 hover:text-accent"
+      className="flex items-center gap-3 border-t border-[var(--line)] py-3 first:border-t-0 first:pt-0"
     >
-      <span className="min-w-0 truncate">
-        <span className="mr-2 text-xs uppercase tracking-wide text-muted">{kind}</span>
-        {label}
+      <span className="inline-flex shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--sunken)] px-2.5 py-1 text-[0.68rem] font-medium text-ink-soft">
+        {kind}
       </span>
-      <span className="shrink-0 text-xs text-muted">{status} · {formatDate(session.created_at)}</span>
+      <span className="min-w-0 flex-1 truncate text-[0.87rem] text-ink">{label}</span>
+      <Meta className="shrink-0">{status}</Meta>
     </Link>
   );
 
@@ -60,79 +61,62 @@ export default async function Practice() {
   const sessions = sessionsData.sessions || [];
 
   return (
-    <div className="flex flex-1 flex-col bg-background">
-      <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
+    <Page>
 
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-foreground">Practice</h1>
-          <Link href="/" className="text-sm text-muted hover:text-accent">
-            ← Back
-          </Link>
-        </div>
+      <PageHeader title="Practice">
+        Argue a real question with the app taking the other side, or record an
+        explainer and find out whether you actually understood something.
+      </PageHeader>
 
-        <p className="mt-2 text-sm text-muted">
-          Argue a real question with the app taking the other side — or record
-          an explainer and find out whether you actually understood something.
-        </p>
+      <section className="mb-6">
 
-        <div className="mt-8">
+        <SectionTitle count={topics.length} action={<LoadTopicsButton />}>
+          Debate
+        </SectionTitle>
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-              Debate
-            </h2>
-            <LoadTopicsButton />
+        {topics.length === 0 ? (
+
+          // The old copy here named a .sql file and told him to paste it into
+          // Supabase. That's a note to whoever maintains this, not something
+          // the person using the app can act on — and Diagnostics is where it
+          // gets said properly.
+          <Empty>
+            No questions loaded yet. Load topics to frame the first batch —
+            standing questions like whether billionaires should exist, not
+            today&apos;s news, so you can argue any of them cold. If they
+            don&apos;t appear,{" "}
+            <Link href="/settings" className={link()}>Settings</Link>{" "}
+            will say what&apos;s wrong.
+          </Empty>
+
+        ) : (
+
+          <div className="space-y-3">
+            {topics.map(topic => <TopicCard key={topic.id} topic={topic} />)}
           </div>
-
-          {topics.length === 0 ? (
-
-            <div className="mt-4 rounded-2xl border border-border bg-surface p-6 text-sm text-muted">
-              <p>
-                No topics yet. Tap <strong className="text-foreground">Load topics</strong> above
-                to frame the first batch — they&apos;re standing questions
-                (abortion, billionaires, free speech, AI), not today&apos;s news,
-                so you can argue any of them cold.
-              </p>
-              <p className="mt-2">
-                Still empty after that? The <code className="text-foreground">debate_topics</code> table
-                probably doesn&apos;t exist yet — run{" "}
-                <code className="text-foreground">docs/schema-practice-split.sql</code> in Supabase.
-                Check <Link href="/settings" className="text-accent">Settings → Diagnostics</Link>.
-              </p>
-            </div>
-
-          ) : (
-
-            <div className="mt-4 space-y-4">
-              {topics.map(topic => <TopicCard key={topic.id} topic={topic} />)}
-            </div>
-
-          )}
-
-        </div>
-
-        <section className="mt-6 rounded-2xl border border-border bg-surface p-6">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-            Pitch &amp; explainer — record and get graded
-          </h2>
-          <PitchRecorder />
-        </section>
-
-        {sessions.length > 0 && (
-
-          <section className="mt-6 rounded-2xl border border-border bg-surface p-6">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-              Recent sessions
-            </h2>
-            <div className="mt-2">
-              {sessions.map(s => <SessionRow key={s.id} session={s} />)}
-            </div>
-          </section>
 
         )}
 
-      </main>
-    </div>
+      </section>
+
+      <Card className="mb-6">
+        <SectionTitle>Pitch or explain</SectionTitle>
+        <p className="-mt-1 mb-3 text-[0.85rem] leading-relaxed text-ink-soft">
+          Record without notes. Graded on whether it landed, not on how it sounded.
+        </p>
+        <PitchRecorder />
+      </Card>
+
+      {sessions.length > 0 && (
+        <Card>
+          <SectionTitle count={sessions.length}>Recent sessions</SectionTitle>
+          <div>
+            {sessions.map(s => <SessionRow key={s.id} session={s} />)}
+          </div>
+        </Card>
+      )}
+
+    </Page>
   );
 
 }

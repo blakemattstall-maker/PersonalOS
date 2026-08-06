@@ -35,7 +35,7 @@ Two deployments:
 | `api/` | HTTP entry points. Dynamic routes on purpose — Vercel Hobby caps a deployment at 12 serverless functions, and a `[param].js` file counts as one. **Don't add top-level files here; extend the existing dynamic routes.** |
 | `lib/` | Shared infrastructure: the router, auth, the Supabase client, the model registry, rich-context assembly, diagnostics, schema probing. |
 | `tools/` | One file per capability. A tool is a function the LLM can choose to call. |
-| `web/` | The dashboard. Its own package.json, own Vercel project, own env vars. |
+| `web/` | The dashboard. Its own package.json, own Vercel project, own env vars. Design system lives in `web/app/globals.css` (tokens) and `web/app/ui.js` (shape vocabulary) — read the comment at the top of each before restyling anything. |
 | `docs/` | Architecture, current state, the pre-mortem, and the `.sql` migrations. |
 | `tests/` | Fast offline suite (`npm test`) plus the routing eval (`npm run test:routing`). |
 | `dev/` | One-off scripts. Not tests — they print and exit. |
@@ -56,6 +56,16 @@ The routing eval. Costs money and needs `OPENAI_API_KEY` — it calls the real
 router with the real prompt (parsed out of `api/capture.js` so it can't drift)
 and runs every phrase **4 times**, because a phrase that passes 3/4 is a
 failing phrase.
+
+### Looking at the dashboard locally
+
+`web/` holds `BACKEND_KEY` server-side and the backend's `API_SECRET` is live,
+so a plain `next dev` can't fetch anything — every page renders its empty
+state. The `web-preview` entry in `.claude/launch.json` starts it on port 3011
+with a throwaway passphrase and `POS_FIXTURES=1`, which serves a realistic
+dashboard from `web/app/fixtures.js` instead. It paints an orange bar across
+the top so fixture data can't be mistaken for real data, and the flag is set
+nowhere else — not `.env.local`, not Vercel.
 
 ```bash
 node --env-file=.env.local -e 'import("./lib/schema.js").then(async m => console.log((await m.checkMigrations()).verdict))'

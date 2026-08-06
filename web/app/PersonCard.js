@@ -74,27 +74,27 @@ export default function PersonCard({ person }) {
   const isDue = person.next_check_in_at && new Date(person.next_check_in_at) <= new Date();
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-6">
+    <div className="rounded-card bg-card p-5 shadow-lift">
 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="font-medium text-foreground">{person.name}</h3>
-          {person.relationship && <p className="mt-0.5 text-xs text-muted">{person.relationship}</p>}
+          <h3 className="font-medium text-ink">{person.name}</h3>
+          {person.relationship && <p className="mt-0.5 text-xs text-ink-soft">{person.relationship}</p>}
         </div>
         <button
           onClick={remove}
           disabled={isPending}
-          className="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs text-muted hover:border-red-500 hover:text-red-500 disabled:opacity-50"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ember hover:text-ember disabled:opacity-45"
         >
           Remove
         </button>
       </div>
 
       {person.notes && (
-        <p className="mt-2 text-sm text-foreground leading-relaxed">{person.notes}</p>
+        <p className="mt-2 text-sm text-ink leading-relaxed">{person.notes}</p>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-soft">
         {person.email && <span>{person.email}</span>}
         {person.phone && <span>{person.phone}</span>}
         {person.important_date_month && (
@@ -104,13 +104,13 @@ export default function PersonCard({ person }) {
         )}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] pt-3">
 
         {/* Both halves of the check-in state, deliberately subtle: when it last
             happened and when the next nudge fires. Without the second one
             there's no way to tell a cadence that's working from one that
             silently stopped. */}
-        <div className="space-y-0.5 text-xs leading-relaxed text-muted">
+        <div className="space-y-0.5 text-xs leading-relaxed text-ink-soft">
 
           <div>
             {person.last_contacted_at ? (
@@ -123,7 +123,7 @@ export default function PersonCard({ person }) {
           {checkIn && (
             <div>
               {isDue ? (
-                <span className="text-accent">Check-in due now</span>
+                <span className="font-medium text-ember">Check-in due now</span>
               ) : person.next_check_in_at ? (
                 <>Next nudge {relativeDays(person.next_check_in_at)}</>
               ) : null}
@@ -136,14 +136,14 @@ export default function PersonCard({ person }) {
         <button
           onClick={logContact}
           disabled={isPending}
-          className="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-45"
         >
           {isPending ? "…" : "Log contact"}
         </button>
 
       </div>
 
-      {note && <p className="mt-2 text-xs text-muted">{note}</p>}
+      {note && <p className="mt-2 text-xs text-ink-soft">{note}</p>}
 
     </div>
   );

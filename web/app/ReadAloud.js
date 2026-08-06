@@ -71,7 +71,29 @@ export default function ReadAloud({ text, title, label = false, autoplay = false
   };
 
 
-  const glyph = state === "loading" ? "…" : state === "speaking" ? "◼" : "🔊";
+  // Drawn rather than an emoji: 🔊 renders at a different size and baseline in
+  // every browser, and next to a set type scale it read as a sticker.
+  const Glyph = () => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-[15px] w-[15px] shrink-0"
+      aria-hidden="true"
+    >
+      {state === "speaking" ? (
+        <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none" />
+      ) : (
+        <>
+          <path d="M4 9.5h3.2L12 5.6v12.8L7.2 14.5H4z" />
+          {state !== "loading" && <path d="M15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10" />}
+        </>
+      )}
+    </svg>
+  );
 
 
   return (
@@ -79,18 +101,18 @@ export default function ReadAloud({ text, title, label = false, autoplay = false
 
       <button
         onClick={toggle}
-        className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent"
+        className={`inline-flex shrink-0 items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] text-[0.75rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink ${
+          label ? "px-3 py-1.5" : "h-7 w-7 justify-center"
+        }`}
         aria-label={state === "speaking" ? "Stop reading" : "Read aloud"}
       >
-        {label ? (
-          <span className="flex items-center gap-1.5">
-            {glyph}
-            <span>{state === "loading" ? "Preparing" : state === "speaking" ? "Stop" : "Listen"}</span>
-          </span>
-        ) : glyph}
+        <Glyph />
+        {label && (
+          <span>{state === "loading" ? "Preparing" : state === "speaking" ? "Stop" : "Listen"}</span>
+        )}
       </button>
 
-      {note && <span className="text-xs text-muted">{note}</span>}
+      {note && <span className="text-[0.75rem] text-ink-soft">{note}</span>}
 
     </span>
   );

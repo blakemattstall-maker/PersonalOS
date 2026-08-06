@@ -32,29 +32,35 @@ export default async function LoginPage({ searchParams }) {
   const hasError = params?.error === "1";
 
   return (
-    <div className="flex flex-1 items-center justify-center px-6">
-      <form action={login} className="w-full max-w-sm space-y-4">
+    <div className="flex flex-1 items-center justify-center bg-paper px-6 py-16">
+      <form action={login} className="w-full max-w-sm">
 
-        <h1 className="text-xl font-semibold text-foreground">PersonalOS</h1>
+        <h1 className="pos-display text-[2.2rem] text-ink">PersonalOS</h1>
 
-        <p className="text-sm text-muted">Enter your passphrase to continue.</p>
+        <p className="mt-2 text-[0.9rem] text-ink-soft">
+          Enter your passphrase to continue.
+        </p>
 
         <input
           type="password"
           name="passphrase"
           autoFocus
           required
-          className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-foreground outline-none focus:border-accent"
+          aria-label="Passphrase"
+          className="mt-6 w-full rounded-item border border-[var(--line)] bg-card px-4 py-3.5 text-ink outline-none placeholder:text-ink-soft focus:border-ink"
           placeholder="Passphrase"
         />
 
         {hasError && (
-          <p className="text-sm text-red-500">That wasn't right — try again.</p>
+          <p className="mt-3 flex items-center gap-2 text-[0.85rem] font-medium text-ember">
+            <span className="pos-ember-dot" aria-hidden="true" />
+            That wasn&apos;t right. Try again.
+          </p>
         )}
 
         <button
           type="submit"
-          className="w-full rounded-lg bg-accent px-4 py-3 font-medium text-white"
+          className="mt-5 inline-flex w-full items-center justify-center rounded-[var(--r-pill)] bg-ink px-5 py-3.5 text-[0.9rem] font-medium text-paper transition-colors hover:opacity-90"
         >
           Unlock
         </button>
