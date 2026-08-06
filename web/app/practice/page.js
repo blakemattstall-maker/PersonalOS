@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { backendGet } from "../backend.js";
-import NewsCard from "../NewsCard.js";
+import TopicCard from "../TopicCard.js";
 import PitchRecorder from "../PitchRecorder.js";
-import RefreshDigestButton from "../RefreshDigestButton.js";
+import LoadTopicsButton from "../LoadTopicsButton.js";
 import { formatDate } from "../shared.js";
 
 
@@ -22,8 +22,12 @@ async function safeGet(path, fallback) {
 function SessionRow({ session }) {
 
   const label = session.type === "debate"
-    ? session.news_items?.headline || "Debate"
+    ? session.debate_topics?.title || session.news_items?.headline || "Debate"
     : (session.topic || "Pitch");
+
+  const kind = session.type === "debate"
+    ? "debate"
+    : (session.mode === "explainer" ? "explainer" : "pitch");
 
   const status = session.status === "completed"
     ? (session.type === "debate" ? "Graded" : "Reviewed")
@@ -32,10 +36,10 @@ function SessionRow({ session }) {
   return (
     <Link
       href={`/practice/${session.id}`}
-      className="flex items-center justify-between gap-3 border-t border-border py-3 first:border-t-0 text-sm hover:text-accent"
+      className="flex items-center justify-between gap-3 border-t border-border py-3 text-sm first:border-t-0 hover:text-accent"
     >
       <span className="min-w-0 truncate">
-        <span className="text-xs uppercase tracking-wide text-muted mr-2">{session.type}</span>
+        <span className="mr-2 text-xs uppercase tracking-wide text-muted">{kind}</span>
         {label}
       </span>
       <span className="shrink-0 text-xs text-muted">{status} · {formatDate(session.created_at)}</span>
@@ -47,12 +51,12 @@ function SessionRow({ session }) {
 
 export default async function Practice() {
 
-  const [digestData, sessionsData] = await Promise.all([
-    safeGet("/api/practice", { success: false, digest: [] }),
+  const [topicsData, sessionsData] = await Promise.all([
+    safeGet("/api/practice", { success: false, topics: [] }),
     safeGet("/api/practice?sessions=1", { success: false, sessions: [] })
   ]);
 
-  const digest = digestData.digest || [];
+  const topics = topicsData.topics || [];
   const sessions = sessionsData.sessions || [];
 
   return (
@@ -67,32 +71,40 @@ export default async function Practice() {
         </div>
 
         <p className="mt-2 text-sm text-muted">
-          Argue a real, current story with the app taking the other side —
-          or record a pitch and get it graded.
+          Argue a real question with the app taking the other side — or record
+          an explainer and find out whether you actually understood something.
         </p>
 
         <div className="mt-8">
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-              Debate — today&apos;s stories
+              Debate
             </h2>
-            <RefreshDigestButton />
+            <LoadTopicsButton />
           </div>
 
-          {digest.length === 0 ? (
+          {topics.length === 0 ? (
 
-            <p className="mt-4 rounded-2xl border border-border bg-surface p-6 text-sm text-muted">
-              Nothing framed yet today — the digest pulls fresh each morning.
-              Real news, not invented: it needs live feeds to have run at
-              least once. Removed a topic you didn&apos;t want? Refresh finds
-              something else to fill the slot; anything you kept stays put.
-            </p>
+            <div className="mt-4 rounded-2xl border border-border bg-surface p-6 text-sm text-muted">
+              <p>
+                No topics yet. Tap <strong className="text-foreground">Load topics</strong> above
+                to frame the first batch — they&apos;re standing questions
+                (abortion, billionaires, free speech, AI), not today&apos;s news,
+                so you can argue any of them cold.
+              </p>
+              <p className="mt-2">
+                Still empty after that? The <code className="text-foreground">debate_topics</code> table
+                probably doesn&apos;t exist yet — run{" "}
+                <code className="text-foreground">docs/schema-practice-split.sql</code> in Supabase.
+                Check <Link href="/settings" className="text-accent">Settings → Diagnostics</Link>.
+              </p>
+            </div>
 
           ) : (
 
             <div className="mt-4 space-y-4">
-              {digest.map(item => <NewsCard key={item.id} item={item} />)}
+              {topics.map(topic => <TopicCard key={topic.id} topic={topic} />)}
             </div>
 
           )}
@@ -101,7 +113,7 @@ export default async function Practice() {
 
         <section className="mt-6 rounded-2xl border border-border bg-surface p-6">
           <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-            Pitch — record and get graded
+            Pitch &amp; explainer — record and get graded
           </h2>
           <PitchRecorder />
         </section>

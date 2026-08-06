@@ -26,6 +26,62 @@ async function getNewsItem(news_item_id) {
 }
 
 
+async function getDebateTopic(debate_topic_id) {
+
+  const { data, error } = await supabase
+    .from("debate_topics")
+    .select("*")
+    .eq("id", debate_topic_id)
+    .single();
+
+  if (error) throw new Error("Couldn't find that topic.");
+
+  return data;
+
+}
+
+
+// Debate now runs on two different kinds of subject: evergreen topics (the
+// main deck) and news stories (kept so sessions recorded before the split
+// still open, and because arguing a live story is occasionally the point).
+//
+// Everything downstream — opening, rebuttal, grading — only ever needed a
+// title, some background, the tension, and two sides. So both shapes get
+// normalised to that here, and the rest of the file stops caring which is
+// which. `headline` vs `title` is the only real difference between the tables.
+function normalise(row, kind) {
+
+  return {
+    kind,
+    title: kind === "news" ? row.headline : row.title,
+    // A news story has a summary of what happened; a standing topic doesn't
+    // have an equivalent, and inventing one would just pad the prompt.
+    summary: kind === "news" ? row.summary : null,
+    context: row.context,
+    tension: row.tension,
+    side_a: row.side_a,
+    side_b: row.side_b,
+    used_count: row.used_count
+  };
+
+}
+
+
+async function loadSubject({ debate_topic_id, news_item_id }) {
+
+  if (debate_topic_id) {
+    return normalise(await getDebateTopic(debate_topic_id), "topic");
+  }
+
+  if (news_item_id) {
+    return normalise(await getNewsItem(news_item_id), "news");
+  }
+
+  throw new Error("A debate needs either a debate_topic_id or a news_item_id.");
+
+}
+
+
 async function getSession(session_id) {
 
   const { data, error } = await supabase
@@ -41,18 +97,18 @@ async function getSession(session_id) {
 }
 
 
-function sideText(newsItem, sideKey) {
-  return sideKey === "side_a" ? newsItem.side_a : newsItem.side_b;
+function sideText(subject, sideKey) {
+  return sideKey === "side_a" ? subject.side_a : subject.side_b;
 }
 
 
-export async function startDebateSession({ news_item_id, user_side }) {
+export async function startDebateSession({ debate_topic_id, news_item_id, user_side }) {
 
-  if (!news_item_id || !["side_a", "side_b"].includes(user_side)) {
-    throw new Error("startDebateSession requires news_item_id and user_side ('side_a' or 'side_b').");
+  if (!["side_a", "side_b"].includes(user_side)) {
+    throw new Error("startDebateSession requires user_side ('side_a' or 'side_b').");
   }
 
-  const newsItem = await getNewsItem(news_item_id);
+  const subject = await loadSubject({ debate_topic_id, news_item_id });
 
   const aiSide = OTHER_SIDE[user_side];
 
@@ -65,24 +121,29 @@ export async function startDebateSession({ news_item_id, user_side }) {
       {
         role: "system",
 
-        content: `You are sparring with someone practicing debate. The story:
+        content: `You are sparring with someone practicing debate.
 
-Headline: ${newsItem.headline}
-What happened: ${newsItem.summary}
-Background: ${newsItem.context}
-The tension: ${newsItem.tension}
+${subject.kind === "news" ? "The story" : "The topic"}: ${subject.title}
+${subject.summary ? `What happened: ${subject.summary}` : ""}
+Background: ${subject.context}
+The tension: ${subject.tension}
 
 You are arguing this position, genuinely and well — not a strawman, the
 strongest honest version of it:
-"${sideText(newsItem, aiSide)}"
+"${sideText(subject, aiSide)}"
 
 The user is about to argue the opposing position:
-"${sideText(newsItem, user_side)}"
+"${sideText(subject, user_side)}"
 
 Open with a real, specific opening argument for your side — 2-4 sentences,
 direct and substantive, no throat-clearing ("That's an interesting point,
 but..."). Give them something real to push back against. Do not concede
-anything yet; this is your opening, not a summary of both sides.`
+anything yet; this is your opening, not a summary of both sides.
+
+This is a genuinely contested question and he has chosen to argue the other
+side. Argue yours as its best advocate would. Do not hedge, do not add a
+disclaimer about the topic being sensitive, and do not break character to
+note that reasonable people disagree — he knows, that is why he picked it.`
       }
 
     ]
@@ -91,22 +152,32 @@ anything yet; this is your opening, not a summary of both sides.`
 
   const opening = response.choices[0].message.content;
 
+  const row = {
+    type: "debate",
+    user_side,
+    transcript: [{ role: "assistant", message: opening }]
+  };
+
+  if (debate_topic_id) row.debate_topic_id = debate_topic_id;
+  if (news_item_id) row.news_item_id = news_item_id;
+
   const { data: session, error } = await supabase
     .from("practice_sessions")
-    .insert([{
-      type: "debate",
-      news_item_id,
-      user_side,
-      transcript: [{ role: "assistant", message: opening }]
-    }])
+    .insert([row])
     .select()
     .single();
 
   if (error) throw new Error(error.message);
 
-  await supabase.from("news_items")
-    .update({ used_count: (newsItem.used_count || 0) + 1 })
-    .eq("id", news_item_id);
+  // Bumps the counter the topic deck sorts on, so a topic already argued drops
+  // behind the ones that haven't been. Best-effort: losing the increment is
+  // cosmetic, whereas failing the session the user just started is not.
+  const table = debate_topic_id ? "debate_topics" : "news_items";
+  const id = debate_topic_id || news_item_id;
+
+  await supabase.from(table)
+    .update({ used_count: (subject.used_count || 0) + 1 })
+    .eq("id", id);
 
   return { success: true, session_id: session.id, message: opening };
 
@@ -125,7 +196,10 @@ export async function respondInDebate({ session_id, message }) {
     throw new Error("This session already ended.");
   }
 
-  const newsItem = await getNewsItem(session.news_item_id);
+  const subject = await loadSubject({
+    debate_topic_id: session.debate_topic_id,
+    news_item_id: session.news_item_id
+  });
 
   const aiSide = OTHER_SIDE[session.user_side];
 
@@ -144,13 +218,13 @@ export async function respondInDebate({ session_id, message }) {
       {
         role: "system",
 
-        content: `You are continuing a debate. The story:
+        content: `You are continuing a debate.
 
-Headline: ${newsItem.headline}
-The tension: ${newsItem.tension}
+${subject.kind === "news" ? "The story" : "The topic"}: ${subject.title}
+The tension: ${subject.tension}
 
 You are arguing, genuinely and well:
-"${sideText(newsItem, aiSide)}"
+"${sideText(subject, aiSide)}"
 
 Conversation so far:
 ${history}

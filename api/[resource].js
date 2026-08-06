@@ -15,9 +15,10 @@ import { respondToThread, buildPlan } from "../tools/thread.js";
 import { getSettings, saveSettings, INTERRUPTION_LEVELS } from "../lib/settings.js";
 import { buildDiagnostics } from "../lib/diagnostics.js";
 import { sendPush } from "../lib/push.js";
-import { getTodaysDigest, syncNewsDigest, deleteNewsItem } from "../tools/news.js";
+import { getNewsFeed, syncNewsDigest, deleteNewsItem } from "../tools/news.js";
 import { startDebateSession, respondInDebate, endDebateSession } from "../tools/debate.js";
-import { submitPitch } from "../tools/pitch.js";
+import { submitPitch, generatePitchTopic } from "../tools/pitch.js";
+import { getDebateTopics, ensureTopicsFramed, retireDebateTopic } from "../tools/debateTopics.js";
 import { savePerson, getAllPeople, deletePerson, recordContact, answerRelationshipCheckin } from "../tools/people.js";
 
 
@@ -339,11 +340,10 @@ async function practice(req, res) {
 
   if (req.method === "GET") {
 
-    // Manual refresh from the dashboard — same function the daily cron calls,
-    // exposed here so a real digest exists to test/demo without waiting for
-    // the next scheduled run.
-    if (req.query.sync) {
-      return res.status(200).json(await syncNewsDigest());
+    // Tops up the evergreen topic deck. Idempotent by slug, so calling it
+    // repeatedly is safe — it only frames seeds that aren't framed yet.
+    if (req.query.syncTopics) {
+      return res.status(200).json(await ensureTopicsFramed());
     }
 
     if (req.query.sessions) {
@@ -364,7 +364,7 @@ async function practice(req, res) {
 
       const { data, error } = await supabase
         .from("practice_sessions")
-        .select("*, news_items(headline, tension, side_a, side_b)")
+        .select("*, news_items(headline, tension, side_a, side_b), debate_topics(title, tension, side_a, side_b)")
         .eq("id", req.query.session)
         .single();
 
@@ -374,7 +374,9 @@ async function practice(req, res) {
 
     }
 
-    return res.status(200).json({ success: true, digest: await getTodaysDigest() });
+    // The deck the Practice tab argues from. Evergreen topics now, not the
+    // morning's news — see tools/debateTopics.js for why.
+    return res.status(200).json({ success: true, topics: await getDebateTopics() });
 
   }
 
@@ -398,8 +400,50 @@ async function practice(req, res) {
       return res.status(200).json(await submitPitch(req.body));
     }
 
+    if (action === "generateTopic") {
+      return res.status(200).json(await generatePitchTopic());
+    }
+
+    if (action === "retireTopic") {
+      return res.status(200).json(await retireDebateTopic(req.body?.topic_id));
+    }
+
     if (action === "deleteNews") {
       return res.status(200).json(await deleteNewsItem(req.body?.news_item_id));
+    }
+
+    return res.status(400).json({ error: `Unknown action: ${action}` });
+
+  }
+
+  return res.status(405).json({ error: "Method not allowed" });
+
+}
+
+
+// The news reader, split out from Practice. Practice argues evergreen topics;
+// this is for actually following what happened, ordered by what matters to him
+// rather than by what a wire service ran most recently.
+async function news(req, res) {
+
+  if (req.method === "GET") {
+
+    // Manual refresh — same function the daily cron calls, exposed so a real
+    // feed exists to read without waiting for tomorrow morning.
+    if (req.query.sync) {
+      return res.status(200).json(await syncNewsDigest());
+    }
+
+    return res.status(200).json({ success: true, items: await getNewsFeed() });
+
+  }
+
+  if (req.method === "POST") {
+
+    const { action, news_item_id } = req.body || {};
+
+    if (action === "delete") {
+      return res.status(200).json(await deleteNewsItem(news_item_id));
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });
@@ -447,7 +491,7 @@ async function people(req, res) {
 }
 
 
-const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice, people };
+const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice, people, news };
 
 
 export default async function handler(req, res) {

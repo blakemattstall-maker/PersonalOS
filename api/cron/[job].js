@@ -9,6 +9,7 @@ import { syncTaskCompletions } from "../../tools/completions.js";
 import { rollupDailyMetrics } from "../../tools/metrics.js";
 import { runDailyObservation } from "../../tools/observer.js";
 import { syncNewsDigest } from "../../tools/news.js";
+import { ensureTopicsFramed } from "../../tools/debateTopics.js";
 import { checkRelationshipCheckins } from "../../tools/people.js";
 import { getUserTimezone } from "../../lib/profile.js";
 import { DateTime } from "luxon";
@@ -57,7 +58,23 @@ async function syncCanvas() {
 
 async function syncNews() {
 
-  return syncNewsDigest();
+  // Two jobs on one schedule, deliberately. The evergreen debate deck needs
+  // topping up occasionally as seed topics get framed, but it does NOT deserve
+  // its own cron entry: Vercel Hobby's timing is loose enough that every added
+  // schedule is another thing that can drift, and the deck only needs to gain
+  // a few topics a day to stay ahead of how fast anyone can argue through it.
+  //
+  // Topic framing is best-effort — a failure here must not cost the news sync,
+  // which is the part with a real daily deadline.
+  const [digest, topics] = await Promise.allSettled([
+    syncNewsDigest(),
+    ensureTopicsFramed({ limit: 6 })
+  ]);
+
+  return {
+    news: digest.status === "fulfilled" ? digest.value : { success: false, error: digest.reason?.message },
+    debateTopics: topics.status === "fulfilled" ? topics.value : { success: false, error: topics.reason?.message }
+  };
 
 }
 

@@ -60,12 +60,24 @@ export default function FeedbackCard({ type, feedback }) {
               <p className="mt-1 text-sm text-foreground">{feedback.filler_word_note}</p>
             </div>
           )}
+          {/* Explainer-only. A generated-topic session is graded on whether he
+              understood the concept, so it returns these two instead of the
+              persuasion fields — both rubrics share everything else. */}
+          {feedback.depth_verdict && (
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wide text-muted">
+                Understood it, or recited it
+              </div>
+              <p className="mt-1 text-sm text-foreground">{feedback.depth_verdict}</p>
+            </div>
+          )}
           {feedback.strongest_moment && (
             <div>
               <div className="text-xs font-medium uppercase tracking-wide text-muted">Strongest moment</div>
               <p className="mt-1 text-sm text-foreground">&ldquo;{feedback.strongest_moment}&rdquo;</p>
             </div>
           )}
+          <List title="Got wrong" items={feedback.accuracy_notes} />
           <List title="Contradictions" items={feedback.contradictions} />
         </>
       )}

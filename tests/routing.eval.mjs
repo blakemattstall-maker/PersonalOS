@@ -61,7 +61,23 @@ const CASES = [
   ["I weighed 172 this morning",                         ["log_bodyweight"]],
 
   ["Sarah is my roommate, her birthday is March 4",      ["save_person"]],
-  ["I called my mom today",                              ["log_contact"]]
+  ["I called my mom today",                              ["log_contact"]],
+
+  // Drafting vs. every other "write something down" tool. The trap is
+  // save_note, which is also "capture some text" — the distinguishing feature
+  // is that an email is addressed to a person and meant to leave.
+  ["Draft an email to my professor asking for an extension on the essay", ["draft_email"]],
+  ["Write Sarah an email about the trip",                ["draft_email"]],
+
+  // Documents vs. notes vs. research. All three "produce written output"; the
+  // difference is a formatted multi-section document meant to be read or sent,
+  // versus one fact to look up later, versus a spoken answer.
+  ["Make me a list of interview questions for the Acme product manager role and put it in a doc", ["export_to_doc"]],
+  ["Write up a training plan for a half marathon and export it to Google Docs", ["export_to_doc"]],
+
+  // The near-miss in the other direction: this is a question to be answered
+  // out loud, not a document to be produced.
+  ["Research the going rate for a freelance video editor", ["research_query"]]
 
 ];
 

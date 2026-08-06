@@ -131,13 +131,49 @@ export async function sendTestPushAction() {
 }
 
 
-export async function startDebateAction(news_item_id, user_side) {
+// Debate now argues evergreen topics; the news_item path stays for sessions
+// started before the split and for arguing a live story on purpose.
+export async function startDebateAction({ debate_topic_id, news_item_id, user_side }) {
 
-  const result = await backendPost("/api/practice", { action: "startDebate", news_item_id, user_side });
+  const result = await backendPost("/api/practice", {
+    action: "startDebate",
+    debate_topic_id,
+    news_item_id,
+    user_side
+  });
 
   revalidatePath("/practice");
 
   return result;
+
+}
+
+
+export async function retireTopicAction(topic_id) {
+
+  const result = await backendPost("/api/practice", { action: "retireTopic", topic_id });
+
+  revalidatePath("/practice");
+
+  return result;
+
+}
+
+
+export async function syncTopicsAction() {
+
+  const result = await backendGet("/api/practice?syncTopics=1");
+
+  revalidatePath("/practice");
+
+  return result;
+
+}
+
+
+export async function generatePitchTopicAction() {
+
+  return backendPost("/api/practice", { action: "generateTopic" });
 
 }
 
@@ -160,9 +196,16 @@ export async function endDebateAction(session_id) {
 }
 
 
-export async function submitPitchAction({ audio_base64, mime_type, topic }) {
+export async function submitPitchAction({ audio_base64, mime_type, topic, mode, prompt }) {
 
-  const result = await backendPost("/api/practice", { action: "submitPitch", audio_base64, mime_type, topic });
+  const result = await backendPost("/api/practice", {
+    action: "submitPitch",
+    audio_base64,
+    mime_type,
+    topic,
+    mode,
+    prompt
+  });
 
   revalidatePath("/practice");
 
@@ -173,9 +216,9 @@ export async function submitPitchAction({ audio_base64, mime_type, topic }) {
 
 export async function deleteNewsAction(news_item_id) {
 
-  const result = await backendPost("/api/practice", { action: "deleteNews", news_item_id });
+  const result = await backendPost("/api/news", { action: "delete", news_item_id });
 
-  revalidatePath("/practice");
+  revalidatePath("/news");
 
   return result;
 
@@ -184,9 +227,9 @@ export async function deleteNewsAction(news_item_id) {
 
 export async function syncNewsAction() {
 
-  const result = await backendGet("/api/practice?sync=1");
+  const result = await backendGet("/api/news?sync=1");
 
-  revalidatePath("/practice");
+  revalidatePath("/news");
 
   return result;
 

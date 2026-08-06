@@ -15,6 +15,36 @@ import { supabase } from "../../../lib/supabase.js";
 // without a valid one-time code issued to this client ID.
 
 
+// Adding a scope here does NOT retroactively grant it. Google issues a
+// refresh token scoped to whatever was consented to at the time, so the stored
+// token keeps working for exactly the old scopes and every call needing a new
+// one fails with "insufficient authentication scopes" until /api/auth/google/
+// login is visited again. `prompt: "consent"` below is what makes that revisit
+// actually re-issue a token rather than silently bouncing back with the old
+// grant — without it, re-authorising appears to succeed and changes nothing.
+export const SCOPES = [
+
+  "https://www.googleapis.com/auth/tasks",
+  "https://www.googleapis.com/auth/calendar",
+
+  // Drafts only. This scope technically also permits sending, because Google
+  // does not publish a compose-without-send scope — the guarantee that nothing
+  // is ever sent is enforced in code (tools/gmail.js touches drafts.create and
+  // nothing else) and locked down by a test that fails the build if any send
+  // call appears anywhere in the repo.
+  "https://www.googleapis.com/auth/gmail.compose",
+
+  // Creating and writing documents.
+  "https://www.googleapis.com/auth/documents",
+
+  // Deliberately drive.file and not drive: per-file access limited to files
+  // this app itself created. It cannot see, read, or touch anything else in
+  // Drive. Needed so an exported doc can be given a shareable link.
+  "https://www.googleapis.com/auth/drive.file"
+
+];
+
+
 function client() {
 
   return new google.auth.OAuth2(
@@ -30,10 +60,7 @@ function login(req, res) {
 
   const url = client().generateAuthUrl({
     access_type: "offline",
-    scope: [
-      "https://www.googleapis.com/auth/tasks",
-      "https://www.googleapis.com/auth/calendar"
-    ],
+    scope: SCOPES,
     prompt: "consent"
   });
 
@@ -69,7 +96,21 @@ async function callback(req, res) {
     return res.status(500).json({ step: "supabase upsert", error });
   }
 
-  return res.json({ message: "Google connected and updated", data });
+  // Report what was actually granted rather than just "connected". Google
+  // silently drops any scope the user unticks on the consent screen, and the
+  // failure that causes shows up much later as a confusing 403 from an
+  // unrelated feature — this makes a partial grant visible immediately.
+  const granted = (tokens.scope || "").split(" ").filter(Boolean);
+  const missing = SCOPES.filter(s => !granted.includes(s));
+
+  return res.json({
+    message: missing.length === 0
+      ? "Google connected — all scopes granted."
+      : "Google connected, but some scopes were NOT granted. The features needing them will fail until you re-authorise and accept everything.",
+    granted,
+    missing,
+    data
+  });
 
 }
 

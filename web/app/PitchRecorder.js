@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { submitPitchAction } from "./actions.js";
+import { submitPitchAction, generatePitchTopicAction } from "./actions.js";
 import ReadAloud from "./ReadAloud.js";
 import FeedbackCard from "./FeedbackCard.js";
 
@@ -57,6 +57,13 @@ export default function PitchRecorder() {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
+
+  // The explainer brief, when one was generated. Its presence is what switches
+  // the grading rubric server-side — a generated topic is a comprehension
+  // exercise, and grading it on persuasiveness would reward exactly the
+  // confident hand-waving the exercise exists to catch.
+  const [brief, setBrief] = useState(null);
+  const [generating, setGenerating] = useState(false);
 
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -165,6 +172,35 @@ export default function PitchRecorder() {
   };
 
 
+  const generateTopic = async () => {
+
+    setGenerating(true);
+    setError(null);
+
+    try {
+
+      const response = await generatePitchTopicAction();
+
+      if (!response?.success) throw new Error(response?.error || "Couldn't come up with a topic.");
+
+      setBrief(response);
+      setTopic(response.topic);
+
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setGenerating(false);
+    }
+
+  };
+
+
+  const clearBrief = () => {
+    setBrief(null);
+    setTopic("");
+  };
+
+
   const submit = async () => {
 
     if (!blobRef.current) return;
@@ -184,7 +220,9 @@ export default function PitchRecorder() {
       const response = await submitPitchAction({
         audio_base64,
         mime_type: mimeTypeRef.current || "audio/webm",
-        topic: topic.trim() || null
+        topic: topic.trim() || null,
+        mode: brief ? "explainer" : "pitch",
+        prompt: brief?.prompt || null
       });
 
       if (!response?.success) throw new Error(response?.error || "Couldn't analyze that recording.");
@@ -206,14 +244,93 @@ export default function PitchRecorder() {
     <div className="mt-4">
 
       {(state === "idle" || state === "recording") && (
-        <input
-          type="text"
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          placeholder="What's this pitch about? (optional)"
-          disabled={state === "recording"}
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent disabled:opacity-50"
-        />
+
+        <div className="space-y-3">
+
+          {!brief && (
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+
+              <input
+                type="text"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="What's this pitch about? (optional)"
+                disabled={state === "recording"}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent disabled:opacity-50"
+              />
+
+              <button
+                onClick={generateTopic}
+                disabled={generating || state === "recording"}
+                title="Get a concept to research for a few minutes, then explain from memory"
+                className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+              >
+                {generating ? "Thinking…" : "🎲 Give me a topic"}
+              </button>
+
+            </div>
+
+          )}
+
+          {brief && (
+
+            <div className="rounded-xl border border-accent/40 bg-background p-4">
+
+              <div className="flex items-start justify-between gap-3">
+
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-wide text-muted">
+                    Explainer · {brief.domain}
+                  </p>
+                  <h3 className="mt-1 font-medium text-foreground">{brief.topic}</h3>
+                </div>
+
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    onClick={generateTopic}
+                    disabled={generating || state === "recording"}
+                    title="Different topic"
+                    className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:border-accent hover:text-accent disabled:opacity-50"
+                  >
+                    {generating ? "…" : "↻"}
+                  </button>
+                  <button
+                    onClick={clearBrief}
+                    disabled={state === "recording"}
+                    title="Back to a normal pitch"
+                    className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:border-red-500 hover:text-red-500 disabled:opacity-50"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+              </div>
+
+              <p className="mt-3 text-sm leading-relaxed text-foreground">{brief.prompt}</p>
+
+              {brief.why_interesting && (
+                <p className="mt-2 text-xs leading-relaxed text-muted">{brief.why_interesting}</p>
+              )}
+
+              {brief.research_hint && (
+                <p className="mt-3 border-t border-border pt-3 text-xs leading-relaxed text-muted">
+                  <span className="font-medium text-foreground">Look up first:</span>{" "}
+                  {brief.research_hint}
+                </p>
+              )}
+
+              <p className="mt-3 text-xs text-muted">
+                Research it for a few minutes, then record without notes. Graded
+                on whether you actually understood it — not on how good it sounded.
+              </p>
+
+            </div>
+
+          )}
+
+        </div>
+
       )}
 
       <div className="mt-3">
