@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { respondToThreadAction, buildPlanAction, resolveDeepThought, resetBuildAction } from "./actions.js";
 import { PLAN_TOOLS } from "./planTools.js";
@@ -33,6 +33,21 @@ export default function DeepThoughtThread({ thought, turns }) {
   const isBuilding = thought.thread_status === "building";
   const [buildStalled, setBuildStalled] = useState(false);
 
+  // The one real failure signal available: the server resets thread_status
+  // from "building" back to "ready_to_build" when the background job throws
+  // (see runPlanBuild's catch in tools/thread.js). Nothing else marks a
+  // failure — there is no error field, because the client that started the
+  // build already got its response before the crash happens.
+  //
+  // Without this, that transition is silent: isBuilding flips false, the
+  // polling effect below stops, and the button just reappears with no
+  // indication a build was ever attempted, let alone that it failed. That
+  // silence is exactly what shipped as a real bug (a dropped parameter threw
+  // inside the background job) and is worth guarding against even now that
+  // bug is fixed — any future failure in there would look identical.
+  const wasBuildingRef = useRef(false);
+  const [buildFailed, setBuildFailed] = useState(false);
+
   const [showTools, setShowTools] = useState(false);
 
   const [tools, setTools] = useState(() =>
@@ -43,21 +58,35 @@ export default function DeepThoughtThread({ thought, turns }) {
   // come back and look. Stops as soon as thread_status moves off "building".
   useEffect(() => {
 
-    if (!isBuilding) {
-      setBuildStalled(false);
-      return;
+    if (isBuilding) {
+
+      wasBuildingRef.current = true;
+      setBuildFailed(false);
+
+      const timer = setInterval(() => router.refresh(), 4000);
+
+      // A build normally lands in ~20-45s. If it's still going well past
+      // that, the server-side work was probably killed — offer a way out
+      // rather than spinning forever.
+      const stall = setTimeout(() => setBuildStalled(true), 90000);
+
+      return () => { clearInterval(timer); clearTimeout(stall); };
+
     }
 
-    const timer = setInterval(() => router.refresh(), 4000);
+    setBuildStalled(false);
 
-    // A build normally lands in ~20s. If it's still going well past that, the
-    // server-side work was probably killed — offer a way out rather than
-    // spinning forever.
-    const stall = setTimeout(() => setBuildStalled(true), 90000);
+    // Was building, isn't anymore, and never reached "active" (which is what
+    // a successful build sets). That combination only happens one way: the
+    // background job threw and the server put it back where the user can
+    // retry. Say so, rather than letting the button just silently reappear.
+    if (wasBuildingRef.current && thought.thread_status !== "active") {
+      setBuildFailed(true);
+    }
 
-    return () => { clearInterval(timer); clearTimeout(stall); };
+    wasBuildingRef.current = false;
 
-  }, [isBuilding, router]);
+  }, [isBuilding, thought.thread_status, router]);
 
 
   const handleResetBuild = () => {
@@ -189,6 +218,21 @@ export default function DeepThoughtThread({ thought, turns }) {
           ) : (
 
             <>
+              {buildFailed && (
+                <div className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3">
+                  <p className="text-sm font-medium text-foreground">
+                    That build didn&apos;t finish.
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    Something failed partway through. If it had already
+                    started creating the project before it failed, check{" "}
+                    <a href="/" className="underline hover:text-accent">Projects</a>{" "}
+                    for a half-built one before trying again, so you don&apos;t
+                    end up with two.
+                  </p>
+                </div>
+              )}
+
               {/* A textarea, not an input: replies here are paragraphs, and a
                   single-line box that scrolls sideways makes it impossible to
                   reread what you just said before sending it. */}
