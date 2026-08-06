@@ -1,5 +1,6 @@
 import supabase from "../lib/supabase.js";
 import { embed } from "../lib/embeddings.js";
+import { checkDuplicate } from "../lib/dedupe.js";
 
 
 function missingColumnOrFunction(error) {
@@ -22,6 +23,67 @@ export async function saveMemory(
   content,
   importance = 5
 ) {
+
+  // Capture is intentionally eager — a deep-thinking turn writes memories, the
+  // router writes memories, and the same fact arrives through several doors.
+  // Without this the result was four separate memories all saying "be blunt
+  // with me", and a stored goal weight that disagreed with a stored intention.
+  const check = await checkDuplicate({ table: "memories", content, kind: "memory" })
+    .catch(() => ({ verdict: "new" }));
+
+  if (check.verdict === "duplicate") {
+
+    return {
+      success: true,
+      duplicate: true,
+      message: `Already knew that — "${check.match.content}"`,
+      data: check.match
+    };
+
+  }
+
+  // Same subject, better information. Rewrite in place rather than keeping
+  // both, and re-embed so retrieval matches the new wording rather than the
+  // superseded one.
+  if (check.verdict === "update" || check.verdict === "conflict") {
+
+    const merged = check.merged_content || content;
+
+    const newEmbedding = await embed(merged).catch(() => null);
+
+    const patch = { content: merged, importance };
+
+    if (newEmbedding) patch.embedding = newEmbedding;
+
+    let { data, error } = await supabase
+      .from("memories")
+      .update(patch)
+      .eq("id", check.match.id)
+      .select()
+      .single();
+
+    if (error && newEmbedding && missingColumnOrFunction(error)) {
+      ({ data, error } = await supabase
+        .from("memories")
+        .update({ content: merged, importance })
+        .eq("id", check.match.id)
+        .select()
+        .single());
+    }
+
+    if (error) throw new Error(error.message);
+
+    return {
+      success: true,
+      updated: true,
+      conflicted: check.verdict === "conflict",
+      message: check.verdict === "conflict"
+        ? `Updated — that contradicted "${check.match.content}". Kept what you just said.`
+        : `Updated — was "${check.match.content}".`,
+      data
+    };
+
+  }
 
   // Best-effort — a missing/misconfigured embeddings call must never cost the
   // user their memory. Losing the semantic index for one row just means it

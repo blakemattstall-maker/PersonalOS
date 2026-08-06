@@ -1,4 +1,5 @@
 import openai from "../lib/openai.js";
+import { saveDeduped } from "../lib/dedupe.js";
 import { createNoteRecord, getRecentNotes } from "./database.js";
 import { getUserTimezone, getProfileBio } from "../lib/profile.js";
 import { DateTime } from "luxon";
@@ -15,13 +16,18 @@ export async function saveNote({
   }
 
 
-  const note = await createNoteRecord({ content });
+  // Running the Shortcut twice by accident used to produce two notes with the
+  // same door code in slightly different words. It says so now instead.
+  const result = await saveDeduped({
+    table: "notes",
+    content,
+    kind: "note"
+  });
 
 
   return {
-    success: true,
-    message: "Note saved.",
-    data: note
+    ...result,
+    message: result.message || "Note saved."
   };
 
 }

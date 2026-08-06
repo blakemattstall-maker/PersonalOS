@@ -7,6 +7,7 @@ import { getUserTimezone } from "../lib/profile.js";
 import { getPendingClarification, clearPendingClarification } from "../tools/pending.js";
 import { resumePendingClarification } from "../tools/modify.js";
 import { MODELS } from "../lib/models.js";
+import { transcribeAudio } from "../tools/pitch.js";
 
 export default async function handler(req, res) {
 
@@ -21,12 +22,40 @@ export default async function handler(req, res) {
 
   try {
 
-    const { text } = req.body;
+    // Capture takes either typed text or a recording.
+    //
+    // iOS's Dictate Text action is free and instant, but it has effectively no
+    // punctuation model and it stops the moment you pause — which is what
+    // people do mid-sentence when they're thinking. Sending the audio instead
+    // and transcribing it server-side costs a fraction of a cent per capture
+    // and produces something the router can actually parse.
+    //
+    // Transcription happens before anything else, so the entire pipeline below
+    // — pending clarifications, routing, tool execution — is identical either
+    // way and there is only one path to keep working.
+    let { text } = req.body;
+
+    let transcription = null;
+
+    if (!text && req.body?.audio_base64) {
+
+      const result = await transcribeAudio({
+        audio_base64: req.body.audio_base64,
+        mime_type: req.body.mime_type
+      });
+
+      text = result.text;
+
+      transcription = { model: result.model, text };
+
+      console.log("CAPTURE TRANSCRIBED:", text);
+
+    }
 
 
     if (!text) {
       return res.status(400).json({
-        error: "No text provided."
+        error: "No text or audio provided."
       });
     }
 
@@ -224,6 +253,12 @@ Call every tool needed to satisfy the request — if one message asks for two th
       success: !anyFailure,
 
       results,
+
+      // What it heard. Worth returning even though nothing requires it: when a
+      // spoken capture does the wrong thing, the only useful question is
+      // whether it misheard you or misrouted you, and without this there's no
+      // way to tell them apart from the phone.
+      ...(transcription ? { heard: transcription.text } : {}),
 
       // Backward-compatible top-level fields. A single action returns exactly
       // what it always did; only the multi-action case rewrites the message.
