@@ -2,7 +2,9 @@ import { DateTime } from "luxon";
 import openai from "../lib/openai.js";
 import supabase from "../lib/supabase.js";
 import { getUserTimezone, getProfileBio } from "../lib/profile.js";
-import { createEvent } from "./googleCalendar.js";
+import { createTask } from "./googleTasks.js";
+import { sendPush } from "../lib/push.js";
+import { pushAllowed } from "../lib/settings.js";
 import { MODELS } from "../lib/models.js";
 
 
@@ -39,9 +41,64 @@ async function findPersonByName(name) {
 }
 
 
-function computeNextCheckIn(check_in_days, tz) {
-  if (!check_in_days) return null;
-  return DateTime.now().setZone(tz).plus({ days: check_in_days }).toISO();
+// Check-ins must not pile up on one day.
+//
+// This used to be simply now + check_in_days, which means saving five people in
+// one sitting schedules all five to come due on the same morning — and because
+// answering a check-in resets from *that* day, the pile-up is self-sustaining
+// rather than a one-off. Ten prompts on a Tuesday and none for a fortnight is
+// precisely the pattern that gets a feature muted.
+//
+// So the target date is nudged forward until it lands on a day no one else is
+// already due. Forward only: pulling it earlier would shorten a cadence the
+// user explicitly chose. The search is bounded, and if a whole window is full
+// the unshifted date is used rather than drifting arbitrarily far.
+const MAX_STAGGER_DAYS = 6;
+
+
+async function computeNextCheckIn(check_in_days, tz, { excludePersonId = null, stagger = true } = {}) {
+
+  if (!check_in_days) return { iso: null, offset: 0 };
+
+  const target = DateTime.now().setZone(tz).plus({ days: check_in_days });
+
+  if (!stagger) return { iso: target.toISO(), offset: 0 };
+
+  // Everyone already scheduled anywhere near the target.
+  const windowStart = target.minus({ days: 1 }).startOf("day");
+  const windowEnd = target.plus({ days: MAX_STAGGER_DAYS + 1 }).endOf("day");
+
+  let query = supabase
+    .from("people")
+    .select("id, next_check_in_at")
+    .not("next_check_in_at", "is", null)
+    .gte("next_check_in_at", windowStart.toISO())
+    .lte("next_check_in_at", windowEnd.toISO());
+
+  if (excludePersonId) query = query.neq("id", excludePersonId);
+
+  const { data: neighbours, error } = await query;
+
+  // A failed lookup must not stop the person being saved — an unstaggered
+  // date is a mild annoyance, a failed save is a lost relationship record.
+  if (error) return { iso: target.toISO(), offset: 0 };
+
+  const taken = new Set(
+    (neighbours || []).map(p => DateTime.fromISO(p.next_check_in_at).setZone(tz).toFormat("yyyy-MM-dd"))
+  );
+
+  for (let offset = 0; offset <= MAX_STAGGER_DAYS; offset += 1) {
+
+    const candidate = target.plus({ days: offset });
+
+    if (!taken.has(candidate.toFormat("yyyy-MM-dd"))) {
+      return { iso: candidate.toISO(), offset };
+    }
+
+  }
+
+  return { iso: target.toISO(), offset: 0 };
+
 }
 
 
@@ -69,27 +126,110 @@ function nextOccurrence(month, day, tz) {
 }
 
 
-async function scheduleImportantDateEvent({ person_id, name, month, day, label, tz }) {
+// How many days before the date the reminder task is due. Enough warning to
+// actually do something about it — buy a present, plan a call — rather than
+// finding out on the morning.
+export const DATE_REMINDER_LEAD_DAYS = 7;
+
+
+export function dateReminderTitle(name, label) {
+  return label ? `${name} — ${label}` : `${name}'s important date`;
+}
+
+
+// A birthday is a TASK, not a calendar event.
+//
+// It was an event, and that was wrong twice over. A calendar is for things that
+// occupy time, and a birthday reminder occupies none — it just cluttered the
+// week. Worse, it was written as a single one-off occurrence, so the reminder
+// existed for exactly one year and then silently never appeared again.
+//
+// Google's Tasks API has NO recurrence field — recurring tasks exist in the
+// Google UI but are not exposed through v1 at all — so recurrence is ours to
+// run. materialiseUpcomingDateReminders() below is called daily and creates
+// each year's task as the date comes back around, made idempotent by a unique
+// recurrence_key rather than by checking first.
+async function scheduleImportantDateTask({ person_id, name, month, day, label, tz }) {
 
   const date = nextOccurrence(month, day, tz);
 
   if (!date) return null;
 
-  const title = label ? `${name} — ${label}` : `${name}'s important date`;
+  const due = date.minus({ days: DATE_REMINDER_LEAD_DAYS });
 
-  // A plain reminder, not a real appointment — 9am keeps it off whatever
-  // else is actually scheduled that morning without needing all-day-event
-  // support, which createEvent doesn't have yet.
-  return createEvent({
-    title,
-    year: date.year,
-    month: date.month,
-    day: date.day,
+  return createTask({
+    title: dateReminderTitle(name, label),
+    year: due.year,
+    month: due.month,
+    day: due.day,
     hour: 9,
     minute: 0,
-    durationMinutes: 30,
-    person_id
+    timezone: tz,
+    person_id,
+    recurrence_key: `person:${person_id}:${label || "date"}:${date.year}`,
+    notes: `${name}'s ${label || "important date"} is ${date.toFormat("MMMM d")}.`
   });
+
+}
+
+
+// Called daily. Anyone whose important date is now inside the lead window gets
+// this year's reminder created; the unique index makes a repeat run a no-op.
+// This IS the recurrence engine — there is nothing to renew or expire.
+export async function materialiseUpcomingDateReminders() {
+
+  const tz = await getUserTimezone();
+
+  const { data: people, error } = await supabase
+    .from("people")
+    .select("id, name, important_date_month, important_date_day, important_date_label")
+    .not("important_date_month", "is", null)
+    .not("important_date_day", "is", null);
+
+  if (error) {
+    if (missingTable(error)) return { success: true, skipped: "people table not set up yet" };
+    throw new Error(error.message);
+  }
+
+  const now = DateTime.now().setZone(tz).startOf("day");
+
+  let created = 0;
+  let alreadyThere = 0;
+
+  const errors = [];
+
+  for (const person of people || []) {
+
+    const date = nextOccurrence(person.important_date_month, person.important_date_day, tz);
+
+    if (!date) continue;
+
+    const due = date.minus({ days: DATE_REMINDER_LEAD_DAYS });
+
+    // Not yet inside the window — nothing to do until closer to the day.
+    if (due > now) continue;
+
+    try {
+
+      const result = await scheduleImportantDateTask({
+        person_id: person.id,
+        name: person.name,
+        month: person.important_date_month,
+        day: person.important_date_day,
+        label: person.important_date_label,
+        tz
+      });
+
+      if (result?.duplicate) alreadyThere += 1;
+      else if (result?.success) created += 1;
+
+    } catch (error) {
+      errors.push({ person: person.name, error: error.message });
+    }
+
+  }
+
+  return { success: true, created, alreadyThere, errors };
 
 }
 
@@ -127,9 +267,17 @@ export async function savePerson({
     updated_at: new Date().toISOString()
   };
 
+  let staggerOffset = 0;
+
   if (check_in_days !== null) {
+
+    const next = await computeNextCheckIn(check_in_days, tz, { excludePersonId: existing?.id });
+
     patch.check_in_days = check_in_days;
-    patch.next_check_in_at = computeNextCheckIn(check_in_days, tz);
+    patch.next_check_in_at = next.iso;
+
+    staggerOffset = next.offset;
+
   }
 
   let person;
@@ -169,7 +317,7 @@ export async function savePerson({
   }
 
 
-  let eventResult = null;
+  let taskResult = null;
 
   const month = important_date_month ?? existing?.important_date_month;
   const day = important_date_day ?? existing?.important_date_day;
@@ -177,35 +325,57 @@ export async function savePerson({
   // Only schedule when this call actually supplied the date — re-saving
   // someone for an unrelated reason (a new note, a check-in cadence change)
   // shouldn't silently create a fresh reminder every time.
+  //
+  // And only when the date is already inside the lead window; otherwise the
+  // daily job picks it up nearer the time. Creating a task due in eleven
+  // months would just sit at the bottom of the list being ignored.
   if (important_date_month && important_date_day) {
 
     try {
 
-      eventResult = await scheduleImportantDateEvent({
-        person_id: person.id,
-        name,
-        month,
-        day,
-        label: important_date_label ?? existing?.important_date_label,
-        tz
-      });
+      const date = nextOccurrence(month, day, tz);
+      const due = date?.minus({ days: DATE_REMINDER_LEAD_DAYS });
+
+      if (due && due <= DateTime.now().setZone(tz).startOf("day")) {
+
+        taskResult = await scheduleImportantDateTask({
+          person_id: person.id,
+          name,
+          month,
+          day,
+          label: important_date_label ?? existing?.important_date_label,
+          tz
+        });
+
+      }
 
     } catch (error) {
-      console.error("PERSON EVENT SCHEDULING FAILED:", error.message);
+      console.error("PERSON DATE REMINDER FAILED:", error.message);
     }
 
   }
+
+
+  const remarks = [
+    taskResult?.success && !taskResult?.duplicate
+      ? `Added a reminder task for ${important_date_label || "their date"}.`
+      : null,
+    month && day && !taskResult
+      ? `${important_date_label || "Their date"} is saved — the reminder task appears ${DATE_REMINDER_LEAD_DAYS} days before, every year.`
+      : null,
+    staggerOffset > 0
+      ? `Check-in moved ${staggerOffset} day${staggerOffset === 1 ? "" : "s"} later so it doesn't land on the same day as someone else.`
+      : null
+  ].filter(Boolean).join(" ");
 
 
   return {
 
     success: true,
 
-    message: existing
-      ? `Updated ${name}.${eventResult ? ` Added a calendar reminder for ${important_date_label || "their date"}.` : ""}`
-      : `Saved ${name}.${eventResult ? ` Added a calendar reminder for ${important_date_label || "their date"}.` : ""}`,
+    message: `${existing ? `Updated ${name}.` : `Saved ${name}.`}${remarks ? ` ${remarks}` : ""}`,
 
-    data: { person, event: eventResult?.data || null }
+    data: { person, task: taskResult?.data || null, staggerOffset }
 
   };
 
@@ -223,18 +393,25 @@ export async function recordContact({ name }) {
   const tz = await getUserTimezone();
   const now = new Date().toISOString();
 
+  const next = await computeNextCheckIn(person.check_in_days, tz, { excludePersonId: person.id });
+
   const { error } = await supabase
     .from("people")
     .update({
       last_contacted_at: now,
-      next_check_in_at: computeNextCheckIn(person.check_in_days, tz),
+      next_check_in_at: next.iso,
       updated_at: now
     })
     .eq("id", person.id);
 
   if (error) throw new Error(error.message);
 
-  return { success: true, message: `Logged that you talked to ${person.name}.` };
+  return {
+    success: true,
+    message: `Logged that you talked to ${person.name}.${
+      next.iso ? ` Next nudge ${DateTime.fromISO(next.iso).setZone(tz).toRelativeCalendar()}.` : ""
+    }`
+  };
 
 }
 
@@ -356,18 +533,19 @@ export async function answerRelationshipCheckin({ prompt_id, person_id, answer }
   const tz = await getUserTimezone();
   const now = new Date().toISOString();
 
-  if (person && answer && answer !== "dismissed") {
+  if (person) {
+
+    const next = await computeNextCheckIn(person.check_in_days, tz, { excludePersonId: person.id });
 
     await supabase
       .from("people")
-      .update({ last_contacted_at: now, next_check_in_at: computeNextCheckIn(person.check_in_days, tz), updated_at: now })
-      .eq("id", person.id);
-
-  } else if (person) {
-
-    await supabase
-      .from("people")
-      .update({ next_check_in_at: computeNextCheckIn(person.check_in_days, tz), updated_at: now })
+      .update({
+        // A real answer counts as the contact itself. Dismissing only pushes
+        // the clock forward, so the identical prompt isn't re-raised tomorrow.
+        ...(answer && answer !== "dismissed" ? { last_contacted_at: now } : {}),
+        next_check_in_at: next.iso,
+        updated_at: now
+      })
       .eq("id", person.id);
 
   }
@@ -404,6 +582,7 @@ export async function checkRelationshipCheckins() {
   }
 
   let prompted = 0;
+  let pushed = 0;
 
   for (const person of due) {
 
@@ -424,13 +603,37 @@ export async function checkRelationshipCheckins() {
         person.last_contacted_at ? `Last logged contact was a while back.` : "No contact logged yet."
       }`,
       payload: { person_id: person.id },
-      status: "pending"
+      status: "pending",
+      pushed_at: new Date().toISOString()
     }]);
 
     prompted += 1;
 
+    // These go to the phone rather than the calendar. A check-in isn't an
+    // appointment — putting it on the calendar was clutter, and leaving it
+    // only on the dashboard meant it was never seen unless the dashboard
+    // happened to be opened.
+    //
+    // The prompt row is written either way: muting notifications should mean
+    // "stop buzzing me", not "stop tracking". Staggering upstream is what
+    // keeps this to roughly one person a day rather than a burst.
+    if (await pushAllowed("relationship_checkin")) {
+
+      const result = await sendPush({
+        title: `Check in with ${person.name}?`,
+        body: person.relationship
+          ? `It's been a while — ${person.relationship}.`
+          : "It's been a while.",
+        url: "/",
+        tag: `checkin-${person.id}`
+      }).catch(() => null);
+
+      if (result?.sent) pushed += 1;
+
+    }
+
   }
 
-  return { success: true, checked: due.length, prompted };
+  return { success: true, checked: due.length, prompted, pushed };
 
 }

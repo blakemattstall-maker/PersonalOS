@@ -10,7 +10,7 @@ import { rollupDailyMetrics } from "../../tools/metrics.js";
 import { runDailyObservation } from "../../tools/observer.js";
 import { syncNewsDigest } from "../../tools/news.js";
 import { ensureTopicsFramed } from "../../tools/debateTopics.js";
-import { checkRelationshipCheckins } from "../../tools/people.js";
+import { checkRelationshipCheckins, materialiseUpcomingDateReminders } from "../../tools/people.js";
 import { getUserTimezone } from "../../lib/profile.js";
 import { DateTime } from "luxon";
 
@@ -89,11 +89,19 @@ async function reviewIntentions() {
   const completionResult = await syncTaskCompletions();
 
 
-  const [nudgeResult, projectResult, relationshipResult] = await Promise.all([
+  const [nudgeResult, projectResult, relationshipResult, dateReminderResult] = await Promise.all([
     reviewIntentionsForNudges(),
     checkProjectDeadlines(),
     checkRelationshipCheckins().catch(error => {
       console.error("RELATIONSHIP CHECK-IN REVIEW FAILED:", error.message);
+      return { success: false, error: error.message };
+    }),
+    // This IS the recurrence engine for birthdays and anniversaries — Google's
+    // Tasks API has no recurrence field, so each year's reminder is created
+    // here as the date comes back into range. Idempotent via a unique
+    // recurrence_key, so running it daily is the intended usage.
+    materialiseUpcomingDateReminders().catch(error => {
+      console.error("DATE REMINDER MATERIALISATION FAILED:", error.message);
       return { success: false, error: error.message };
     })
   ]);
@@ -145,6 +153,7 @@ async function reviewIntentions() {
     nudges: nudgeResult,
     projects: projectResult,
     relationships: relationshipResult,
+    dateReminders: dateReminderResult,
     profile: profileResult
   };
 

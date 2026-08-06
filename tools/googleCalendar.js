@@ -3,6 +3,7 @@ import { getGoogleClient } from "../lib/google.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
 import { createCalendarEventRecord, updateCalendarGoogleId, findRecentDuplicateEvent, getEventById, updateEventTimesRecord, syncEventByGoogleId, deleteEventRowByGoogleId } from "../tools/database.js";
+import { buildRecurrenceRule, resolveColor } from "../lib/recurrence.js";
 
 
 export async function createEvent({
@@ -16,7 +17,14 @@ export async function createEvent({
   durationMinutes = 60,
   goal_id = null,
   project_id = null,
-  person_id = null
+  person_id = null,
+  // Everything PersonalOS creates is Tomato unless asked otherwise, so it can
+  // be picked out at a glance from events that came from anywhere else.
+  color = null,
+  // A word from RECURRENCE_PATTERNS ("weekly", "yearly", …), not a raw RRULE —
+  // see lib/recurrence.js for why the model is not allowed to write the rule.
+  recurrence = null,
+  recurrenceCount = null
 }) {
 
 
@@ -68,6 +76,9 @@ export async function createEvent({
 
   }
 
+  const colorId = resolveColor(color);
+  const rrule = buildRecurrenceRule(recurrence, start, { count: recurrenceCount });
+
   const supabaseRecord = await createCalendarEventRecord({
     title,
     start_time: start.toISO(),
@@ -75,7 +86,9 @@ export async function createEvent({
     timezone: tz,
     goal_id,
     project_id,
-    person_id
+    person_id,
+    color_id: colorId,
+    recurrence: rrule
   });
 
 
@@ -91,6 +104,8 @@ export async function createEvent({
 
     summary: title,
 
+    colorId,
+
     start: {
       dateTime: start.toISO(),
       timeZone: tz
@@ -99,7 +114,10 @@ export async function createEvent({
     end: {
       dateTime: end.toISO(),
       timeZone: tz
-    }
+    },
+
+    // Omitted entirely when there's no rule — Google rejects an empty array.
+    ...(rrule ? { recurrence: [rrule] } : {})
 
   };
 
@@ -118,7 +136,7 @@ export async function createEvent({
 
   return {
     success: true,
-    message: `Created event "${title}"`,
+    message: `Created event "${title}"${rrule ? `, repeating ${recurrence}` : ""}`,
     data: response.data,
     supabase_id: supabaseRecord.id
   };

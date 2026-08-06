@@ -16,6 +16,32 @@ function formatCheckIn(days) {
 }
 
 
+// "in 6 days" / "3 days ago" — the two questions actually being asked of this
+// card are "when am I next nudged about this person" and "how long has it
+// been", and a bare date makes you do that arithmetic yourself every time.
+function relativeDays(iso) {
+
+  if (!iso) return null;
+
+  const then = new Date(iso);
+  const now = new Date();
+
+  // Compare calendar days, not elapsed milliseconds — otherwise something due
+  // in 20 hours reads as "in 0 days" and something 30 hours ago reads as
+  // "1 day ago" when both are colloquially "tomorrow" and "yesterday".
+  const startOfDay = d => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const diff = Math.round((startOfDay(then) - startOfDay(now)) / 86400000);
+
+  if (diff === 0) return "today";
+  if (diff === 1) return "tomorrow";
+  if (diff === -1) return "yesterday";
+  if (diff > 0) return `in ${diff} days`;
+
+  return `${Math.abs(diff)} days ago`;
+
+}
+
+
 export default function PersonCard({ person }) {
 
   const [isPending, startTransition] = useTransition();
@@ -80,15 +106,31 @@ export default function PersonCard({ person }) {
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
 
-        <div className="text-xs text-muted">
-          {person.last_contacted_at
-            ? `Last contact: ${formatDate(person.last_contacted_at)}`
-            : "No contact logged yet"}
+        {/* Both halves of the check-in state, deliberately subtle: when it last
+            happened and when the next nudge fires. Without the second one
+            there's no way to tell a cadence that's working from one that
+            silently stopped. */}
+        <div className="space-y-0.5 text-xs leading-relaxed text-muted">
+
+          <div>
+            {person.last_contacted_at ? (
+              <>Last contact {relativeDays(person.last_contacted_at)}
+                <span className="opacity-60"> · {formatDate(person.last_contacted_at)}</span>
+              </>
+            ) : "No contact logged yet"}
+          </div>
+
           {checkIn && (
-            <span className={isDue ? "ml-2 text-accent" : "ml-2"}>
-              · checking in {checkIn}{isDue ? " — due" : ""}
-            </span>
+            <div>
+              {isDue ? (
+                <span className="text-accent">Check-in due now</span>
+              ) : person.next_check_in_at ? (
+                <>Next nudge {relativeDays(person.next_check_in_at)}</>
+              ) : null}
+              <span className="opacity-60"> · {checkIn}</span>
+            </div>
           )}
+
         </div>
 
         <button

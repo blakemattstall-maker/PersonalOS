@@ -17,7 +17,11 @@ export async function createTask({
   project_id = null,
   canvas_assignment_id = null,
   notes = null,
-  sequence_order = null
+  sequence_order = null,
+  person_id = null,
+  // Set only by the yearly-reminder job. The unique index on this column is
+  // what makes that job idempotent — see docs/schema-accountability.sql.
+  recurrence_key = null
 }) {
 
 
@@ -89,8 +93,24 @@ export async function createTask({
     goal_id,
     project_id,
     canvas_assignment_id,
-    sequence_order
+    sequence_order,
+    person_id,
+    recurrence_key
   });
+
+  // The unique index on recurrence_key already held this year's reminder, so
+  // the yearly job has run before for this date. Stop here rather than
+  // creating a second copy in Google.
+  if (supabaseRecord?.duplicate) {
+
+    return {
+      success: true,
+      duplicate: true,
+      message: `Reminder "${title}" already exists for this occurrence.`,
+      data: null
+    };
+
+  }
 
 
   const response = await tasks.tasks.insert({

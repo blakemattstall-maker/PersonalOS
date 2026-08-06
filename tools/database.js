@@ -21,31 +21,42 @@ export async function createCalendarEventRecord({
   description = null,
   goal_id = null,
   project_id = null,
-  person_id = null
+  person_id = null,
+  color_id = null,
+  recurrence = null
 }) {
 
 
   const tz = timezone || await getUserTimezone();
 
-  const row = { title, start_time, end_time, timezone: tz, location, description, goal_id, project_id };
+  const base = { title, start_time, end_time, timezone: tz, location, description, goal_id, project_id };
 
-  // Only attach person_id to the payload when it's actually used — the vast
-  // majority of events have nothing to do with a person, and this keeps
-  // every one of those calls immune to whether the migration has run.
-  if (person_id) row.person_id = person_id;
+  // Columns that arrive with a migration. Each is attached only when it
+  // carries something, because PostgREST rejects the whole insert for
+  // containing a key it doesn't recognise — regardless of the value — so an
+  // unconditional null here would break every ordinary create_event call for
+  // as long as the migration is pending.
+  const optional = {
+    ...(person_id ? { person_id } : {}),
+    ...(color_id ? { color_id } : {}),
+    ...(recurrence ? { recurrence } : {})
+  };
 
 
   let { data, error } = await supabase
     .from("calendar_events")
-    .insert([row])
+    .insert([{ ...base, ...optional }])
     .select()
     .single();
 
-  if (error && person_id && missingColumn(error)) {
+  // Retry with the columns that have always existed. The event is worth far
+  // more than the metadata on it: losing a colour is cosmetic, losing the
+  // event because a migration is pending is not.
+  if (error && Object.keys(optional).length > 0 && missingColumn(error)) {
 
     ({ data, error } = await supabase
       .from("calendar_events")
-      .insert([{ title, start_time, end_time, timezone: tz, location, description, goal_id, project_id }])
+      .insert([base])
       .select()
       .single());
 
@@ -97,26 +108,52 @@ export async function createTaskRecord({
   goal_id = null,
   project_id = null,
   canvas_assignment_id = null,
-  sequence_order = null
+  sequence_order = null,
+  person_id = null,
+  recurrence_key = null
 }) {
 
 
-  const { data, error } = await supabase
+  const base = {
+    title,
+    due_date,
+    status,
+    priority,
+    goal_id,
+    project_id,
+    canvas_assignment_id,
+    sequence_order
+  };
+
+  // Same conditional-column rule as calendar events — see above.
+  const optional = {
+    ...(person_id ? { person_id } : {}),
+    ...(recurrence_key ? { recurrence_key } : {})
+  };
+
+
+  let { data, error } = await supabase
     .from("tasks")
-    .insert([
-      {
-        title,
-        due_date,
-        status,
-        priority,
-        goal_id,
-        project_id,
-        canvas_assignment_id,
-        sequence_order
-      }
-    ])
+    .insert([{ ...base, ...optional }])
     .select()
     .single();
+
+  // A recurrence_key collision is the unique index doing its job: this exact
+  // reminder already exists for this year. Report it rather than treating it
+  // as a failure, so the caller can skip creating a duplicate in Google too.
+  if (error?.code === "23505" && recurrence_key) {
+    return { duplicate: true };
+  }
+
+  if (error && Object.keys(optional).length > 0 && missingColumn(error)) {
+
+    ({ data, error } = await supabase
+      .from("tasks")
+      .insert([base])
+      .select()
+      .single());
+
+  }
 
 
   if (error) {
