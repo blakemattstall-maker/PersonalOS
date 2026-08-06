@@ -23,7 +23,7 @@ create table if not exists finance_cache (
   fetched_at   timestamptz not null default now()
 );
 
--- Enforced as a single row rather than trusted by convention — a second row
--- would mean two callers racing to decide which is "the" cache.
-create unique index if not exists finance_cache_singleton
-  on finance_cache ((true));
+-- Deliberately no DB-level "only one row" constraint. lib/simplefin.js's
+-- writeCache() enforces singleton-ness itself (reads the existing row, then
+-- inserts or updates) rather than relying on ON CONFLICT against a unique
+-- index — so this table needs nothing beyond the four columns above to work.
