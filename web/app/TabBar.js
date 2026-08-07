@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 
 // Navigation used to exist on the home page only — six links crammed into a
@@ -76,6 +77,41 @@ const TABS = [
 ];
 
 
+// usePathname only changes once navigation has COMPLETED, so the tapped tab
+// stayed dark for the whole wait and the tap read as ignored — which makes
+// people tap again. useLinkStatus reports the pending state of the Link it sits
+// inside, so the tab lights the instant it is pressed. Paired with the
+// loading.js in each segment, the page swaps immediately too; this is the part
+// that confirms *which* tab you hit.
+function TabBody({ tab, active }) {
+
+  const { pending } = useLinkStatus();
+
+  const lit = active || pending;
+
+  return (
+    <>
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={`h-[19px] w-[19px] transition-opacity ${pending && !active ? "opacity-70" : ""}`}
+        aria-hidden="true"
+      >
+        {tab.icon}
+      </svg>
+      <span className="text-[0.62rem] font-medium leading-none tracking-tight">
+        {tab.label}
+      </span>
+    </>
+  );
+
+}
+
+
 export default function TabBar() {
 
   const pathname = usePathname();
@@ -105,25 +141,11 @@ export default function TabBar() {
               key={tab.href}
               href={tab.href}
               aria-current={active ? "page" : undefined}
-              className={`flex flex-1 flex-col items-center gap-1 rounded-[var(--r-pill)] px-1 py-2 transition-colors ${
+              className={`group flex flex-1 flex-col items-center gap-1 rounded-[var(--r-pill)] px-1 py-2 transition-colors active:bg-[var(--sunken)] ${
                 active ? "bg-[var(--sunken)] text-ink" : "text-ink-soft hover:text-ink"
               }`}
             >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-[19px] w-[19px]"
-                aria-hidden="true"
-              >
-                {tab.icon}
-              </svg>
-              <span className="text-[0.62rem] font-medium leading-none tracking-tight">
-                {tab.label}
-              </span>
+              <TabBody tab={tab} active={active} />
             </Link>
           );
 

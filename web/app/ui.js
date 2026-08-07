@@ -242,3 +242,61 @@ export function Empty({ children, action }) {
     </div>
   );
 }
+
+
+/* ── Loading ────────────────────────────────────────────────────────────── */
+
+// Why these exist at all: every page here is force-dynamic, so navigation used
+// to hold the old page on screen while the server rendered the new one. The tab
+// bar highlighted nothing, nothing moved, and a tap read as ignored — which is
+// worse than a slow page, because the natural response is to tap again.
+//
+// A loading.js in a segment wraps it in a Suspense boundary, so the swap is
+// immediate and this streams in behind it. The work takes the same time; the
+// app stops looking broken while it happens.
+//
+// Shaped like the page it is becoming rather than a spinner. A skeleton that
+// matches the real layout means nothing jumps when the content lands.
+export function Shimmer({ className = "" }) {
+  return (
+    <div
+      className={`animate-pulse rounded-[var(--r-tile)] bg-[var(--sunken)] ${className}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+
+export function SkeletonCard({ lines = 3 }) {
+  return (
+    <section className="rounded-card bg-card p-5 shadow-lift">
+      <Shimmer className="h-4 w-1/3" />
+      <div className="mt-4 space-y-2.5">
+        {Array.from({ length: lines }).map((_, i) => (
+          <Shimmer key={i} className={`h-3 ${i === lines - 1 ? "w-2/3" : "w-full"}`} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+
+// `aria-busy` plus a polite live region, so this is announced as loading rather
+// than as a page that has simply gone blank.
+export function SkeletonPage({ title = null, cards = 3, lines = 3 }) {
+  return (
+    <Page>
+      <div role="status" aria-busy="true" aria-live="polite">
+        <span className="sr-only">Loading</span>
+        {title
+          ? <h1 className="pos-display mb-6 text-[2rem] text-ink">{title}</h1>
+          : <Shimmer className="mb-6 h-9 w-1/2" />}
+        <div className="space-y-3">
+          {Array.from({ length: cards }).map((_, i) => (
+            <SkeletonCard key={i} lines={lines} />
+          ))}
+        </div>
+      </div>
+    </Page>
+  );
+}
