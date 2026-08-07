@@ -34,6 +34,18 @@ export const SCOPES = [
   // call appears anywhere in the repo.
   "https://www.googleapis.com/auth/gmail.compose",
 
+  // Reading the inbox. Verified against the live token that gmail.compose does
+  // NOT cover this — messages.list returns 403 "insufficient authentication
+  // scopes" — so this genuinely requires a fresh consent pass, unlike the Docs
+  // and Drive scopes which the pre-existing token turned out to already carry.
+  //
+  // readonly rather than gmail.metadata, and the difference is not incidental:
+  // the metadata scope returns headers but strips snippets, and a subject line
+  // with no snippet is rarely enough to tell a real commitment from a
+  // newsletter. This is broad — it can read everything — so tools/gmail.js
+  // deliberately requests format: "metadata" and never fetches message bodies.
+  "https://www.googleapis.com/auth/gmail.readonly",
+
   // Creating and writing documents.
   "https://www.googleapis.com/auth/documents",
 

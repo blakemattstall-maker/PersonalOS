@@ -22,7 +22,13 @@ const SEND_CALLS = [
   // The googleapis client also accepts these as resource strings in some
   // call styles, so match the bare method names near a gmail reference too.
   "users.messages.send",
-  "users.drafts.send"
+  "users.drafts.send",
+  // Reading the inbox arrived alongside a scope broad enough to make these
+  // reachable one widening away. Losing his mail is a different disaster from
+  // sending it, and neither is one this app should ever be able to cause.
+  "messages.trash",
+  "messages.batchDelete",
+  "users.messages.trash"
 ];
 
 
@@ -82,18 +88,44 @@ test("no code path anywhere can send an email", () => {
 });
 
 
-test("the gmail tool only ever creates drafts", () => {
+// Reading the inbox was added deliberately, so this widened from "exactly one
+// method" to a closed allowlist. Closed is the load-bearing word: a method that
+// is not named here fails the suite, so gaining a new Gmail capability stays a
+// conscious edit to this file rather than something that arrives quietly with a
+// feature. Everything on the list is read-only apart from drafts.create.
+//
+// Note what is deliberately absent: messages.modify, messages.trash and
+// messages.delete. The readonly scope cannot perform them today, but scopes get
+// widened and this list should refuse them regardless of what Google permits.
+const ALLOWED_GMAIL_CALLS = [
+  "drafts.create",
+  "messages.list",
+  "messages.get"
+];
+
+
+test("the gmail tool uses only allowlisted Gmail methods", () => {
 
   const root = path.resolve(import.meta.dirname, "..");
 
   const source = fs.readFileSync(path.join(root, "tools/gmail.js"), "utf8");
 
-  const gmailCalls = [...source.matchAll(/gmail\.users\.([a-zA-Z.]+)\(/g)].map(m => m[1]);
+  const gmailCalls = [...new Set(
+    [...source.matchAll(/gmail\.users\.([a-zA-Z.]+)\(/g)].map(m => m[1])
+  )];
+
+  const unexpected = gmailCalls.filter(c => !ALLOWED_GMAIL_CALLS.includes(c));
 
   assert.deepEqual(
-    [...new Set(gmailCalls)],
-    ["drafts.create"],
-    "tools/gmail.js must call exactly one Gmail method: drafts.create"
+    unexpected,
+    [],
+    `tools/gmail.js calls a Gmail method that is not allowlisted: ${unexpected.join(", ")}. ` +
+    `If it is genuinely wanted, add it to ALLOWED_GMAIL_CALLS and say why.`
+  );
+
+  assert.ok(
+    gmailCalls.includes("drafts.create"),
+    "drafts.create disappeared — the drafting path is what this file exists for."
   );
 
 });
