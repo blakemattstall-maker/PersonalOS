@@ -4,6 +4,7 @@ import { createNoteRecord, getRecentNotes } from "./database.js";
 import { getUserTimezone, getProfileBio } from "../lib/profile.js";
 import { DateTime } from "luxon";
 import { MODELS } from "../lib/models.js";
+import { resolveRelativeDates } from "../lib/resolveDates.js";
 
 
 export async function saveNote({
@@ -18,9 +19,13 @@ export async function saveNote({
 
   // Running the Shortcut twice by accident used to produce two notes with the
   // same door code in slightly different words. It says so now instead.
+  // Same reason as saveIntention: a note saying "tonight" is meaningless when
+  // read back next week. See lib/resolveDates.js.
+  const resolved = resolveRelativeDates(content, { zone: await getUserTimezone() });
+
   const result = await saveDeduped({
     table: "notes",
-    content,
+    content: resolved,
     kind: "note"
   });
 

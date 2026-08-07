@@ -110,7 +110,13 @@ short version:
    notify on *every* exit path — including questions and failures. A path that
    returns without notifying is a capture that appears to have vanished.
    `tests/capture-notify.test.js` fails if any tool would capture silently.
-8. **Classify every push in `URGENCY_TIERS`** (`lib/settings.js`). An urgency
+8. **Never store a relative date.** "tomorrow" written into a note or intention
+   is read back days later by something with no idea when it was written, and it
+   will repeat the word. This caused a notification announcing an internship
+   ending "tomorrow" the morning after it ended, in two separate features.
+   `lib/resolveDates.js` pins them at capture; use it on anything user-written
+   that gets stored.
+9. **Classify every push in `URGENCY_TIERS`** (`lib/settings.js`). An urgency
    the dial doesn't recognise is silently undeliverable at most settings —
    which is exactly how nudges went unpushable for a week without anyone
    noticing.

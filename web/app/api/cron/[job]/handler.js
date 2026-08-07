@@ -1,7 +1,6 @@
 import { syncCanvasAssignments } from "../../../../tools/canvas.js";
-import { querySchedule } from "../../../../tools/schedule.js";
-import { queryTasks } from "../../../../tools/taskQuery.js";
 import { createBrief } from "../../../../tools/database.js";
+import { composeBrief } from "../../../../tools/brief.js";
 import { reviewIntentionsForNudges, deliverScheduledNudges } from "../../../../tools/nudges.js";
 import { checkProjectDeadlines } from "../../../../tools/projectCheckup.js";
 import { regenerateBio } from "../../../../tools/profileEvolution.js";
@@ -30,52 +29,41 @@ import { DateTime } from "luxon";
 
 async function morningBrief() {
 
-  const tz = await getUserTimezone();
+  // Composed, not concatenated. This used to be
+  // `Schedule: ${schedule.message}\n\nTasks: ${tasks.message}` — two tool
+  // outputs glued together, which could not say which of nine calendar entries
+  // mattered or tell a meeting from an hour set aside to do laundry. See
+  // tools/brief.js for what it reads now and why the arithmetic stays in code.
+  const brief_ = await composeBrief();
 
-  const today = DateTime.now().setZone(tz).toFormat("yyyy-MM-dd");
-
-
-  const [schedule, tasks] = await Promise.all([
-    querySchedule({ startDate: today, endDate: today, question: "What's on my schedule today?" }),
-    queryTasks({ question: "What tasks do I have?" })
-  ]);
-
-
-  const content = `Schedule: ${schedule.message}\n\nTasks: ${tasks.message}`;
+  const content = brief_.content;
 
   const brief = await createBrief({ content });
 
 
-  // The brief was written to the database and then waited to be collected.
-  // Nothing delivered it — the only thing that ever did was a Shortcut polling
-  // /api/brief/latest on a phone-side automation, which is a manual workaround
-  // for a job the server should be doing itself.
-  //
-  // A push body gets truncated hard by every platform, so this deliberately
-  // sends a short lead and links to the dashboard for the full thing rather
-  // than trying to cram schedule and tasks into a notification.
-  const lead = schedule.message?.trim() || "Your brief is ready.";
+  // A push body gets truncated hard by every platform, so this sends the
+  // opening sentence — which the brief is written to make the most important
+  // one — and links to the dashboard for the rest.
+  const lead = (content || "").split(/(?<=[.!?])\s/)[0] || "Your brief is ready.";
 
   const allowed = await pushAllowed("digest");
 
   const push = allowed
     ? await sendPush({
         title: "Today",
-        body: lead.length > 140 ? `${lead.slice(0, 137)}…` : lead,
+        body: lead.length > 160 ? `${lead.slice(0, 157)}…` : lead,
         url: "/",
         // Same tag every day, so an unread brief is replaced rather than
         // stacked — yesterday's is worthless once today's exists.
         tag: "morning-brief"
       }).catch(error => {
-        // The brief itself is already saved. A push failure must not fail the
-        // job or the dashboard loses today's brief over a delivery problem.
         console.error("BRIEF PUSH FAILED:", error.message);
         return { sent: 0, error: error.message };
       })
     : { sent: 0, skipped: "interruption level" };
 
 
-  return { success: true, brief_id: brief.id, content, push };
+  return { success: true, brief_id: brief.id, content, meta: brief_.data, push };
 
 }
 

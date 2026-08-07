@@ -3,6 +3,7 @@ import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
 import { createCalendarEventRecord, updateCalendarGoogleId, findRecentDuplicateEvent, getEventById, updateEventTimesRecord, syncEventByGoogleId, deleteEventRowByGoogleId } from "../tools/database.js";
 import { buildRecurrenceRule, resolveColor } from "../lib/recurrence.js";
+import { classifyEvent } from "../lib/eventKind.js";
 
 
 export async function createEvent({
@@ -194,21 +195,45 @@ export async function getEvents({
   });
 
 
-  // Slim the payload down before it ever reaches the AI
-  const events = (response.data.items || []).map(event => ({
+  // Slim the payload down before it ever reaches the AI.
+  //
+  // attendeeCount is what makes "meeting" distinguishable from "an hour I set
+  // aside", and it was being thrown away here — so every consumer saw four
+  // identical "events" and had no way to tell a call with other people from a
+  // solo work block. classifyEvent decides the kind from these fields in code
+  // rather than leaving a model to guess at it.
+  const events = (response.data.items || []).map(event => {
 
-    id: event.id,
+    const slim = {
 
-    title: event.summary || "(no title)",
+      id: event.id,
 
-    start: event.start?.dateTime || event.start?.date || null,
-    end: event.end?.dateTime || event.end?.date || null,
+      title: event.summary || "(no title)",
 
-    allDay: !event.start?.dateTime,
+      start: event.start?.dateTime || event.start?.date || null,
+      end: event.end?.dateTime || event.end?.date || null,
 
-    location: event.location || null
+      allDay: !event.start?.dateTime,
 
-  }));
+      location: event.location || null,
+
+      attendeeCount: (event.attendees || []).length,
+
+      // Who else is expected, for a brief that can say "with Jon" rather than
+      // "a meeting". Names only — never addresses.
+      attendees: (event.attendees || [])
+        .filter(a => !a.self)
+        .map(a => a.displayName || (a.email || "").split("@")[0])
+        .filter(Boolean)
+        .slice(0, 5),
+
+      hasNotes: Boolean(event.description)
+
+    };
+
+    return { ...slim, kind: classifyEvent(slim) };
+
+  });
 
 
   return {
