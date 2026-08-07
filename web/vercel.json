@@ -31,6 +31,10 @@
     {
       "path": "/api/cron/deliverNudges",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/connectIslands",
+      "schedule": "0 10 * * *"
     }
   ]
 }

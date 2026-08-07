@@ -2,6 +2,7 @@ import { syncCanvasAssignments } from "../../../../tools/canvas.js";
 import { createBrief } from "../../../../tools/database.js";
 import { composeBrief } from "../../../../tools/brief.js";
 import { reviewIntentionsForNudges, deliverScheduledNudges } from "../../../../tools/nudges.js";
+import { syncTransactions, rebuildLinks, findInsights, deliverInsights } from "../../../../tools/islands.js";
 import { checkProjectDeadlines } from "../../../../tools/projectCheckup.js";
 import { regenerateBio } from "../../../../tools/profileEvolution.js";
 import { syncTaskCompletions, reconcileDeletedTasks, reconcileDeletedEvents } from "../../../../tools/completions.js";
@@ -201,7 +202,35 @@ async function reviewIntentions() {
 // crons fire at most once a day each, so "spread through the day" is several
 // schedules pointing at one job rather than one schedule running hourly.
 async function deliverNudges() {
-  return deliverScheduledNudges();
+
+  // Insights ride the same slots as nudges rather than getting their own, so
+  // everything the app initiates shares one interruption budget across the day
+  // instead of two competing ones.
+  const [nudges, insights] = await Promise.all([
+    deliverScheduledNudges(),
+    deliverInsights().catch(error => ({ success: false, error: error.message }))
+  ]);
+
+  return { nudges, insights };
+
+}
+
+
+// Rebuild the graph, then look at it. Sync first: a charge cannot be linked to
+// a project before the charge exists as a row.
+async function connectIslands() {
+
+  const transactions = await syncTransactions({ days: 90 })
+    .catch(error => ({ success: false, error: error.message }));
+
+  const links = await rebuildLinks()
+    .catch(error => ({ success: false, error: error.message }));
+
+  const insights = await findInsights()
+    .catch(error => ({ success: false, error: error.message }));
+
+  return { transactions, links, insights };
+
 }
 
 
@@ -210,7 +239,8 @@ const JOBS = {
   syncCanvas,
   reviewIntentions,
   syncNews,
-  deliverNudges
+  deliverNudges,
+  connectIslands
 };
 
 

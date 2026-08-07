@@ -71,6 +71,9 @@ export const URGENCY_TIERS = {
   // The app initiating something that is not time-critical.
   nudge: "everything",
   relationship_checkin: "everything",
+  // Something the graph noticed that no single domain could have. Tiered with
+  // nudges: valuable, but never urgent.
+  insight: "everything",
 
   // The reply to something he just did. Tiered at "digest" — the lowest
   // setting that pushes at all — because this is not the app interrupting him,

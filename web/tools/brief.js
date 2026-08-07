@@ -151,6 +151,7 @@ export async function gatherBriefFacts({ tz } = {}) {
     inbox: inbox?.success ? (inbox.data?.needs_you || []) : null,
 
     bio: context.bio || null,
+    insights: context.insights || null,
     signals: context.signals || null,
     bodyweightTrend: context.bodyweightTrend || null
 
@@ -206,6 +207,8 @@ function renderFacts(f) {
   }
 
   if (f.intentions.length) lines.push(`STANDING INTENTIONS: ${f.intentions.join("; ")}`);
+
+  if (f.insights) lines.push(`NOTICED BY CONNECTING DOMAINS (already verified, state plainly):\n${f.insights}`);
 
   if (f.signals) lines.push(`CROSS-DOMAIN SIGNALS (already calculated):\n${f.signals}`);
 

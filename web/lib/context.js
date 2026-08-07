@@ -39,11 +39,16 @@ export async function buildRichContext({ query } = {}) {
 
   const tz = await getUserTimezone();
 
-  const [memories, bio, bodyweightLogs, signals] = await Promise.all([
+  const [memories, bio, bodyweightLogs, signals, insights] = await Promise.all([
     getFormattedMemories({ query }),
     getProfileBio(),
     getRecentBodyweightLogs({ limit: 10 }),
-    buildSignals({ tz }).catch(() => null)
+    buildSignals({ tz }).catch(() => null),
+    // What walking the entity graph noticed. Carried here rather than pushed
+    // and forgotten: an insight raised last week should be context for a deep
+    // thought today and a project plan tomorrow, not something that flashed on
+    // a phone once. This is what makes the connections compound.
+    import("../tools/islands.js").then(m => m.recentInsights({ limit: 5 })).catch(() => null)
   ]);
 
 
@@ -59,7 +64,9 @@ export async function buildRichContext({ query } = {}) {
     // tool that reasons used to see exactly one domain, so nothing could
     // connect overspending to a week of missed deadlines. Kept to a few lines
     // on purpose: this rides in every nudge and deep thought.
-    signals
+    signals,
+
+    insights
 
   };
 
