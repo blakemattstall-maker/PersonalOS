@@ -72,7 +72,32 @@ test("success:false counts as a failure, not just a thrown error", () => {
 });
 
 
-test("it links to the real artefact when there is one", () => {
+// Reported from a real capture: tapping a created event opened Google's
+// signed-out Calendar page instead of the event, because the installed PWA has
+// no Google session. An in-app page always opens and always shows the change,
+// so it wins wherever one exists.
+test("anything the app can show links into the app, not to Google", () => {
+
+  const event = describeCapture([{
+    tool: "create_event",
+    result: { success: true, message: "Created it.", data: { htmlLink: "https://www.google.com/calendar/event?eid=x" } }
+  }]);
+
+  assert.equal(event.url, "/", "a created event must open the app, not a Google page");
+
+  const task = describeCapture([{
+    tool: "create_task",
+    result: { success: true, message: "Created it.", data: { htmlLink: "https://tasks.google.com/x" } }
+  }]);
+
+  assert.equal(task.url, "/");
+
+});
+
+
+// The two exceptions, and only these two: neither a Gmail draft nor an exported
+// Doc has any in-app view, so the external URL is the only useful destination.
+test("a draft and a doc still link out, because nothing in-app can show them", () => {
 
   const draft = describeCapture([{
     tool: "draft_email",
@@ -80,11 +105,11 @@ test("it links to the real artefact when there is one", () => {
   }]);
   assert.equal(draft.url, "https://mail.google.com/x");
 
-  const event = describeCapture([{
-    tool: "create_event",
-    result: { success: true, message: "Created it.", data: { htmlLink: "https://calendar.google.com/y" } }
+  const doc = describeCapture([{
+    tool: "export_to_doc",
+    result: { success: true, message: "Wrote it.", data: { url: "https://docs.google.com/document/d/y" } }
   }]);
-  assert.equal(event.url, "https://calendar.google.com/y");
+  assert.equal(doc.url, "https://docs.google.com/document/d/y");
 
 });
 
