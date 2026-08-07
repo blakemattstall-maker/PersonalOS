@@ -1,4 +1,3 @@
-import { google } from "googleapis";
 import { getGoogleClient } from "../lib/google.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
@@ -28,7 +27,7 @@ export async function createTask({
   const tz = timezone || await getUserTimezone();
 
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const tasks = google.tasks({
     version: "v1",
@@ -158,7 +157,7 @@ export function taskDueDate(due) {
 
 export async function getTasks({ maxResults = 100 } = {}) {
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const tasksApi = google.tasks({
     version: "v1",
@@ -210,7 +209,7 @@ export async function getTasks({ maxResults = 100 } = {}) {
 // timestamp, so this is the authoritative history rather than an inference.
 export async function getCompletedTasks({ sinceISO, maxResults = 250 } = {}) {
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const tasksApi = google.tasks({ version: "v1", auth });
 
@@ -236,7 +235,7 @@ export async function getCompletedTasks({ sinceISO, maxResults = 250 } = {}) {
 
 export async function getTaskStatus(google_task_id) {
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const tasksApi = google.tasks({ version: "v1", auth });
 
@@ -265,7 +264,7 @@ export async function updateTaskDueDate({
 
   if (taskRow.google_task_id) {
 
-    const auth = await getGoogleClient();
+    const { auth, google } = await getGoogleClient();
 
     const tasksApi = google.tasks({ version: "v1", auth });
 
@@ -290,7 +289,7 @@ export async function deleteGoogleTask(google_task_id) {
 
   if (!google_task_id) return;
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const tasksApi = google.tasks({ version: "v1", auth });
 
@@ -313,7 +312,7 @@ export async function deleteGoogleTask(google_task_id) {
 
 export async function completeTaskByGoogleId(google_task_id) {
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const tasksApi = google.tasks({ version: "v1", auth });
 
@@ -352,7 +351,7 @@ export async function rescheduleTaskByGoogleId({
     throw new Error(`Invalid task date: ${date.invalidReason}`);
   }
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const tasksApi = google.tasks({ version: "v1", auth });
 

@@ -1,4 +1,3 @@
-import { google } from "googleapis";
 import openai from "../lib/openai.js";
 import supabase from "../lib/supabase.js";
 import { getGoogleClient } from "../lib/google.js";
@@ -141,7 +140,7 @@ export async function draftEmail({ about, to, tone }) {
 
   if (!about) throw new Error("draftEmail needs to know what the email should say.");
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
   const gmail = google.gmail({ version: "v1", auth });
 
   const { to: address, note } = await resolveRecipient(to);

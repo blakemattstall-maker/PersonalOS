@@ -1,4 +1,3 @@
-import { google } from "googleapis";
 import { getGoogleClient } from "../lib/google.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
@@ -92,7 +91,7 @@ export async function createEvent({
   });
 
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const calendar = google.calendar({
     version: "v3",
@@ -170,7 +169,7 @@ export async function getEvents({
   }
 
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const calendar = google.calendar({
     version: "v3",
@@ -245,7 +244,7 @@ export async function updateEventTimes({
 
   if (eventRow.google_event_id) {
 
-    const auth = await getGoogleClient();
+    const { auth, google } = await getGoogleClient();
 
     const calendar = google.calendar({ version: "v3", auth });
 
@@ -284,7 +283,7 @@ export async function rescheduleEventByGoogleId({
 
   const tz = timezone || await getUserTimezone();
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const calendar = google.calendar({ version: "v3", auth });
 
@@ -359,7 +358,7 @@ export async function deleteGoogleEvent(google_event_id) {
 
   if (!google_event_id) return;
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const calendar = google.calendar({ version: "v3", auth });
 

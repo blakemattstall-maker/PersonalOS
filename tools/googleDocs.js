@@ -1,4 +1,3 @@
-import { google } from "googleapis";
 import openai from "../lib/openai.js";
 import { getGoogleClient } from "../lib/google.js";
 import { MODELS } from "../lib/models.js";
@@ -320,7 +319,7 @@ export async function exportToDoc({ request, title, research = false, markdown }
     throw new Error("exportToDoc needs either a request to write about, or markdown to export.");
   }
 
-  const auth = await getGoogleClient();
+  const { auth, google } = await getGoogleClient();
 
   const docs = google.docs({ version: "v1", auth });
   const drive = google.drive({ version: "v3", auth });
