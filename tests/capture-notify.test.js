@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { describeCapture } from "../lib/captureNotify.js";
-import { TOOLS } from "../lib/toolDefinitions.js";
-import { URGENCY_TIERS } from "../lib/settings.js";
+import { describeCapture } from "../web/lib/captureNotify.js";
+import { TOOLS } from "../web/lib/toolDefinitions.js";
+import { URGENCY_TIERS } from "../web/lib/settings.js";
 
 
 // The capture Shortcut is silent now, so this notification is the only reply a

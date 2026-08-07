@@ -9,6 +9,17 @@ import { backendGet } from "./backend.js";
 import { Page, Card, SectionTitle, ItemCard, Meta, Empty, btn } from "./ui.js";
 
 
+// Every page here reads live state, so none of them may be prerendered.
+//
+// This was previously implicit: backendGet used fetch(..., { cache: "no-store" }),
+// and that opted the route out of static generation as a side effect. Now that
+// the same call is a direct in-process function call there is no fetch for Next
+// to notice, so without this the page is prerendered at build time and serves
+// build-time data until the next deploy. The build output is where this shows
+// up — a page marked (Static) that should be (Dynamic).
+export const dynamic = "force-dynamic";
+
+
 // Server Actions inherit their timeout from the page that invokes them, and
 // respondToThread runs a gpt-5.6-sol call. Without this they die at the
 // platform default and the dashboard shows a bare server error.

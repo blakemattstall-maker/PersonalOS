@@ -14,12 +14,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-import { TOOLS } from "../lib/toolDefinitions.js";
-import { MODELS } from "../lib/models.js";
+import { TOOLS } from "../web/lib/toolDefinitions.js";
+import { MODELS } from "../web/lib/models.js";
 
 
-const routerSource = fs.readFileSync(new URL("../lib/router.js", import.meta.url), "utf8");
-const captureSource = fs.readFileSync(new URL("../api/capture.js", import.meta.url), "utf8");
+const routerSource = fs.readFileSync(new URL("../web/lib/router.js", import.meta.url), "utf8");
+const captureSource = fs.readFileSync(new URL("../web/app/api/capture/handler.js", import.meta.url), "utf8");
 
 
 function definedToolNames() {
@@ -92,7 +92,9 @@ test("no model string is hardcoded outside the registry", () => {
 
   const offenders = [];
 
-  for (const dir of ["tools", "lib", "api"]) {
+  // Everything now lives under web/ — lib and tools alongside the Next.js app,
+  // and the old api/ handlers as route handlers inside app/api.
+  for (const dir of ["web/tools", "web/lib", "web/app/api"]) {
     walk(new URL(`../${dir}/`, import.meta.url), file => {
 
       if (file.pathname.endsWith("lib/models.js")) return;
@@ -122,7 +124,7 @@ test("every registry tier resolves to a real model id", () => {
     assert.ok(id.length > 0, `MODELS.${tier} is empty`);
   }
 
-  assert.ok(MODELS.ROUTER, "a router tier is required — api/capture.js depends on it");
+  assert.ok(MODELS.ROUTER, "a router tier is required — the capture handler depends on it");
 
 });
 
@@ -133,7 +135,7 @@ test("every registry tier resolves to a real model id", () => {
 // only writing down.
 test("the routing tier is not a model known to be unusable for routing", async () => {
 
-  const { UNSUITABLE_FOR_ROUTING } = await import("../lib/models.js");
+  const { UNSUITABLE_FOR_ROUTING } = await import("../web/lib/models.js");
 
   assert.ok(
     !UNSUITABLE_FOR_ROUTING.includes(MODELS.ROUTER),
@@ -146,7 +148,7 @@ test("the routing tier is not a model known to be unusable for routing", async (
 // The routing eval parses the live system prompt out of api/capture.js so it can
 // never drift from what production actually sends. That only works while the
 // prompt stays in a template literal the eval can find.
-test("the router system prompt is still extractable from api/capture.js", () => {
+test("the router system prompt is still extractable from the capture handler", () => {
 
   assert.match(
     captureSource,

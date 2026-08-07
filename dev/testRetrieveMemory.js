@@ -1,4 +1,4 @@
-import { getMemories } from "../tools/memory.js";
+import { getMemories } from "../web/tools/memory.js";
 
 
 export default async function handler(req, res) {

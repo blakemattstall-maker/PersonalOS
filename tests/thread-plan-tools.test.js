@@ -27,13 +27,13 @@ import path from "node:path";
 test("executePlanBuild receives `tools` from its caller and declares it as a parameter", () => {
 
   const source = fs.readFileSync(
-    path.resolve(import.meta.dirname, "..", "tools", "thread.js"),
+    path.resolve(import.meta.dirname, "..", "web", "tools", "thread.js"),
     "utf8"
   );
 
   // The call site inside runPlanBuild.
   const callMatch = source.match(/executePlanBuild\(\{([^}]*)\}\)/);
-  assert.ok(callMatch, "expected a call to executePlanBuild({ ... }) in tools/thread.js");
+  assert.ok(callMatch, "expected a call to executePlanBuild({ ... }) in web/tools/thread.js");
 
   assert.match(
     callMatch[1],
@@ -45,7 +45,7 @@ test("executePlanBuild receives `tools` from its caller and declares it as a par
 
   // The function's own parameter list.
   const defMatch = source.match(/async function executePlanBuild\(\{([^}]*)\}\)/);
-  assert.ok(defMatch, "expected `async function executePlanBuild({ ... })` in tools/thread.js");
+  assert.ok(defMatch, "expected `async function executePlanBuild({ ... })` in web/tools/thread.js");
 
   assert.match(
     defMatch[1],
@@ -61,7 +61,7 @@ test("executePlanBuild receives `tools` from its caller and declares it as a par
 test("every tools.<key> referenced inside executePlanBuild is a real PLAN_TOOLS key", async () => {
 
   const source = fs.readFileSync(
-    path.resolve(import.meta.dirname, "..", "tools", "thread.js"),
+    path.resolve(import.meta.dirname, "..", "web", "tools", "thread.js"),
     "utf8"
   );
 
@@ -78,7 +78,7 @@ test("every tools.<key> referenced inside executePlanBuild is a real PLAN_TOOLS 
 
   assert.ok(referenced.length > 0, "expected executePlanBuild to actually gate something on tools.*");
 
-  const { PLAN_TOOLS } = await import("../lib/planTools.js");
+  const { PLAN_TOOLS } = await import("../web/lib/planTools.js");
 
   for (const key of new Set(referenced)) {
     assert.ok(

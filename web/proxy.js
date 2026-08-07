@@ -24,6 +24,16 @@ export function proxy(request) {
 // session, so gating them doesn't protect anything — it just makes the app
 // un-installable and push registration fail with no useful error. None of
 // the three contain anything private.
+//
+// `api` is excluded for a harder reason. The API now lives inside this app, and
+// its callers are not browsers and hold no session cookie: the iOS Shortcut,
+// Overland, Vercel Cron, and Google redirecting back from the OAuth consent
+// screen. Without this exclusion every one of them would be answered with a
+// redirect to /login — a capture would appear to succeed, return an HTML login
+// page, and silently do nothing. The API is not left unguarded by this; it
+// carries its own shared-secret check (lib/auth.js) plus CRON_SECRET and
+// LOCATION_INGEST_KEY, which are the right kind of credential for a caller
+// that cannot log in.
 export const config = {
-  matcher: ["/((?!login|_next/static|_next/image|favicon.ico|sw.js|manifest.json|icon.svg).*)"]
+  matcher: ["/((?!api|login|_next/static|_next/image|favicon.ico|sw.js|manifest.json|icon.svg).*)"]
 };

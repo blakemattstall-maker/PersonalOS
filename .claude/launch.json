@@ -4,7 +4,15 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "web", "--", "--port", "3010"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "web",
+        "--",
+        "--port",
+        "3010"
+      ],
       "port": 3010
     },
     {
@@ -13,7 +21,14 @@
       "runtimeArgs": [
         "SITE_PASSPHRASE=local-preview-only",
         "POS_FIXTURES=1",
-        "npm", "run", "dev", "--prefix", "web", "--", "--port", "3011"
+        "npm",
+        "run",
+        "dev",
+        "--prefix",
+        "web",
+        "--",
+        "--port",
+        "3011"
       ],
       "port": 3011
     }

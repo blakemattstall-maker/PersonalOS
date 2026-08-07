@@ -23,20 +23,30 @@ Vercel Cron    ──────────▶ /api/cron/[job] ────┘
 Overland (GPS) ──────────▶ /api/ingest/[kind]
 ```
 
-Two deployments:
+One deployment, and one forwarder:
 
 | | What | Deploys |
 |---|---|---|
-| **root** | the API backend (Node, Vercel serverless) | automatically on push to `main` |
-| **`web/`** | the dashboard (Next.js 16, separate Vercel project) | **manually** — `cd web && npx vercel --prod --yes` |
+| **`web/`** | everything — the dashboard, `lib/`, `tools/`, and every API route | `cd web && npx vercel --prod --yes` |
+| **root** | a `vercel.json` that forwards `/api/*` to the app above, and nothing else | automatically on push to `main` |
+
+The dashboard and the API used to be separate Vercel projects, so every page
+load made a full HTTP round trip between them — six of them on the home page
+alone. They are one deployment now and the dashboard calls the same handlers
+in-process (`web/app/backend.js`), so that round trip is gone.
+
+The root project still exists purely to keep its hostname alive. The iOS
+Shortcut, Overland and the Google OAuth callback all point at
+`personal-os-…vercel.app`, the Shortcut is hand-edited on a phone and is not in
+version control, so those URLs must not change.
 
 ## Layout
 
 | Path | What lives there |
 |---|---|
-| `api/` | HTTP entry points. Dynamic routes on purpose — Vercel Hobby caps a deployment at 12 serverless functions, and a `[param].js` file counts as one. **Don't add top-level files here; extend the existing dynamic routes.** |
-| `lib/` | Shared infrastructure: the router, auth, the Supabase client, the model registry, rich-context assembly, diagnostics, schema probing. |
-| `tools/` | One file per capability. A tool is a function the LLM can choose to call. |
+| `web/app/api/` | HTTP entry points, as Next.js route handlers. Each one is a thin `route.js` wrapping an unchanged Node-style `handler.js` through the adapter in `_node.js` — see the comment there for why the handlers were not rewritten. |
+| `web/lib/` | Shared infrastructure: the router, auth, the Supabase client, the model registry, rich-context assembly, diagnostics, schema probing. |
+| `web/tools/` | One file per capability. A tool is a function the LLM can choose to call. |
 | `web/` | The dashboard. Its own package.json, own Vercel project, own env vars. Design system lives in `web/app/globals.css` (tokens) and `web/app/ui.js` (shape vocabulary) — read the comment at the top of each before restyling anything. |
 | `docs/` | Architecture, current state, the pre-mortem, and the `.sql` migrations. |
 | `tests/` | Fast offline suite (`npm test`) plus the routing eval (`npm run test:routing`). |
@@ -55,7 +65,7 @@ npm run test:routing
 ```
 
 The routing eval. Costs money and needs `OPENAI_API_KEY` — it calls the real
-router with the real prompt (parsed out of `api/capture.js` so it can't drift)
+router with the real prompt (parsed out of the capture handler so it can't drift)
 and runs every phrase **4 times**, because a phrase that passes 3/4 is a
 failing phrase.
 

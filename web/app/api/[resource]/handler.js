@@ -1,7 +1,7 @@
-import supabase from "../lib/supabase.js";
-import { requireAuth } from "../lib/auth.js";
-import { getMemories, deleteMemory } from "../tools/memory.js";
-import { answerPlaceLabel } from "../tools/location.js";
+import supabase from "../../../lib/supabase.js";
+import { requireAuth } from "../../../lib/auth.js";
+import { getMemories, deleteMemory } from "../../../tools/memory.js";
+import { answerPlaceLabel } from "../../../tools/location.js";
 import {
   getRecentNotes, deleteNote, getAllIntentions, deleteIntention,
   getHistory,
@@ -9,17 +9,17 @@ import {
   getProjectsWithDetails, updateProject,
   getPendingDeepThoughts, resolveDeepThought, getThreadTurns, updateDeepThoughtThread,
   getMostRecentBrief, getLatestUnreadBrief, markBriefRead
-} from "../tools/database.js";
-import { deleteProject } from "../tools/projects.js";
-import { PLAN_TOOLS } from "../lib/planTools.js";
-import { getSettings, saveSettings, INTERRUPTION_LEVELS } from "../lib/settings.js";
-import { buildDiagnostics } from "../lib/diagnostics.js";
-import { sendPush } from "../lib/push.js";
-import { getNewsFeed, syncNewsDigest, deleteNewsItem } from "../tools/news.js";
-import { startDebateSession, respondInDebate, endDebateSession } from "../tools/debate.js";
-import { submitPitch, generatePitchTopic, transcribeAudio } from "../tools/pitch.js";
-import { getDebateTopics, ensureTopicsFramed, retireDebateTopic } from "../tools/debateTopics.js";
-import { savePerson, getAllPeople, deletePerson, recordContact, answerRelationshipCheckin } from "../tools/people.js";
+} from "../../../tools/database.js";
+import { deleteProject } from "../../../tools/projects.js";
+import { PLAN_TOOLS } from "../../../lib/planTools.js";
+import { getSettings, saveSettings, INTERRUPTION_LEVELS } from "../../../lib/settings.js";
+import { buildDiagnostics } from "../../../lib/diagnostics.js";
+import { sendPush } from "../../../lib/push.js";
+import { getNewsFeed, syncNewsDigest, deleteNewsItem } from "../../../tools/news.js";
+import { startDebateSession, respondInDebate, endDebateSession } from "../../../tools/debate.js";
+import { submitPitch, generatePitchTopic, transcribeAudio } from "../../../tools/pitch.js";
+import { getDebateTopics, ensureTopicsFramed, retireDebateTopic } from "../../../tools/debateTopics.js";
+import { savePerson, getAllPeople, deletePerson, recordContact, answerRelationshipCheckin } from "../../../tools/people.js";
 
 
 // Every read/write endpoint the dashboard uses, behind ONE serverless function.
@@ -229,7 +229,7 @@ async function deepThoughts(req, res) {
       // dependency in this function. Loading it eagerly meant every dashboard
       // read (nudges, projects, settings...) paid that cold-start cost too,
       // since they all share this one file. Now only an actual thread action does.
-      const { respondToThread } = await import("../tools/thread.js");
+      const { respondToThread } = await import("../../../tools/thread.js");
 
       return res.status(200).json(await respondToThread({ deep_thought_id: id, message }));
 
@@ -240,7 +240,7 @@ async function deepThoughts(req, res) {
 
       if (!id) return res.status(400).json({ error: "Missing id" });
 
-      const { buildPlan } = await import("../tools/thread.js");
+      const { buildPlan } = await import("../../../tools/thread.js");
 
       return res.status(200).json(await buildPlan({
         deep_thought_id: id,

@@ -1,4 +1,4 @@
-import { createEvent } from "../tools/googleCalendar";
+import { createEvent } from "../web/tools/googleCalendar";
 
 export default async function handler(req, res) {
 

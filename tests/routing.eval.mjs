@@ -20,9 +20,9 @@
 import fs from "node:fs";
 import { DateTime } from "luxon";
 
-import openai from "../lib/openai.js";
-import { TOOLS } from "../lib/toolDefinitions.js";
-import { MODELS } from "../lib/models.js";
+import openai from "../web/lib/openai.js";
+import { TOOLS } from "../web/lib/toolDefinitions.js";
+import { MODELS } from "../web/lib/models.js";
 
 
 const RUNS = 4;
@@ -87,7 +87,7 @@ const CASES = [
 // nothing.
 function liveSystemPrompt(now) {
 
-  const source = fs.readFileSync(new URL("../api/capture.js", import.meta.url), "utf8");
+  const source = fs.readFileSync(new URL("../web/app/api/capture/handler.js", import.meta.url), "utf8");
 
   const match = source.match(/content:\s*`(You are the planning engine[\s\S]*?)`\n/);
 

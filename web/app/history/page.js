@@ -3,6 +3,17 @@ import { backendGet } from "../backend.js";
 import { Page, PageHeader, ItemCard, Empty } from "../ui.js";
 
 
+// Every page here reads live state, so none of them may be prerendered.
+//
+// This was previously implicit: backendGet used fetch(..., { cache: "no-store" }),
+// and that opted the route out of static generation as a side effect. Now that
+// the same call is a direct in-process function call there is no fetch for Next
+// to notice, so without this the page is prerendered at build time and serves
+// build-time data until the next deploy. The build output is where this shows
+// up — a page marked (Static) that should be (Dynamic).
+export const dynamic = "force-dynamic";
+
+
 async function getHistory() {
 
   try {

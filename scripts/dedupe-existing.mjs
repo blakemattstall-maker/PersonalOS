@@ -11,8 +11,8 @@
 // conflict is REPORTED and left alone, because choosing which of two
 // contradicting facts is true is not a decision a script should make.
 
-import supabase from "../lib/supabase.js";
-import { checkAgainst } from "../lib/dedupe.js";
+import supabase from "../web/lib/supabase.js";
+import { checkAgainst } from "../web/lib/dedupe.js";
 
 
 const APPLY = process.argv.includes("--apply");

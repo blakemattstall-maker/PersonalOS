@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-import { INTERRUPTION_LEVELS, URGENCY_TIERS, DEFAULTS } from "../lib/settings.js";
+import { INTERRUPTION_LEVELS, URGENCY_TIERS, DEFAULTS } from "../web/lib/settings.js";
 
 
 // The interruption dial is the one setting that decides whether this app is

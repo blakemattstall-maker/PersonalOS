@@ -1,0 +1,8 @@
+{
+  "crons": [
+    { "path": "/api/cron/morningBrief",     "schedule": "0 13 * * *" },
+    { "path": "/api/cron/syncCanvas",       "schedule": "0 12 * * *" },
+    { "path": "/api/cron/reviewIntentions", "schedule": "30 12 * * *" },
+    { "path": "/api/cron/syncNews",         "schedule": "0 11 * * *" }
+  ]
+}

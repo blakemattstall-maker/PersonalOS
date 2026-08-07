@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { sliceToWindow } from "../lib/simplefin.js";
+import { sliceToWindow } from "../web/lib/simplefin.js";
 
 
 // getFinancialData() now caches SimpleFIN's response for up to 12 hours and

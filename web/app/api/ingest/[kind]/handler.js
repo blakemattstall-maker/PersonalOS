@@ -1,8 +1,8 @@
-import { requireAuth } from "../../lib/auth.js";
-import { ingestLocationPoints, parseOverlandPayload } from "../../tools/location.js";
-import { saveSubscription, publicKey } from "../../lib/push.js";
-import { logActivity } from "../../tools/activityLog.js";
-import { buildDiagnostics } from "../../lib/diagnostics.js";
+import { requireAuth } from "../../../../lib/auth.js";
+import { ingestLocationPoints, parseOverlandPayload } from "../../../../tools/location.js";
+import { saveSubscription, publicKey } from "../../../../lib/push.js";
+import { logActivity } from "../../../../tools/activityLog.js";
+import { buildDiagnostics } from "../../../../lib/diagnostics.js";
 
 
 // One function for everything that pushes data INTO the system, rather than one

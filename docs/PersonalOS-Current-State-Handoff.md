@@ -77,7 +77,7 @@ Debate used to run off the morning's news digest, which meant topics were whatev
 - **The morning brief now actually delivers itself.** It used to be written to the database and just wait — the only thing that ever collected it was a phone-side Shortcut polling `/api/brief/latest`. It's pushed server-side now, on the same cron, gated by the interruption dial like every other notification. **The old polling Shortcut is redundant — confirm delivery, then delete it.**
 
 ### Settings, diagnostics, neural TTS
-- **`api/[resource].js`** — one dynamic route handling `data`/`history`/`projects`/`nudges`/`deepThoughts`/`settings`/`diag`/`practice`/`people`/`news`. **No public URL has ever changed** from any of this session's work.
+- **`web/app/api/[resource]/`** — one dynamic route handling `data`/`history`/`projects`/`nudges`/`deepThoughts`/`settings`/`diag`/`practice`/`people`/`news`. **No public URL has ever changed** from any of this session's work.
 - **`lib/settings.js`** — `app_settings` table holds the interruption dial (`silent` / `digest` / `digest_plus_urgent` / `everything`). Every push-sending code path calls `pushAllowed()` first; the underlying record/prompt is still written either way — muting should mean "stop buzzing me," not "stop tracking."
 - **`lib/diagnostics.js` / `lib/schema.js`** — one real answer to "is this actually working" and "which migrations are actually live, and are they doing anything." Surfaced at `/settings`. **Check this before believing any doc's claim about state, including this one.**
 - **Neural TTS** — `web/app/api/tts/route.js`, `gpt-4o-mini-tts` with a `tts-1` fallback, in the `web/` project (needs its own `OPENAI_API_KEY`).
@@ -100,6 +100,72 @@ Blake supplied a reference screenshot (a habit-tracker with soft widget cards) a
 ## The Fund — built, then removed (Aug 6)
 
 Blake proposed an accountability mechanic: real money auto-traded based on his behaviour. **Declined the real-money-execution half outright and permanently** — a vibe-coded system placing real securities orders off the back of "did Blake go to the gym" is a bad idea at any dollar amount, and that's a standing constraint on the assistant, not a negotiable design call. Built a paper-portfolio version instead (real prices via Yahoo's chart endpoint, deterministic in-code deposit triggers, a generated eccentric fund manager, morning dispatches riding inside the brief) — fully working, tested, deployed. Blake then decided a paper version isn't worth it: **"only a worthwhile feature if it uses real money."** Removed entirely (`tools/fund.js`, `lib/quotes.js`, the `/fund` page, its cron slot, `docs/schema-fund.sql` — confirmed via live Supabase check that the migration had never been run, so nothing to migrate back). **Do not rebuild this without Blake raising it again, and if he does, the real-money line still holds** — the read-only version (his actual Robinhood positions displayed, never traded) remains fair game for a future financial dashboard.
+
+---
+
+## The fold — one deployment instead of two (Aug 7, branch `fold-into-nextjs`)
+
+The page-swap latency question in the constraints below is answered. The
+dashboard and the API were separate Vercel projects and every page load paid a
+full HTTP round trip between them — six on the home page alone. Measured against
+production while writing this: six calls that did *no work at all* (they 401'd)
+still cost 816ms purely in routing.
+
+Everything now lives in the `web` project. `lib/` and `tools/` moved under it,
+and the five API handlers became Next.js route handlers.
+
+**The handlers themselves were not rewritten.** They are byte-identical, moved
+to `handler.js` beside a thin `route.js`, and adapted by `web/app/api/_node.js`,
+which presents the `(req, res)` they already expect. Rewriting ~1,450 lines of
+debugged handler into Request/Response style would have put the risk in every
+branch of every file; this puts all of it in one small adapter that every route
+shares and `tests/api-routes.test.js` covers directly.
+
+`web/app/backend.js` no longer speaks HTTP — it invokes the same handler
+in-process. **All eleven dashboard callers were deliberately left untouched**,
+because the point of that shape is that the hop disappears without any page
+having to know it existed.
+
+### What this migration nearly broke, and what caught it
+
+- **The passphrase gate would have eaten every capture.** `proxy.js` redirects
+  anything unmatched to `/login`. With the API inside the app, the Shortcut,
+  Overland, Vercel Cron and Google's OAuth redirect — none of which hold a
+  session cookie — would each have received an HTML login page. A capture would
+  have looked like it succeeded and silently done nothing. `api` is excluded
+  from the matcher now, and a test asserts both directions: `/api/*` bypasses,
+  every real page still doesn't.
+- **Three pages silently became static.** `backendGet` used
+  `fetch(…, { cache: "no-store" })`, which opted routes out of static generation
+  as a side effect nobody had written down. A direct function call gives Next
+  nothing to notice, so `/`, `/data` and `/history` were prerendered at build
+  time and would have served build-time data until the next deploy. Caught by
+  reading the build output — `○ (Static)` where `ƒ (Dynamic)` belonged. All
+  three now declare `force-dynamic` explicitly.
+- **In-process calls would have 401'd in production.** The handler still runs
+  `requireAuth`, correctly — so `backend.js` presents the same credential a
+  remote caller would. Without it, every page would have gone empty the moment
+  `API_SECRET` was read, and it would have looked like a data problem.
+- **The resource never reached the handler.** Over HTTP, Next merges the
+  `[resource]` path segment into the params; in-process nothing does that merge,
+  so every call returned `Unknown resource: undefined` while the HTTP routes
+  worked perfectly. Found by `scripts/verify-fold.mjs`, not by any unit test —
+  it is exactly the gap between "the route works" and "the way the app actually
+  calls it works".
+
+### Before merging
+
+1. `bash scripts/migrate-env-to-web.sh` — copies the backend environment onto
+   the web project. Until this runs a deployed build has no credentials.
+   `API_SECRET` is the one it cannot copy (Vercel will not reveal a sensitive
+   value); the script explains the two ways to handle it.
+2. `cd web && npx vercel --prod --yes` — the dashboard has never auto-deployed
+   and still doesn't.
+3. Crons moved to `web/vercel.json` and are gone from the root. They only fire
+   on production deployments, so nothing runs from a branch preview.
+
+Rollback is `git revert` plus a redeploy. The `personal-os` project keeps its
+own environment untouched throughout, so it can serve the API again immediately.
 
 ---
 

@@ -8,10 +8,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DateTime } from "luxon";
 
-import { taskDueDate } from "../tools/googleTasks.js";
-import { mapWithConcurrency } from "../lib/async.js";
-import { requireAuth, authEnabled } from "../lib/auth.js";
-import { DEFAULTS, INTERRUPTION_LEVELS } from "../lib/settings.js";
+import { taskDueDate } from "../web/tools/googleTasks.js";
+import { mapWithConcurrency } from "../web/lib/async.js";
+import { requireAuth, authEnabled } from "../web/lib/auth.js";
+import { DEFAULTS, INTERRUPTION_LEVELS } from "../web/lib/settings.js";
 
 
 // ---------------------------------------------------------------------------
@@ -198,11 +198,11 @@ test("the cron route cannot be authenticated by 'Bearer undefined'", async () =>
 
   const fs = await import("node:fs");
 
-  const source = fs.readFileSync(new URL("../api/cron/[job].js", import.meta.url), "utf8");
+  const source = fs.readFileSync(new URL("../web/app/api/cron/[job]/handler.js", import.meta.url), "utf8");
 
   assert.ok(
     !/!==\s*`Bearer \$\{process\.env\.CRON_SECRET\}`/.test(source),
-    "api/cron/[job].js compares directly against an interpolated env var — an unset CRON_SECRET makes 'Bearer undefined' a valid credential"
+    "the cron handler compares directly against an interpolated env var — an unset CRON_SECRET makes 'Bearer undefined' a valid credential"
   );
 
 });

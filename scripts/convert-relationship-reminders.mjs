@@ -17,9 +17,9 @@
 import { google } from "googleapis";
 import { DateTime } from "luxon";
 
-import supabase from "../lib/supabase.js";
-import { getGoogleClient } from "../lib/google.js";
-import { getUserTimezone } from "../lib/profile.js";
+import supabase from "../web/lib/supabase.js";
+import { getGoogleClient } from "../web/lib/google.js";
+import { getUserTimezone } from "../web/lib/profile.js";
 
 
 const DRY = process.argv.includes("--dry");

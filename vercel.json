@@ -1,34 +1,8 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/morningBrief",
-      "schedule": "0 13 * * *"
-    },
-    {
-      "path": "/api/cron/syncCanvas",
-      "schedule": "0 12 * * *"
-    },
-    {
-      "path": "/api/cron/reviewIntentions",
-      "schedule": "30 12 * * *"
-    },
-    {
-      "path": "/api/cron/syncNews",
-      "schedule": "0 11 * * *"
-    }
-  ],
   "rewrites": [
     {
-      "source": "/api/brief/latest",
-      "destination": "/api/brief"
+      "source": "/api/:path*",
+      "destination": "https://web-blake-007c.vercel.app/api/:path*"
     }
-  ],
-  "functions": {
-    "api/*.js": {
-      "maxDuration": 60
-    },
-    "api/cron/*.js": {
-      "maxDuration": 60
-    }
-  }
+  ]
 }

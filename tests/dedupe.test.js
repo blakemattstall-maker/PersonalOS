@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { normalise } from "../lib/dedupe.js";
+import { normalise } from "../web/lib/dedupe.js";
 
 
 // The free, offline half of duplicate detection.
@@ -118,7 +118,7 @@ test("curly and straight apostrophes are the same fact", () => {
 // Audio upload filenames
 // ---------------------------------------------------------------------------
 
-import { extensionFor } from "../tools/pitch.js";
+import { extensionFor } from "../web/tools/pitch.js";
 
 
 test("iOS Shortcut recordings get a filename OpenAI will accept", () => {

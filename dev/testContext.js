@@ -1,4 +1,4 @@
-import { buildContext } from "../lib/context.js";
+import { buildContext } from "../web/lib/context.js";
 
 
 export default async function handler(req,res){

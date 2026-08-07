@@ -108,7 +108,7 @@ test("the gmail tool uses only allowlisted Gmail methods", () => {
 
   const root = path.resolve(import.meta.dirname, "..");
 
-  const source = fs.readFileSync(path.join(root, "tools/gmail.js"), "utf8");
+  const source = fs.readFileSync(path.join(root, "web/tools/gmail.js"), "utf8");
 
   const gmailCalls = [...new Set(
     [...source.matchAll(/gmail\.users\.([a-zA-Z.]+)\(/g)].map(m => m[1])
@@ -119,7 +119,7 @@ test("the gmail tool uses only allowlisted Gmail methods", () => {
   assert.deepEqual(
     unexpected,
     [],
-    `tools/gmail.js calls a Gmail method that is not allowlisted: ${unexpected.join(", ")}. ` +
+    `web/tools/gmail.js calls a Gmail method that is not allowlisted: ${unexpected.join(", ")}. ` +
     `If it is genuinely wanted, add it to ALLOWED_GMAIL_CALLS and say why.`
   );
 
@@ -135,7 +135,7 @@ test("the draft tool reports sent:false to the caller", () => {
 
   const root = path.resolve(import.meta.dirname, "..");
 
-  const source = fs.readFileSync(path.join(root, "tools/gmail.js"), "utf8");
+  const source = fs.readFileSync(path.join(root, "web/tools/gmail.js"), "utf8");
 
   assert.match(
     source,

@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import { supabase } from "../../../lib/supabase.js";
+import { supabase } from "../../../../../lib/supabase.js";
 
 
 // Both halves of the Google OAuth handshake in one function.

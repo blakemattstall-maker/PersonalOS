@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DateTime } from "luxon";
 
-import { buildRecurrenceRule, resolveColor, DEFAULT_EVENT_COLOR } from "../lib/recurrence.js";
+import { buildRecurrenceRule, resolveColor, DEFAULT_EVENT_COLOR } from "../web/lib/recurrence.js";
 
 
 // A wrong recurrence rule is the worst kind of bug in this system: Google
@@ -109,8 +109,8 @@ test("colours resolve by name or id, and default to red", () => {
 
 test("every pattern the model may choose actually produces a rule", async () => {
 
-  const { RECURRENCE_PATTERNS } = await import("../lib/recurrence.js");
-  const { TOOLS } = await import("../lib/toolDefinitions.js");
+  const { RECURRENCE_PATTERNS } = await import("../web/lib/recurrence.js");
+  const { TOOLS } = await import("../web/lib/toolDefinitions.js");
 
   const createEvent = TOOLS.find(t => t.function.name === "create_event");
 
