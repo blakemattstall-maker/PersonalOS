@@ -20,6 +20,8 @@ import { startDebateSession, respondInDebate, endDebateSession } from "../../../
 import { submitPitch, generatePitchTopic, transcribeAudio } from "../../../tools/pitch.js";
 import { getDebateTopics, ensureTopicsFramed, retireDebateTopic } from "../../../tools/debateTopics.js";
 import { savePerson, getAllPeople, deletePerson, recordContact, answerRelationshipCheckin } from "../../../tools/people.js";
+import { getFinancialData } from "../../../lib/simplefin.js";
+import { categorizeTransactions, summarise, findRecurring, classifyUnknownMerchants } from "../../../lib/categorize.js";
 
 
 // Every read/write endpoint the dashboard uses, behind ONE serverless function.
@@ -523,7 +525,52 @@ async function people(req, res) {
 }
 
 
-const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice, people, news };
+async function finance(req, res) {
+
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const days = Math.min(Number(req.query.days) || 30, 90);
+
+  // The 12h cache holds a wide 100-day window, so changing the range here is a
+  // slice of data already in hand rather than another call to the bank.
+  const raw = await getFinancialData({ days });
+
+  const accounts = (raw.accounts || []).map(a => ({
+    name: a.name,
+    balance: Number(a.balance) || 0,
+    currency: a.currency || "USD"
+  }));
+
+  const { transactions } = await categorizeTransactions(
+    (raw.accounts || []).flatMap(a => a.transactions || []),
+    { classifyUnknown: classifyUnknownMerchants }
+  );
+
+  const summary = summarise(transactions);
+
+  return res.status(200).json({
+    success: true,
+    days,
+    cached: raw.cached,
+    fetchedAt: raw.fetchedAt,
+    accounts,
+    totalBalance: Math.round(accounts.reduce((t, a) => t + a.balance, 0) * 100) / 100,
+    ...summary,
+    recurring: findRecurring(transactions),
+    // Newest first, trimmed — the page shows a recent slice, not a ledger.
+    recent: transactions
+      .filter(t => t.category !== "transfers")
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 12)
+      .map(t => ({ date: t.date, merchant: t.merchant, amount: Number(t.amount), category: t.category }))
+  });
+
+}
+
+
+const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice, people, news, finance };
 
 
 export default async function handler(req, res) {

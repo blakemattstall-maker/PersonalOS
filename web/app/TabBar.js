@@ -63,6 +63,17 @@ const TABS = [
     )
   },
   {
+    href: "/money",
+    label: "Money",
+    icon: (
+      <>
+        <path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h12a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 18 18H6a2.5 2.5 0 0 1-2.5-2.5z" />
+        <circle cx="12" cy="12" r="2.4" />
+        <path d="M6.8 12h.01M17.2 12h.01" />
+      </>
+    )
+  },
+  {
     href: "/settings",
     label: "Settings",
     icon: (
