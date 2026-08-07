@@ -2,9 +2,11 @@ import { DateTime } from "luxon";
 import openai from "../lib/openai.js";
 import supabase from "../lib/supabase.js";
 import { getUserTimezone, getProfileBio } from "../lib/profile.js";
-import { createTask } from "./googleTasks.js";
+import { createTask, deleteGoogleTask } from "./googleTasks.js";
+import { deleteGoogleEvent } from "./googleCalendar.js";
 import { sendPush } from "../lib/push.js";
 import { pushAllowed } from "../lib/settings.js";
+import { mapWithConcurrency } from "../lib/async.js";
 import { MODELS } from "../lib/models.js";
 
 
@@ -416,13 +418,94 @@ export async function recordContact({ name }) {
 }
 
 
+// Removing someone has to remove what the app built on their behalf, or the
+// deletion is a lie. A person's birthday becomes a real recurring Google Task
+// (materialiseUpcomingDateReminders creates one per year as the date comes into
+// range), their check-ins become prompts, and both outlive the row that
+// explains them. Deleting only the row left the phone reminding him about the
+// birthday of someone he had explicitly removed, every year, forever, with
+// nothing left in the system saying who it was for.
+//
+// Google is cleaned up first and the row goes last: a failure partway through
+// leaves the person still present and retryable, which is recoverable. The
+// reverse order would leave orphans nothing can find.
 export async function deletePerson(id) {
+
+  if (!id) throw new Error("deletePerson requires an id.");
+
+  const removed = { tasks: 0, events: 0, prompts: 0 };
+
+  const errors = [];
+
+
+  const [{ data: tasks }, { data: events }] = await Promise.all([
+    supabase.from("tasks").select("id, google_task_id").eq("person_id", id),
+    supabase.from("calendar_events").select("id, google_event_id").eq("person_id", id)
+  ]);
+
+
+  await mapWithConcurrency(tasks || [], async (task) => {
+    try {
+      await deleteGoogleTask(task.google_task_id);
+      removed.tasks += 1;
+    } catch (error) {
+      errors.push(`task ${task.id}: ${error.message}`);
+    }
+  });
+
+  await mapWithConcurrency(events || [], async (event) => {
+    try {
+      await deleteGoogleEvent(event.google_event_id);
+      removed.events += 1;
+    } catch (error) {
+      errors.push(`event ${event.id}: ${error.message}`);
+    }
+  });
+
+
+  // Anything still awaiting an answer about this person can no longer be
+  // answered. Cancelled rather than deleted — the prompt history is the record
+  // of what the app asked and why, and that stays true even once they're gone.
+  const { data: pending } = await supabase
+    .from("prompts")
+    .select("id, payload")
+    .eq("status", "pending");
+
+  const theirs = (pending || []).filter(p => p.payload?.person_id === id).map(p => p.id);
+
+  if (theirs.length > 0) {
+
+    const { error } = await supabase
+      .from("prompts")
+      .update({ status: "cancelled", answered_at: new Date().toISOString() })
+      .in("id", theirs);
+
+    if (error) errors.push(`prompts: ${error.message}`);
+    else removed.prompts = theirs.length;
+
+  }
+
+
+  if (tasks?.length) {
+    await supabase.from("tasks").delete().eq("person_id", id);
+  }
+
+  if (events?.length) {
+    await supabase.from("calendar_events").delete().eq("person_id", id);
+  }
+
 
   const { error } = await supabase.from("people").delete().eq("id", id);
 
   if (error) throw new Error(error.message);
 
-  return { success: true };
+
+  return {
+    success: true,
+    message: `Removed them, plus ${removed.tasks} reminder(s) and ${removed.events} event(s) — from Google too, not just here.`,
+    removed,
+    ...(errors.length > 0 ? { errors } : {})
+  };
 
 }
 

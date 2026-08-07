@@ -5,7 +5,7 @@ import { createBrief } from "../../tools/database.js";
 import { reviewIntentionsForNudges } from "../../tools/nudges.js";
 import { checkProjectDeadlines } from "../../tools/projectCheckup.js";
 import { regenerateBio } from "../../tools/profileEvolution.js";
-import { syncTaskCompletions } from "../../tools/completions.js";
+import { syncTaskCompletions, reconcileDeletedTasks, reconcileDeletedEvents } from "../../tools/completions.js";
 import { rollupDailyMetrics } from "../../tools/metrics.js";
 import { runDailyObservation } from "../../tools/observer.js";
 import { syncNewsDigest } from "../../tools/news.js";
@@ -120,6 +120,23 @@ async function reviewIntentions() {
   const completionResult = await syncTaskCompletions();
 
 
+  // Completions first, then deletions — in that order deliberately. A task
+  // ticked off in Google must be recorded as done before the deletion pass
+  // looks at it, or a completion could be mistaken for a disappearance and the
+  // behavioural record would lose it. Both are best-effort: reconciliation is
+  // housekeeping, and a Google hiccup here must not cost the day's nudges.
+  const [taskReconcile, eventReconcile] = await Promise.all([
+    reconcileDeletedTasks().catch(error => {
+      console.error("TASK DELETION RECONCILE FAILED:", error.message);
+      return { success: false, error: error.message };
+    }),
+    reconcileDeletedEvents().catch(error => {
+      console.error("EVENT DELETION RECONCILE FAILED:", error.message);
+      return { success: false, error: error.message };
+    })
+  ]);
+
+
   const [nudgeResult, projectResult, relationshipResult, dateReminderResult] = await Promise.all([
     reviewIntentionsForNudges(),
     checkProjectDeadlines(),
@@ -179,6 +196,7 @@ async function reviewIntentions() {
   return {
     success: true,
     completions: completionResult,
+    deletedInGoogle: { tasks: taskReconcile, events: eventReconcile },
     metrics: metricsResult,
     observation: observationResult,
     nudges: nudgeResult,
