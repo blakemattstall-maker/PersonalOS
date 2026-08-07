@@ -11,7 +11,6 @@ import {
   getMostRecentBrief, getLatestUnreadBrief, markBriefRead
 } from "../tools/database.js";
 import { deleteProject } from "../tools/projects.js";
-import { respondToThread, buildPlan } from "../tools/thread.js";
 import { PLAN_TOOLS } from "../lib/planTools.js";
 import { getSettings, saveSettings, INTERRUPTION_LEVELS } from "../lib/settings.js";
 import { buildDiagnostics } from "../lib/diagnostics.js";
@@ -225,6 +224,13 @@ async function deepThoughts(req, res) {
 
       if (!id || !message) return res.status(400).json({ error: "Missing id or message" });
 
+      // Dynamic import, not a top-of-file one: thread.js pulls in gmail.js and
+      // googleDocs.js, which pull in the googleapis SDK — by far the heaviest
+      // dependency in this function. Loading it eagerly meant every dashboard
+      // read (nudges, projects, settings...) paid that cold-start cost too,
+      // since they all share this one file. Now only an actual thread action does.
+      const { respondToThread } = await import("../tools/thread.js");
+
       return res.status(200).json(await respondToThread({ deep_thought_id: id, message }));
 
     }
@@ -233,6 +239,8 @@ async function deepThoughts(req, res) {
     if (action === "buildPlan") {
 
       if (!id) return res.status(400).json({ error: "Missing id" });
+
+      const { buildPlan } = await import("../tools/thread.js");
 
       return res.status(200).json(await buildPlan({
         deep_thought_id: id,
