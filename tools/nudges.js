@@ -10,6 +10,8 @@ import {
 } from "./database.js";
 import { mapWithConcurrency } from "../lib/async.js";
 import { MODELS } from "../lib/models.js";
+import { sendPush } from "../lib/push.js";
+import { pushAllowed } from "../lib/settings.js";
 
 
 async function evaluateIntention(intention, context, tz) {
@@ -116,10 +118,32 @@ export async function reviewIntentionsForNudges() {
 
       if (evaluation.should_nudge && evaluation.message) {
 
-        await createNudge({
+        const nudge = await createNudge({
           intention_id: intention.id,
           message: evaluation.message
         });
+
+        // createNudge only ever wrote the row — nothing has ever pushed a
+        // nudge to the phone, at any interruption level, including
+        // "everything". Wired the same way relationship_checkin already is:
+        // the row is written regardless of the setting (muting means "stop
+        // buzzing me", not "stop tracking"), and "nudge" as the urgency
+        // matches neither "digest" nor "urgent", so this only actually
+        // reaches the phone at the "everything" level — a nudge isn't the
+        // once-a-day digest and isn't time-critical, so digest_plus_urgent
+        // correctly leaves it dashboard-only.
+        if (await pushAllowed("nudge")) {
+
+          await sendPush({
+            title: "Nudge",
+            body: evaluation.message,
+            url: "/",
+            tag: `nudge-${nudge.id}`
+          }).catch(error => {
+            console.error("NUDGE PUSH FAILED:", error.message);
+          });
+
+        }
 
         // Only stamp this when a nudge actually goes out. Marking it on every
         // evaluation made last_surfaced_at mean "last looked at", so the prompt

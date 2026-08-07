@@ -34,6 +34,11 @@ const ELSEWHERE = [
     href: "/history",
     title: "Earlier",
     blurb: "Past briefs, and everything you've already cleared."
+  },
+  {
+    href: "/settings/archived",
+    title: "Archived projects",
+    blurb: "Projects you've put away. Nothing is deleted — restore one anytime."
   }
 ];
 

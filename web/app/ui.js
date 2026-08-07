@@ -226,7 +226,7 @@ export function link(extra = "") {
 
 
 export function field(extra = "") {
-  return `w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50 ${extra}`;
+  return `w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50 ${extra}`;
 }
 
 

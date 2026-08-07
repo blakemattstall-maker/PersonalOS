@@ -2,6 +2,8 @@ import supabase from "../lib/supabase.js";
 import tzLookup from "tz-lookup";
 import { DateTime } from "luxon";
 import { getProfile, clearProfileCache } from "../lib/profile.js";
+import { sendPush } from "../lib/push.js";
+import { pushAllowed } from "../lib/settings.js";
 
 
 // Location ingest and place recognition.
@@ -132,13 +134,34 @@ async function raiseLabelPrompt(place, tz) {
 
   const maps = `https://maps.google.com/?q=${place.latitude},${place.longitude}`;
 
+  const title = "What is this place?";
+  const body = `You've been here ${place.visit_count} times. ${hourSummary} What is it, and what do you do there?`;
+
   await supabase.from("prompts").insert([{
     kind: "label_place",
-    title: "What is this place?",
-    body: `You've been here ${place.visit_count} times. ${hourSummary} What is it, and what do you do there?`,
+    title,
+    body,
     payload: { place_id: place.id, latitude: place.latitude, longitude: place.longitude, maps_url: maps },
     status: "pending"
   }]);
+
+  // This never pushed at all before — the only way to find out was to have
+  // the dashboard open when a place crossed the visit threshold, so in
+  // practice it sat unnoticed until stumbled on days later. Same urgency
+  // tier as a nudge: not the daily digest, not time-critical, so it reaches
+  // the phone at "everything" and stays dashboard-only at digest_plus_urgent.
+  if (await pushAllowed("nudge")) {
+
+    await sendPush({
+      title,
+      body: `You've been here ${place.visit_count} times. What is it?`,
+      url: "/",
+      tag: `place-${place.id}`
+    }).catch(error => {
+      console.error("PLACE PROMPT PUSH FAILED:", error.message);
+    });
+
+  }
 
   return true;
 
@@ -368,10 +391,34 @@ export async function answerPlaceLabel({ prompt_id, answer }) {
   const placeId = prompt.payload?.place_id;
 
   if (placeId) {
+
     await supabase
       .from("places")
       .update({ label: answer, notes: answer, needs_label: false })
       .eq("id", placeId);
+
+    // Self-healing: raiseLabelPrompt's own dedup should prevent more than one
+    // pending prompt per place, but there's no unique constraint backing that
+    // up in the database. If concurrent Overland deliveries ever raced past
+    // it, answering one duplicate would leave the other sitting there
+    // forever, indistinguishable from a fresh question — resolve every
+    // pending prompt for this place, not just the one that was clicked.
+    const { data: siblings } = await supabase
+      .from("prompts")
+      .select("id")
+      .eq("kind", "label_place")
+      .eq("status", "pending")
+      .contains("payload", { place_id: placeId });
+
+    const siblingIds = (siblings || []).map(s => s.id).filter(id => id !== prompt_id);
+
+    if (siblingIds.length > 0) {
+      await supabase
+        .from("prompts")
+        .update({ status: "answered", answer, answered_at: new Date().toISOString() })
+        .in("id", siblingIds);
+    }
+
   }
 
   await supabase

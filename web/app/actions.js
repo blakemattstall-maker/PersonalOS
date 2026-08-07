@@ -77,6 +77,34 @@ export async function deleteProjectAction(id) {
 
   revalidatePath("/");
   revalidatePath("/history");
+  revalidatePath("/settings/archived");
+
+  return result;
+
+}
+
+
+// Archiving is a plain status write on the same free-text column
+// createProject/updateProject already use — no delete, no touching the tasks
+// or events already sitting in Google. It just stops showing up on Today.
+export async function archiveProjectAction(id) {
+
+  const result = await backendPost("/api/projects", { id, status: "archived" });
+
+  revalidatePath("/");
+  revalidatePath("/settings/archived");
+
+  return result;
+
+}
+
+
+export async function unarchiveProjectAction(id) {
+
+  const result = await backendPost("/api/projects", { id, status: "active" });
+
+  revalidatePath("/");
+  revalidatePath("/settings/archived");
 
   return result;
 

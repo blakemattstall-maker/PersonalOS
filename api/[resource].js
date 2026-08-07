@@ -161,7 +161,8 @@ async function nudges(req, res) {
 async function projects(req, res) {
 
   if (req.method === "GET") {
-    return res.status(200).json({ success: true, projects: await getProjectsWithDetails() });
+    const status = req.query.status === "archived" ? "archived" : "active";
+    return res.status(200).json({ success: true, projects: await getProjectsWithDetails({ status }) });
   }
 
   if (req.method === "POST") {

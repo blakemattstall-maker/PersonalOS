@@ -110,7 +110,7 @@ export default function DebateSession({ session }) {
               onKeyDown={(e) => { if (e.key === "Enter") send(); }}
               placeholder="Your response — tap the mic on your keyboard to dictate"
               disabled={isPending}
-              className="flex-1 rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50 disabled:opacity-50"
+              className="flex-1 rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50 disabled:opacity-50"
             />
             <button
               onClick={send}

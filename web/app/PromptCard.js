@@ -24,7 +24,12 @@ export default function PromptCard({ item }) {
   const [answer, setAnswer] = useState("");
   const [isPending, startTransition] = useTransition();
 
-  const needsAnswer = item.kind === "label_place";
+  // Kind is the real signal, but payload shape is checked too: raiseLabelPrompt
+  // in tools/location.js always sets kind correctly, but there's no database
+  // constraint guaranteeing that stays true forever, and a place-labelling
+  // prompt with no way to actually label it is a dead end, not a degraded
+  // experience. If it carries a place to name, it gets the input.
+  const needsAnswer = item.kind === "label_place" || !!item.payload?.place_id;
 
   const submit = (value) => {
     startTransition(async () => {
@@ -39,50 +44,68 @@ export default function PromptCard({ item }) {
 
       <p className="mt-2 leading-relaxed text-ink">{item.body}</p>
 
-      {item.payload?.maps_url && (
-        <a
-          href={item.payload.maps_url}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-2 block w-fit text-[0.82rem] font-medium text-ink-soft underline decoration-[var(--line)] underline-offset-4 hover:text-ink"
-        >
-          See it on a map
-        </a>
-      )}
-
       {needsAnswer ? (
 
-        <div className="mt-4 flex items-end gap-2">
-          <input
-            type="text"
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && answer.trim()) submit(answer); }}
-            placeholder="e.g. Schroeder Hall — math 9am, english 3pm"
-            disabled={isPending}
-            aria-label="Name this place"
-            className={field("flex-1")}
-          />
-          <button
-            onClick={() => answer.trim() && submit(answer)}
-            disabled={isPending || !answer.trim()}
-            className={`${btn("ember", "md")} shrink-0`}
-          >
-            {isPending ? "Saving…" : "Save name"}
-          </button>
-        </div>
+        // The answer is the point of this card, so it comes before the map
+        // link rather than after it — a secondary link sitting above the one
+        // actual input made it easy to miss on a phone.
+        <>
+          <div className="mt-4 flex items-end gap-2">
+            <input
+              type="text"
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && answer.trim()) submit(answer); }}
+              placeholder="e.g. Schroeder Hall — math 9am, english 3pm"
+              disabled={isPending}
+              aria-label="Name this place"
+              className={field("flex-1")}
+            />
+            <button
+              onClick={() => answer.trim() && submit(answer)}
+              disabled={isPending || !answer.trim()}
+              className={`${btn("ember", "md")} shrink-0`}
+            >
+              {isPending ? "Saving…" : "Save name"}
+            </button>
+          </div>
+
+          {item.payload?.maps_url && (
+            <a
+              href={item.payload.maps_url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 block w-fit text-[0.78rem] font-medium text-ink-soft underline decoration-[var(--line)] underline-offset-4 hover:text-ink"
+            >
+              See it on a map
+            </a>
+          )}
+        </>
 
       ) : (
 
-        <div className="mt-4">
-          <button
-            onClick={() => submit("dismissed")}
-            disabled={isPending}
-            className={btn("quiet")}
-          >
-            {isPending ? "Clearing…" : "Got it"}
-          </button>
-        </div>
+        <>
+          {item.payload?.maps_url && (
+            <a
+              href={item.payload.maps_url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 block w-fit text-[0.82rem] font-medium text-ink-soft underline decoration-[var(--line)] underline-offset-4 hover:text-ink"
+            >
+              See it on a map
+            </a>
+          )}
+
+          <div className="mt-4">
+            <button
+              onClick={() => submit("dismissed")}
+              disabled={isPending}
+              className={btn("quiet")}
+            >
+              {isPending ? "Clearing…" : "Got it"}
+            </button>
+          </div>
+        </>
 
       )}
 

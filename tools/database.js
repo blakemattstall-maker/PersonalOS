@@ -1054,12 +1054,22 @@ export async function updateProject({
 
 
 export async function getActiveProjects() {
+  return getProjectsByStatus("active");
+}
+
+
+// "archived" is not a separate table or a special-cased flag — it's the same
+// free-text status column createProject/updateProject already write, so
+// putting a project away costs no migration. Only "active" and "archived" are
+// reachable from the UI; "completed" exists in the column's history but
+// nothing currently writes it.
+export async function getProjectsByStatus(status) {
 
 
   const { data, error } = await supabase
     .from("projects")
     .select("*")
-    .eq("status", "active")
+    .eq("status", status)
     .order("created_at", { ascending: false });
 
 
@@ -1074,10 +1084,10 @@ export async function getActiveProjects() {
 
 
 
-export async function getProjectsWithDetails() {
+export async function getProjectsWithDetails({ status = "active" } = {}) {
 
 
-  const projects = await getActiveProjects();
+  const projects = await getProjectsByStatus(status);
 
 
   const withDetails = await Promise.all(

@@ -77,7 +77,7 @@ export default function AddPersonForm() {
             value={form.name}
             onChange={set("name")}
             required
-            className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
+            className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
           />
 
           <input
@@ -85,7 +85,7 @@ export default function AddPersonForm() {
             placeholder="Relationship — e.g. college friend, coworker"
             value={form.relationship}
             onChange={set("relationship")}
-            className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
+            className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
           />
 
           <textarea
@@ -93,7 +93,7 @@ export default function AddPersonForm() {
             value={form.notes}
             onChange={set("notes")}
             rows={2}
-            className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
+            className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -102,14 +102,14 @@ export default function AddPersonForm() {
               placeholder="Email (optional)"
               value={form.email}
               onChange={set("email")}
-              className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
+              className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
             />
             <input
               type="tel"
               placeholder="Phone (optional)"
               value={form.phone}
               onChange={set("phone")}
-              className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
+              className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
             />
           </div>
 
@@ -118,7 +118,7 @@ export default function AddPersonForm() {
             <select
               value={form.check_in_days}
               onChange={set("check_in_days")}
-              className="mt-1 w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
+              className="mt-1 w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
             >
               <option value="">Don&apos;t remind me</option>
               <option value="7">Week</option>
@@ -137,7 +137,7 @@ export default function AddPersonForm() {
               <select
                 value={form.important_date_month}
                 onChange={set("important_date_month")}
-                className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
+                className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
               >
                 <option value="">Month</option>
                 {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
@@ -151,14 +151,14 @@ export default function AddPersonForm() {
                 placeholder="Day"
                 value={form.important_date_day}
                 onChange={set("important_date_day")}
-                className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
+                className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
               />
               <input
                 type="text"
                 placeholder="Label"
                 value={form.important_date_label}
                 onChange={set("important_date_label")}
-                className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
+                className="rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50"
               />
             </div>
             {form.important_date_month && form.important_date_day && (

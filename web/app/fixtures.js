@@ -147,12 +147,30 @@ const PROJECTS = {
 };
 
 
+const ARCHIVED_PROJECTS = {
+  projects: [
+    {
+      id: "fx-proj-archived-1",
+      name: "Spring internship applications",
+      status: "archived",
+      description: "Applied everywhere, accepted the one in June.",
+      next_action: null,
+      tasks: [
+        { id: "t7", title: "Submit the last three applications", status: "completed", due_date: daysAhead(-90) }
+      ],
+      materials: []
+    }
+  ]
+};
+
+
 const FIXTURES = {
   "/api/brief/latest?peek=true": BRIEF,
   "/api/deepThoughts": DEEP_THOUGHTS,
   "/api/data?prompts=1": PROMPTS,
   "/api/nudges": NUDGES,
-  "/api/projects": PROJECTS
+  "/api/projects": PROJECTS,
+  "/api/projects?status=archived": ARCHIVED_PROJECTS
 };
 
 

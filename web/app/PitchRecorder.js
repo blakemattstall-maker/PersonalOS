@@ -257,7 +257,7 @@ export default function PitchRecorder() {
                 onChange={(e) => setTopic(e.target.value)}
                 placeholder="What's this pitch about? (optional)"
                 disabled={state === "recording"}
-                className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-[0.9rem] text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50 disabled:opacity-50"
+                className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-base text-ink placeholder:text-ink-soft outline-none focus:border-ink disabled:opacity-50 disabled:opacity-50"
               />
 
               <button
