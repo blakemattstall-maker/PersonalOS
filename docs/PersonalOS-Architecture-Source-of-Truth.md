@@ -120,6 +120,43 @@ Still true from v1.1: service key bypasses RLS (fine, server-only, single-user),
 
 ---
 
+## 7b. Output surfaces, revised (Aug 7)
+
+The Shortcut no longer speaks. It used to end in an iOS notification echoing the
+shortcut's name and the raw body of the HTTP response — which confirmed the
+request arrived and almost nothing else: it could not name what was created, it
+could not link to it, and a question came back as JSON in braces.
+
+The app now owns the reply (`lib/captureNotify.js`). Every capture pushes a
+notification that says what actually happened in plain language and deep-links
+to the artefact itself — the Google Calendar event, the Gmail draft, the
+exported Doc — falling back to the relevant dashboard page when there is no
+external artefact.
+
+Three consequences worth stating, because they are load-bearing rather than
+incidental:
+
+- **Every exit path in `/api/capture` must notify.** With the Shortcut silent
+  this push is the *only* reply, including for a question (where the body is the
+  entire answer) and for a failure (where silence would make the capture look
+  like it never arrived). All four return paths notify, and a test asserts no
+  tool can capture silently.
+- **Capture confirmations use unique tags; the digest uses a stable one.** The
+  digest replaces itself because the budget is one message a day. Three captures
+  in a row are three separate things, and a shared tag would hide two of them.
+- **`capture_confirmation` sits at the `digest` tier** — the lowest that pushes
+  at all. It is the app answering him, not interrupting him, but `silent` still
+  has to mean silent or the dial is only a suggestion.
+
+Reading the inbox landed alongside this (`readInbox` / `reviewInbox` in
+`tools/gmail.js`), which is the first genuinely passive input the system has had
+since location. It requests `format: "metadata"` — headers and Gmail's snippet,
+never message bodies — and writes nothing to memory on its own, because an inbox
+is full of other people's assertions and treating those as facts about the user
+is how a memory store fills with things that were never true.
+
+---
+
 ## 8. Open decisions
 
 ### ✅ Resolved since v1.1

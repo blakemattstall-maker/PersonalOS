@@ -8,6 +8,7 @@ import { getPendingClarification, clearPendingClarification } from "../tools/pen
 import { resumePendingClarification } from "../tools/modify.js";
 import { MODELS } from "../lib/models.js";
 import { transcribeAudio } from "../tools/pitch.js";
+import { notifyCapture } from "../lib/captureNotify.js";
 
 export default async function handler(req, res) {
 
@@ -73,6 +74,8 @@ export default async function handler(req, res) {
       await clearPendingClarification();
 
       if (resumed.handled) {
+
+        await notifyCapture([{ tool: "clarification", result: resumed.result }], text);
 
         return res.status(200).json({
           success: resumed.result.success,
@@ -179,13 +182,20 @@ Call every tool needed to satisfy the request — if one message asks for two th
 
     if (!message.tool_calls || message.tool_calls.length === 0) {
 
+      const answer = {
+        success: true,
+        message: message.content || "I'm not sure how to help with that."
+      };
+
+      // The router answered conversationally instead of calling a tool. With
+      // the Shortcut silent this notification is the entire reply, so it
+      // matters most on exactly the path that produces no artefact to link to.
+      await notifyCapture([{ tool: "general_question", result: answer }], text);
+
       return res.status(200).json({
         success: true,
         tool: "general_question",
-        result: {
-          success: true,
-          message: message.content || "I'm not sure how to help with that."
-        }
+        result: answer
       });
 
     }
@@ -248,6 +258,12 @@ Call every tool needed to satisfy the request — if one message asks for two th
       .join(" ");
 
 
+    // Awaited rather than fired and forgotten. A capture that reports nothing
+    // is indistinguishable from one that never arrived, and background work in
+    // a serverless function can be killed the moment the response is sent.
+    await notifyCapture(results, transcription?.text || text);
+
+
     return res.status(200).json({
 
       success: !anyFailure,
@@ -273,6 +289,15 @@ Call every tool needed to satisfy the request — if one message asks for two th
 
 
   } catch(error) {
+
+
+    // Nothing else will say so. The Shortcut shows nothing now, so an
+    // unhandled failure here would otherwise be completely invisible from the
+    // phone — the capture would simply appear to vanish.
+    await notifyCapture(
+      [{ tool: "capture", error: error.message }],
+      typeof req.body?.text === "string" ? req.body.text : null
+    );
 
 
     return res.status(500).json({

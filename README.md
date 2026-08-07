@@ -12,12 +12,14 @@ Single-user by design, running on free tiers, at roughly **$7/month all-in**.
 
 ```
 iPhone Shortcut ──voice──▶ /api/capture ──▶ router (LLM picks a tool)
-                                             │
-web dashboard  ──────────▶ /api/[resource]   ├──▶ 22 tools ──▶ Supabase
-   (Next.js, separate                        │                 Google Calendar/Tasks/Docs/Gmail
-    Vercel project)                          │                 SimpleFIN (12h cache)
-                                             │                 OpenAI
-Vercel Cron    ──────────▶ /api/cron/[job] ──┘
+   (silent; the app         │                  │
+    pushes the reply) ◀─────┘                  │
+                                               │
+web dashboard  ──────────▶ /api/[resource]     ├──▶ 23 tools ──▶ Supabase
+   (Next.js, separate                          │                 Google Calendar/Tasks/Docs/Gmail
+    Vercel project)                            │                 SimpleFIN (12h cache)
+                                               │                 OpenAI
+Vercel Cron    ──────────▶ /api/cron/[job] ────┘
 Overland (GPS) ──────────▶ /api/ingest/[kind]
 ```
 
@@ -93,6 +95,15 @@ short version:
 6. **Auth is dormant when its secret is unset**, deliberately, so the Shortcut
    and the server can switch over independently. It is loud in the logs about
    it. Never let an unset secret be satisfiable by a guessable value.
+7. **The capture Shortcut is silent.** Its notification used to be the only
+   confirmation; the app now pushes the reply instead, so `/api/capture` must
+   notify on *every* exit path — including questions and failures. A path that
+   returns without notifying is a capture that appears to have vanished.
+   `tests/capture-notify.test.js` fails if any tool would capture silently.
+8. **Classify every push in `URGENCY_TIERS`** (`lib/settings.js`). An urgency
+   the dial doesn't recognise is silently undeliverable at most settings —
+   which is exactly how nudges went unpushable for a week without anyone
+   noticing.
 
 ## Where to look next
 

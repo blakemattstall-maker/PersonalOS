@@ -48,15 +48,32 @@ self.addEventListener("notificationclick", (event) => {
 
   const target = event.notification.data?.url || "/";
 
+  // Capture confirmations link straight at the thing they created — a Google
+  // Calendar event, a Gmail draft, an exported Doc — so a target is now often
+  // on another origin. WindowClient.navigate() rejects cross-origin URLs by
+  // spec, so reusing an open window only works for our own pages; anything
+  // else has to go through openWindow or the tap silently does nothing.
+  let sameOrigin = true;
+
+  try {
+    sameOrigin = new URL(target, self.location.origin).origin === self.location.origin;
+  } catch {
+    sameOrigin = true;
+  }
+
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
 
-      // Focus the app if it's already open rather than opening a second copy.
-      for (const client of windows) {
-        if ("focus" in client) {
-          client.navigate(target);
-          return client.focus();
+      if (sameOrigin) {
+
+        // Focus the app if it's already open rather than opening a second copy.
+        for (const client of windows) {
+          if ("focus" in client) {
+            client.navigate(target);
+            return client.focus();
+          }
         }
+
       }
 
       return self.clients.openWindow(target);
