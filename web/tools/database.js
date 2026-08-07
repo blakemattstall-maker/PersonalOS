@@ -739,19 +739,45 @@ export async function markIntentionSurfaced(id) {
 
 export async function createNudge({
   intention_id,
-  message
+  message,
+  // When the phone should hear about it. Null means "right now", which is also
+  // what happens if the scheduling columns have not been added yet.
+  deliver_at = null
 }) {
+
+
+  const base = {
+    intention_id,
+    message,
+    status: "pending_review"
+  };
+
+
+  // PostgREST rejects an insert containing ANY unknown column, regardless of
+  // the value — trap #6. So the scheduled shape is attempted first and the
+  // plain one is the fallback, which keeps nudges working on a database that
+  // has not run docs/schema-nudge-scheduling.sql yet. `scheduled` tells the
+  // caller which happened, so it knows whether to push immediately.
+  if (deliver_at) {
+
+    const attempt = await supabase
+      .from("nudges")
+      .insert([{ ...base, deliver_at }])
+      .select()
+      .single();
+
+    if (!attempt.error) return { ...attempt.data, scheduled: true };
+
+    if (!/deliver_at|column|schema cache/i.test(attempt.error.message)) {
+      throw new Error(attempt.error.message);
+    }
+
+  }
 
 
   const { data, error } = await supabase
     .from("nudges")
-    .insert([
-      {
-        intention_id,
-        message,
-        status: "pending_review"
-      }
-    ])
+    .insert([base])
     .select()
     .single();
 

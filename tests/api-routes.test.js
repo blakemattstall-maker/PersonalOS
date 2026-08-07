@@ -299,7 +299,19 @@ test("every scheduled job points at a job the cron handler actually knows", () =
     assert.ok(known.includes(job), `scheduled "${job}" but the handler has no such job (has: ${known.join(", ")})`);
   }
 
-  assert.equal(crons.length, 4, "a cron went missing in the move");
+  // Several schedules deliberately point at the same job: Vercel Hobby crons
+  // fire at most once a day each, so spreading nudges across the day is four
+  // schedules for one deliverNudges job rather than one hourly schedule.
+  const jobs = crons.map(c => c.path.replace("/api/cron/", ""));
+
+  for (const required of ["morningBrief", "syncCanvas", "reviewIntentions", "syncNews", "deliverNudges"]) {
+    assert.ok(jobs.includes(required), `the ${required} schedule went missing`);
+  }
+
+  assert.ok(
+    jobs.filter(j => j === "deliverNudges").length >= 2,
+    "nudge delivery needs more than one slot or it is not spread across the day"
+  );
 
 });
 

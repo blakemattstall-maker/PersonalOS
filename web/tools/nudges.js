@@ -14,21 +14,68 @@ import { sendPush } from "../lib/push.js";
 import { pushAllowed } from "../lib/settings.js";
 
 
-async function evaluateIntention(intention, context, tz) {
+// Nudges: deciding what is worth saying, and when in the day to say it.
+//
+// This was rewritten after a real failure. On the morning of Aug 7 the phone
+// received three notifications at once, two of which announced that an
+// internship ending "tomorrow" — it had ended the day before — and all three
+// were about the same event, having already been sent the previous morning.
+// Four separate faults, each fixed below and named where it is fixed.
 
-  const daysSinceCreated = Math.floor(
-    DateTime.now().diff(DateTime.fromISO(intention.created_at), "days").days
-  );
+
+// A hard floor, enforced in code rather than described to a model. The old
+// version handed "last nudged N days ago" to the prompt as a fact and hoped;
+// it re-nudged the same three intentions on consecutive mornings anyway.
+const MIN_DAYS_BETWEEN_NUDGES = 3;
+
+// The interruption budget is a product decision, not a tuning knob. More than
+// this arriving at once is the thing that makes an app get muted.
+const MAX_NUDGES_PER_RUN = 2;
+
+
+// Delivery windows, in the user's own timezone. The point of these is that a
+// nudge should land when it is actionable rather than whenever the cron
+// happened to run — a "tonight, draft the message" nudge is useless at 6am and
+// right at 7pm. Spread deliberately across waking hours so the app reads as
+// something present through the day instead of a single morning dump.
+export const DELIVERY_WINDOWS = {
+  morning: 8,
+  midday: 12,
+  afternoon: 16,
+  evening: 19
+};
+
+
+function nextDeliveryTime(window, tz) {
+
+  const now = DateTime.now().setZone(tz);
+
+  const hour = DELIVERY_WINDOWS[window] ?? DELIVERY_WINDOWS.midday;
+
+  const slot = now.set({ hour, minute: 0, second: 0, millisecond: 0 });
+
+  // A window that has already passed today belongs to the next moment a person
+  // would actually act on it, not to tomorrow — otherwise anything generated
+  // after 19:00 silently waits a full day.
+  return slot <= now ? now.plus({ minutes: 5 }) : slot;
+
+}
+
+
+// Exported so the date reasoning can be tested against a real stored intention
+// without waiting for a cron or bypassing the cooldown by hand.
+export async function evaluateIntention(intention, context, tz) {
+
+  const now = DateTime.now().setZone(tz);
+
+  const created = DateTime.fromISO(intention.created_at).setZone(tz);
+
+  const daysSinceCreated = Math.floor(now.diff(created, "days").days);
 
   const daysSinceSurfaced = intention.last_surfaced_at
-    ? Math.floor(DateTime.now().diff(DateTime.fromISO(intention.last_surfaced_at), "days").days)
+    ? Math.floor(now.diff(DateTime.fromISO(intention.last_surfaced_at), "days").days)
     : null;
 
-  // Each intention gets memories relevant to ITSELF, not the shared blanket
-  // list every other intention in this run also sees — "gym" and "call mom"
-  // shouldn't be judged against the same top-20-by-importance dump. The rest
-  // of context (bio, signals) is genuinely shared and fetched once by the
-  // caller; only the memory slice is worth re-fetching per intention.
   const memories = await getFormattedMemories({ query: intention.content, limit: 10 })
     .catch(() => context.memories);
 
@@ -47,20 +94,33 @@ async function evaluateIntention(intention, context, tz) {
 You are deciding whether TODAY is genuinely the right moment to nudge
 the user about something they mentioned wanting to do.
 
-Default to silence. Most days, most intentions should NOT be surfaced —
-the user explicitly does not want frequent check-ins or a "20
-notifications a week" experience. Only say yes when there's a real,
-specific reason today is a good moment (meaningful time has passed with
-no action, something in their current context makes it newly relevant,
-or it's been long enough that a check-in is genuinely warranted — not
-just "it's been N days" on a fixed schedule).
+RIGHT NOW IT IS ${now.toFormat("cccc, d LLLL yyyy")} at ${now.toFormat("HH:mm")} (${tz}).
 
-The user has explicitly told you: be blunt by nature, hold nothing
-back, and never soften something if softening it would corrupt the
-accuracy of what you're telling him. No topic is off-limits.
+This intention was captured on ${created.toFormat("cccc, d LLLL yyyy")}, which was
+${daysSinceCreated} day(s) ago.
+
+Read any relative date inside the intention text — "tomorrow", "this Friday",
+"next week", "the final day" — as relative to the day it was CAPTURED, not to
+today, and work out the real calendar date before you say anything. The user
+received a notification saying an event was happening "tomorrow" on a morning
+when it had already happened, because that word was copied straight out of text
+written two days earlier. Never repeat a relative date from the intention. If
+you refer to timing at all, use the actual day.
+
+If the moment this intention was about has already PASSED, set should_nudge to
+false and set expired to true. Do not nudge someone to prepare for something
+that is over; it is worse than silence.
+
+Default to silence. Most days, most intentions should NOT be surfaced — the
+user explicitly does not want frequent check-ins or a "20 notifications a week"
+experience. Only say yes when there is a real, specific reason today is the
+moment.
+
+The user has explicitly told you: be blunt by nature, hold nothing back, and
+never soften something if softening it would corrupt the accuracy of what you
+are telling him. No topic is off-limits.
 
 The intention: "${intention.content}"
-Said ${daysSinceCreated} day(s) ago.
 ${daysSinceSurfaced !== null ? `Last nudged about this ${daysSinceSurfaced} day(s) ago.` : "Never nudged about this before."}
 
 What you know about the user:
@@ -73,11 +133,17 @@ ${context.signals || "(none yet)"}
 Return ONLY JSON:
 {
   "should_nudge": boolean,
-  "message": "A short, specific, blunt nudge, written like someone who
-    actually remembers what you said and isn't going to dress it up —
-    not a generic reminder template. Include a concrete next step. Null
-    if should_nudge is false."
+  "expired": boolean,
+  "deliver": "morning" | "midday" | "afternoon" | "evening",
+  "topic": "three or four words naming what this is about, e.g. 'trifilm exit', 'vathos website'",
+  "message": "A short, specific, blunt nudge, written like someone who actually
+    remembers what you said and isn't going to dress it up — not a generic
+    reminder template. Include a concrete next step. Null if should_nudge is
+    false."
 }
+
+Choose "deliver" by when the user could actually act on it: something to do
+before work is "morning", something to draft in the evening is "evening".
 `
       },
 
@@ -95,83 +161,229 @@ Return ONLY JSON:
 }
 
 
-export async function reviewIntentionsForNudges() {
+// Three intentions captured within seven minutes of each other — a goodbye
+// message, exit-interview prep, and a thank-you post — are three rows and one
+// event, and each was judged in isolation, so all three fired at once. The
+// per-intention pass cannot see that; nothing had a view of the whole batch.
+// This is that view.
+async function chooseWhatToSend(candidates) {
+
+  if (candidates.length <= 1) return candidates;
+
+  const response = await openai.chat.completions.create({
+
+    model: MODELS.JUDGMENT,
+
+    response_format: { type: "json_object" },
+
+    messages: [
+
+      {
+        role: "system",
+        content:
+          `Several nudges were generated independently and are about to be sent to one ` +
+          `person's phone at once. Decide what actually goes out.\n\n` +
+          `Send at most ${MAX_NUDGES_PER_RUN}. If two or more cover the same underlying ` +
+          `event or commitment, do NOT send both — merge them into one message that keeps ` +
+          `every concrete action from the ones you dropped. Getting three notifications ` +
+          `about one thing is the single fastest way to make someone mute this app.\n\n` +
+          `Keep the blunt, specific voice of the originals. Do not soften and do not ` +
+          `summarise into vagueness.\n\n` +
+          `Return ONLY JSON: {"send":[{"index":number,"message":"","deliver":"morning|midday|afternoon|evening","merged_from":[number]}]}\n` +
+          `"index" is the candidate whose intention the nudge should be attached to.`
+      },
+
+      {
+        role: "user",
+        content: candidates
+          .map((c, i) => `${i}. [topic: ${c.topic || "?"}] [deliver: ${c.deliver || "midday"}]\n${c.message}`)
+          .join("\n\n")
+      }
+
+    ]
+
+  });
+
+  let verdict;
+
+  try {
+    verdict = JSON.parse(response.choices[0].message.content);
+  } catch {
+    // A malformed selection must not cost the user their nudges entirely, but
+    // it also must not let the whole unfiltered batch through.
+    return candidates.slice(0, MAX_NUDGES_PER_RUN);
+  }
+
+  const chosen = (verdict.send || [])
+    .filter(s => candidates[s.index])
+    .slice(0, MAX_NUDGES_PER_RUN)
+    .map(s => ({
+      ...candidates[s.index],
+      message: s.message || candidates[s.index].message,
+      deliver: s.deliver || candidates[s.index].deliver,
+      mergedCount: (s.merged_from || []).length
+    }));
+
+  return chosen.length > 0 ? chosen : candidates.slice(0, 1);
+
+}
+
+
+export async function reviewIntentionsForNudges({ deliverImmediately = false } = {}) {
 
   const tz = await getUserTimezone();
   const context = await buildRichContext();
 
-  const intentions = await getOpenIntentions();
+  const all = await getOpenIntentions();
 
-  let nudged = 0;
+  // The cooldown is applied before any model is called, so a recently nudged
+  // intention costs nothing to skip.
+  const now = DateTime.now().setZone(tz);
+
+  const eligible = [];
+  let onCooldown = 0;
+
+  for (const intention of all) {
+
+    const days = intention.last_surfaced_at
+      ? now.diff(DateTime.fromISO(intention.last_surfaced_at), "days").days
+      : Infinity;
+
+    if (days < MIN_DAYS_BETWEEN_NUDGES) { onCooldown++; continue; }
+
+    eligible.push(intention);
+
+  }
+
+
+  const candidates = [];
+  const expired = [];
   const errors = [];
 
-  // One model call per intention, previously strictly sequential at ~3.5s
-  // each — which put a hard ceiling around 10 open intentions before this
-  // daily cron hit Vercel's 60s limit and died halfway through. Each
-  // intention is still judged entirely on its own, and each nudge is still
-  // its own separate card; only the waiting happens in parallel.
-  await mapWithConcurrency(intentions, async (intention) => {
+  await mapWithConcurrency(eligible, async (intention) => {
 
     try {
 
       const evaluation = await evaluateIntention(intention, context, tz);
 
-      if (evaluation.should_nudge && evaluation.message) {
-
-        const nudge = await createNudge({
-          intention_id: intention.id,
-          message: evaluation.message
-        });
-
-        // createNudge only ever wrote the row — nothing has ever pushed a
-        // nudge to the phone, at any interruption level, including
-        // "everything". Wired the same way relationship_checkin already is:
-        // the row is written regardless of the setting (muting means "stop
-        // buzzing me", not "stop tracking"), and "nudge" as the urgency
-        // matches neither "digest" nor "urgent", so this only actually
-        // reaches the phone at the "everything" level — a nudge isn't the
-        // once-a-day digest and isn't time-critical, so digest_plus_urgent
-        // correctly leaves it dashboard-only.
-        if (await pushAllowed("nudge")) {
-
-          await sendPush({
-            title: "Nudge",
-            body: evaluation.message,
-            url: "/",
-            tag: `nudge-${nudge.id}`
-          }).catch(error => {
-            console.error("NUDGE PUSH FAILED:", error.message);
-          });
-
-        }
-
-        // Only stamp this when a nudge actually goes out. Marking it on every
-        // evaluation made last_surfaced_at mean "last looked at", so the prompt
-        // below told the model "last nudged 0 days ago" every single day —
-        // which, against a default-to-silence instruction, silenced the whole
-        // system permanently after the first run.
+      if (evaluation.expired) {
+        expired.push(intention.content);
+        // Stamped so a finished thing stops being reconsidered every morning.
         await markIntentionSurfaced(intention.id);
+        return;
+      }
 
-        nudged++;
-
+      if (evaluation.should_nudge && evaluation.message) {
+        candidates.push({
+          intention,
+          message: evaluation.message,
+          deliver: evaluation.deliver,
+          topic: evaluation.topic
+        });
       }
 
     } catch (error) {
-
       errors.push({ intention: intention.content, error: error.message });
-
     }
 
   });
 
+
+  const selected = await chooseWhatToSend(candidates).catch(() => candidates.slice(0, MAX_NUDGES_PER_RUN));
+
+  const sent = [];
+
+  for (const candidate of selected) {
+
+    const nudge = await createNudge({
+      intention_id: candidate.intention.id,
+      message: candidate.message,
+      deliver_at: deliverImmediately ? null : nextDeliveryTime(candidate.deliver, tz).toISO()
+    });
+
+    await markIntentionSurfaced(candidate.intention.id);
+
+    // The row exists either way — muting means "stop buzzing me", not "stop
+    // tracking" — so the dashboard shows it immediately regardless of when the
+    // phone hears about it.
+    if (deliverImmediately || !nudge?.scheduled) {
+      await deliverNudge(nudge, candidate.message);
+    }
+
+    sent.push({ id: nudge?.id, deliver: candidate.deliver, scheduled: Boolean(nudge?.scheduled) });
+
+  }
+
+
   return {
-
     success: true,
-
-    message: `Reviewed ${intentions.length} intention(s), ${nudged} nudge(s) created.`,
-
-    data: { reviewed: intentions.length, nudged, errors }
-
+    message: `Reviewed ${all.length} intention(s): ${onCooldown} on cooldown, ` +
+             `${candidates.length} candidate(s), ${selected.length} sent, ${expired.length} expired.`,
+    data: { reviewed: all.length, onCooldown, candidates: candidates.length, sent, expired, errors }
   };
+
+}
+
+
+async function deliverNudge(nudge, message) {
+
+  if (!(await pushAllowed("nudge"))) return { sent: 0, skipped: "interruption level" };
+
+  return sendPush({
+    title: "Nudge",
+    body: message,
+    url: "/",
+    tag: `nudge-${nudge?.id || Date.now()}`
+  }).catch(error => {
+    console.error("NUDGE PUSH FAILED:", error.message);
+    return { sent: 0, error: error.message };
+  });
+
+}
+
+
+// Run from several cron slots across the day. Each pass delivers only what is
+// due, which is what turns a single morning dump into something that shows up
+// when it is useful.
+//
+// Degrades on purpose: if the deliver_at/pushed_at columns have not been added
+// yet (docs/schema-nudge-scheduling.sql), createNudge pushes immediately and
+// this finds nothing to do, which is exactly the old behaviour.
+export async function deliverScheduledNudges() {
+
+  const { default: supabase } = await import("../lib/supabase.js");
+
+  const { data, error } = await supabase
+    .from("nudges")
+    .select("id, message, deliver_at, pushed_at, status")
+    .is("pushed_at", null)
+    .not("deliver_at", "is", null)
+    .lte("deliver_at", new Date().toISOString())
+    .eq("status", "pending_review")
+    .order("deliver_at", { ascending: true })
+    .limit(MAX_NUDGES_PER_RUN);
+
+  if (error) {
+    if (/deliver_at|pushed_at|column/i.test(error.message)) {
+      return { success: true, skipped: "scheduling columns not present yet", delivered: 0 };
+    }
+    throw new Error(error.message);
+  }
+
+  let delivered = 0;
+
+  for (const nudge of data || []) {
+
+    const result = await deliverNudge(nudge, nudge.message);
+
+    // Stamped whether or not the push went out, so a muted phone does not
+    // leave a backlog that all arrives the moment the dial moves.
+    await supabase.from("nudges").update({ pushed_at: new Date().toISOString() }).eq("id", nudge.id);
+
+    if (result?.sent > 0) delivered++;
+
+  }
+
+  return { success: true, delivered, considered: (data || []).length };
 
 }

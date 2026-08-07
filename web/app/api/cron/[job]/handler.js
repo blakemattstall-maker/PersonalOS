@@ -2,7 +2,7 @@ import { syncCanvasAssignments } from "../../../../tools/canvas.js";
 import { querySchedule } from "../../../../tools/schedule.js";
 import { queryTasks } from "../../../../tools/taskQuery.js";
 import { createBrief } from "../../../../tools/database.js";
-import { reviewIntentionsForNudges } from "../../../../tools/nudges.js";
+import { reviewIntentionsForNudges, deliverScheduledNudges } from "../../../../tools/nudges.js";
 import { checkProjectDeadlines } from "../../../../tools/projectCheckup.js";
 import { regenerateBio } from "../../../../tools/profileEvolution.js";
 import { syncTaskCompletions, reconcileDeletedTasks, reconcileDeletedEvents } from "../../../../tools/completions.js";
@@ -209,11 +209,20 @@ async function reviewIntentions() {
 }
 
 
+// Delivery is its own job, run from several slots across the day. Vercel Hobby
+// crons fire at most once a day each, so "spread through the day" is several
+// schedules pointing at one job rather than one schedule running hourly.
+async function deliverNudges() {
+  return deliverScheduledNudges();
+}
+
+
 const JOBS = {
   morningBrief,
   syncCanvas,
   reviewIntentions,
-  syncNews
+  syncNews,
+  deliverNudges
 };
 
 
