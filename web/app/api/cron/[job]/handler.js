@@ -1,5 +1,5 @@
 import { syncCanvasAssignments } from "../../../../tools/canvas.js";
-import { createBrief } from "../../../../tools/database.js";
+import { createBrief, getLatestUnreadBrief, getMostRecentBrief } from "../../../../tools/database.js";
 import { composeBrief } from "../../../../tools/brief.js";
 import { reviewIntentionsForNudges, deliverScheduledNudges } from "../../../../tools/nudges.js";
 import { syncTransactions, rebuildLinks, findInsights, deliverInsights } from "../../../../tools/islands.js";
@@ -28,6 +28,18 @@ import { DateTime } from "luxon";
 // cron paths keep working exactly as before.
 
 
+// Writing the brief and announcing it are two jobs on two schedules, and the
+// split is the whole point.
+//
+// They used to be one job at 6am local. That is fine until you are up at 4:30
+// for a flight: the app had nothing to show you, because the brief did not exist
+// yet, and the notification landed once you were airborne. Moving the single job
+// to 4am would have fixed the reading and broken the sleeping — a 4am buzz every
+// day for the two mornings a year you needed it.
+//
+// So: written at 4am, so it is already there however early the app is opened;
+// announced at 6am, which is the same UTC time the push has always gone out at,
+// so nothing about the notification changes.
 async function morningBrief() {
 
   // Composed, not concatenated. This used to be
@@ -41,30 +53,85 @@ async function morningBrief() {
 
   const brief = await createBrief({ content });
 
+  // Deliberately no push here. briefPush at 6am does that.
+  return { success: true, brief_id: brief.id, content, meta: brief_.data };
 
-  // A push body gets truncated hard by every platform, so this sends the
-  // opening sentence — which the brief is written to make the most important
-  // one — and links to the dashboard for the rest.
+}
+
+
+// A push body gets truncated hard by every platform, so this sends the opening
+// sentence — which the brief is written to make the most important one — and
+// links to the dashboard for the rest.
+async function pushBrief(content) {
+
   const lead = (content || "").split(/(?<=[.!?])\s/)[0] || "Your brief is ready.";
 
-  const allowed = await pushAllowed("digest");
+  if (!await pushAllowed("digest")) {
+    return { sent: 0, skipped: "interruption level" };
+  }
 
-  const push = allowed
-    ? await sendPush({
-        title: "Today",
-        body: lead.length > 160 ? `${lead.slice(0, 157)}…` : lead,
-        url: "/",
-        // Same tag every day, so an unread brief is replaced rather than
-        // stacked — yesterday's is worthless once today's exists.
-        tag: "morning-brief"
-      }).catch(error => {
-        console.error("BRIEF PUSH FAILED:", error.message);
-        return { sent: 0, error: error.message };
-      })
-    : { sent: 0, skipped: "interruption level" };
+  return sendPush({
+    title: "Today",
+    body: lead.length > 160 ? `${lead.slice(0, 157)}…` : lead,
+    url: "/",
+    // Same tag every day, so an unread brief is replaced rather than stacked —
+    // yesterday's is worthless once today's exists.
+    tag: "morning-brief"
+  }).catch(error => {
+    console.error("BRIEF PUSH FAILED:", error.message);
+    return { sent: 0, error: error.message };
+  });
+
+}
 
 
-  return { success: true, brief_id: brief.id, content, meta: brief_.data, push };
+async function briefPush() {
+
+  const unread = await getLatestUnreadBrief();
+
+  if (unread) {
+    return { success: true, brief_id: unread.id, push: await pushBrief(unread.content) };
+  }
+
+
+  // Nothing unread, which is two very different situations and they must not be
+  // treated alike: either the brief was written at 4am and has already been read
+  // — silence is correct, do not buzz about something already seen — or the 4am
+  // job failed and there is no brief at all.
+  //
+  // The second case is why this composes as a fallback. Splitting one job into
+  // two means a failure in the first now costs the day's brief AND its
+  // notification, where the old single job would at least have tried once. This
+  // keeps that guarantee: 6am is still a moment when a brief gets made if none
+  // exists.
+  const timezone = await getUserTimezone();
+
+  const today = DateTime.now().setZone(timezone).toFormat("yyyy-MM-dd");
+
+  const recent = await getMostRecentBrief();
+
+  const recentDay = recent
+    ? DateTime.fromISO(recent.created_at, { zone: "utc" }).setZone(timezone).toFormat("yyyy-MM-dd")
+    : null;
+
+  if (recentDay === today) {
+    return { success: true, skipped: "today's brief was already read" };
+  }
+
+
+  console.error("BRIEF MISSING AT PUSH TIME — the 4am write produced nothing; composing now.");
+
+  const brief_ = await composeBrief();
+
+  const brief = await createBrief({ content: brief_.content });
+
+  return {
+    success: true,
+    brief_id: brief.id,
+    recovered: true,
+    content: brief_.content,
+    push: await pushBrief(brief_.content)
+  };
 
 }
 
@@ -104,8 +171,9 @@ async function reviewIntentions() {
   // Completion sync runs first and in the same job: the cascade check below
   // asks Google whether overdue tasks are done, so recording completions
   // beforehand keeps both looking at the same reality. Folded in here rather
-  // than added as a fourth schedule — it needs no separate cadence, and it
-  // lands before the 13:00 brief so the day's summary reflects it.
+  // than added as a fourth schedule — it needs no separate cadence, and it runs
+  // half an hour before the brief is written so the day's summary reflects it.
+  // That gap is why every job in this chain moved when the brief did.
   const completionResult = await syncTaskCompletions();
 
 
@@ -236,6 +304,7 @@ async function connectIslands() {
 
 const JOBS = {
   morningBrief,
+  briefPush,
   syncCanvas,
   reviewIntentions,
   syncNews,

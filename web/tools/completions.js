@@ -137,7 +137,7 @@ export async function reconcileDeletedTasks() {
     return {
       success: false,
       removed: 0,
-      message: `Google returned no tasks at all while ${mirrored.length} are mirrored here. ` +
+      message: `Google returned no tasks at all while ${mirrored.length} ${mirrored.length === 1 ? "is" : "are"} mirrored here. ` +
                `Treating that as an API failure rather than a mass deletion, and doing nothing.`
     };
   }
@@ -156,7 +156,7 @@ export async function reconcileDeletedTasks() {
       success: false,
       removed: 0,
       wouldHaveRemoved: missing.length,
-      message: `${missing.length} of ${mirrored.length} mirrored tasks are absent from Google ` +
+      message: `${missing.length} of ${mirrored.length} mirrored task${mirrored.length === 1 ? "" : "s"} ${missing.length === 1 ? "is" : "are"} absent from Google ` +
                `(${Math.round(ratio * 100)}%). That is more likely a partial listing than a real ` +
                `deletion, so nothing was removed. Re-run to confirm, or clear them by hand.`
     };

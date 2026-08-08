@@ -413,7 +413,12 @@ export async function reviewInbox({ days = 7, limit = 40, question = null } = {}
     success: true,
 
     message: verdict.summary ||
-      (needs.length ? `${needs.length} thing${needs.length === 1 ? "" : "s"} in your inbox need you.` : "Nothing in your inbox needs you."),
+      // The verb agrees with the count as well as the noun. At one it read
+      // "1 thing in your inbox need you", the same slip the dashboard headline
+      // had — pluralising the noun and leaving the verb behind.
+      (needs.length
+        ? `${needs.length} thing${needs.length === 1 ? " in your inbox needs" : "s in your inbox need"} you.`
+        : "Nothing in your inbox needs you."),
 
     data: {
       needs_you: needs,

@@ -148,7 +148,7 @@ function Headline({ waiting, projectCount }) {
             <span className="text-ember">{countWord(waiting)}</span>{" "}
             {waiting === 1 ? "thing" : "things"}
             <br />
-            need you.
+            {waiting === 1 ? "needs" : "need"} you.
           </>
         )}
       </h1>

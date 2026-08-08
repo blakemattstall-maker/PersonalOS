@@ -2,25 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { stagger, createTimeline, createDrawable, reducedMotion, utils } from "../motion.js";
+import { stagger, createTimeline, reducedMotion, utils } from "../motion.js";
 import Intro from "./Intro.js";
-
-
-// Twelve fixed points and the edges between them, laid out by hand rather than
-// by a force simulation. A simulation would cost a physics loop on first paint
-// for a result nobody can tell apart from this, and it would put the points
-// somewhere slightly different on every load, which is the opposite of what a
-// wordmark should do.
-const POINTS = [
-  [42, 96], [104, 44], [150, 118], [96, 168], [196, 74], [232, 148],
-  [286, 62], [300, 132], [252, 196], [166, 202], [58, 176], [212, 26]
-];
-
-const EDGES = [
-  [0, 1], [1, 2], [2, 3], [0, 3], [1, 4], [4, 5], [2, 5],
-  [4, 11], [5, 7], [6, 7], [7, 8], [8, 9], [9, 3], [3, 10],
-  [0, 10], [6, 11], [5, 8], [2, 9]
-];
+import HeroNet from "./HeroNet.js";
 
 
 export default function Hero() {
@@ -34,6 +18,27 @@ export default function Hero() {
 
   const handleIntroDone = useCallback(() => setReady(true), []);
 
+  // Reduced motion falls through to the browser's own instant jump rather than
+  // being handled here: someone who asked the OS for less movement did not ask
+  // for a two-second animated scroll, and `behavior: "smooth"` would give them
+  // one regardless of the media query.
+  const handleSeeHow = useCallback((event) => {
+
+    const target = document.getElementById("capture");
+
+    if (!target || reducedMotion()) return;
+
+    event.preventDefault();
+
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    // The hash still belongs in the URL — it is what makes the position
+    // shareable and survives a reload. Written rather than navigated to, so the
+    // browser does not also jump there and cancel the scroll that is running.
+    history.replaceState(null, "", "#capture");
+
+  }, []);
+
   useEffect(() => {
 
     const root = ref.current;
@@ -41,18 +46,15 @@ export default function Hero() {
     if (!root || !ready) return;
 
     const words = root.querySelectorAll("[data-word]");
-    const dots = root.querySelectorAll("[data-dot]");
-    const lines = root.querySelectorAll("[data-line]");
     const tail = root.querySelectorAll("[data-tail]");
 
     // Everything is legible at rest; motion only decides when it arrives.
     if (reducedMotion()) {
-      utils.set([...words, ...dots, ...lines, ...tail], { opacity: 1, translateY: 0, scale: 1 });
+      utils.set([...words, ...tail], { opacity: 1, translateY: 0, scale: 1 });
       return;
     }
 
     utils.set(words, { opacity: 0, translateY: 24 });
-    utils.set(dots, { opacity: 0, scale: 0 });
     utils.set(tail, { opacity: 0, translateY: 12 });
 
     const timeline = createTimeline({ defaults: { ease: "out(3)" } });
@@ -64,19 +66,6 @@ export default function Hero() {
         duration: 760,
         delay: stagger(70)
       })
-      .add(dots, {
-        opacity: 1,
-        scale: 1,
-        duration: 420,
-        delay: stagger(45),
-        ease: "out(2)"
-      }, "-=420")
-      .add(createDrawable(lines), {
-        draw: ["0 0", "0 1"],
-        duration: 620,
-        delay: stagger(38),
-        ease: "inOut(2)"
-      }, "-=260")
       .add(tail, {
         opacity: 1,
         translateY: 0,
@@ -86,7 +75,7 @@ export default function Hero() {
 
     return () => {
       timeline.pause();
-      utils.set([...words, ...dots, ...lines, ...tail], { opacity: 1, translateY: 0, scale: 1 });
+      utils.set([...words, ...tail], { opacity: 1, translateY: 0, scale: 1 });
     };
 
   }, [ready]);
@@ -123,12 +112,25 @@ export default function Hero() {
           ))}
         </h1>
 
-        <p data-tail className="pos-reveal mt-6 max-w-[34rem] text-[1.05rem] leading-relaxed text-ink-soft">
-          A personal operating system. Speak or type a single sentence and it is
-          parsed, dated, filed to your calendar, tasks and notes, and connected
-          to everything already on record. Each morning it reads all of that back
-          as a short briefing, and during the day it reaches you only when
-          something genuinely needs an answer.
+        {/* The old version of this opened on the filing mechanism — parsed,
+            dated, filed — which is the third thing a reader needs, not the
+            first. It described the intake pipe of a system it never named. This
+            says what the thing IS, then what becomes possible, and leaves the
+            mechanism to the seven sections below that exist to explain it. */}
+        <p data-tail className="pos-reveal mt-6 max-w-[35rem] text-[1.05rem] leading-relaxed text-ink-soft">
+          PersonalOS is a single system of record for your goals, intentions,
+          tasks, notes, spending and the people in your life — and a reasoning
+          layer that works across all of it on your behalf.
+        </p>
+
+        <p data-tail className="pos-reveal mt-4 max-w-[35rem] text-[1.05rem] leading-relaxed text-ink-soft">
+          Say one sentence and it files itself, dated and linked to everything
+          related. Ask for a plan and it builds the whole thing — tasks and
+          events in Google Calendar and Tasks, drafted email, a working document
+          in Docs, research pulled from the open web — then tracks what you
+          actually do against it, scores what is slipping, and each morning reads
+          the whole picture back in a few sentences. The rest of the day it stays
+          quiet unless something genuinely needs you.
         </p>
 
         <p data-tail className="pos-reveal mt-3 max-w-[34rem] text-[0.9rem] leading-relaxed text-ink-soft">
@@ -137,8 +139,15 @@ export default function Hero() {
         </p>
 
         <div data-tail className="pos-reveal mt-8 flex flex-wrap items-center gap-3">
+          {/* Still a real href, so it works with JavaScript off, opens in a new
+              tab, and shows the target on hover. onClick only upgrades the jump
+              to a glide. Done here rather than with `scroll-behavior: smooth` in
+              globals.css because that property only applies to the scrolling
+              element — html — and setting it there would also animate every
+              route change's scroll-to-top across the whole app. */}
           <a
             href="#capture"
+            onClick={handleSeeHow}
             className="inline-flex items-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-3 text-[0.88rem] font-medium text-paper transition-opacity hover:opacity-90"
           >
             See how it works
@@ -154,39 +163,10 @@ export default function Hero() {
 
       </div>
 
-      {/* Sits below the type at low contrast, foreshadowing the section on how
-          records are connected. It is aria-hidden because it says nothing a
-          screen reader can use: that section explains the same idea in words. */}
-      <div className="pointer-events-none mx-auto w-full max-w-[46rem] px-5 pb-8">
-        <svg
-          viewBox="0 0 340 230"
-          className="mt-6 h-auto w-full max-w-[26rem] opacity-90"
-          aria-hidden="true"
-          fill="none"
-        >
-          {EDGES.map(([a, b], i) => (
-            <line
-              key={i}
-              data-line
-              className="pos-scene-hidden"
-              x1={POINTS[a][0]} y1={POINTS[a][1]}
-              x2={POINTS[b][0]} y2={POINTS[b][1]}
-              stroke="var(--line)"
-              strokeWidth="1"
-            />
-          ))}
-          {POINTS.map(([x, y], i) => (
-            <circle
-              key={i}
-              data-dot
-              className="pos-pop pos-scene-hidden"
-              cx={x} cy={y}
-              r={i % 4 === 0 ? 4.5 : 3}
-              fill={i % 4 === 0 ? "var(--moss)" : "var(--ink-soft)"}
-            />
-          ))}
-        </svg>
-      </div>
+      {/* Foreshadows the section on how records are connected, before the
+          reader has met the word. aria-hidden because it says nothing a screen
+          reader can use — section 02 explains the same idea in words. */}
+      <HeroNet />
 
     </header>
   );

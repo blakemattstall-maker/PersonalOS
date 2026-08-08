@@ -24,11 +24,18 @@ export function Section({ id, eyebrow, title, lede, children, tech, techLabel = 
 
   useEffect(() => revealChildren(ref.current, { gap: 90 }), []);
 
+  // Top padding only, and that is the fix rather than a smaller number.
+  // `py-24` put 96px below every section AND 96px above the next one, so the gap
+  // at each seam was 192px — the "Under the hood" box, which is the last thing in
+  // most sections, sat in a third of a screen of nothing. Spacing between two
+  // things belongs to one of them; here it is the one below, so the gap is
+  // whatever `pt` says and cannot double. welcome/page.js's footer carries the
+  // matching `pt` for the last seam.
   return (
     <section
       id={id}
       ref={ref}
-      className="mx-auto w-full max-w-[46rem] scroll-mt-20 px-5 py-16 sm:py-24"
+      className="mx-auto w-full max-w-[46rem] scroll-mt-20 px-5 pt-16 sm:pt-24"
     >
 
       <div className="pos-reveal" data-reveal>

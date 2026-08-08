@@ -79,7 +79,7 @@ async function completionSignal(days, tz) {
     .slice()
     .sort((a, b) => (b.output?.days_late || 0) - (a.output?.days_late || 0))[0];
 
-  return `Finished ${data.length} task(s) in ${days}d; ${late.length} were late`
+  return `Finished ${data.length} task${data.length === 1 ? "" : "s"} in ${days}d; ${late.length} ${late.length === 1 ? "was" : "were"} late`
     + (worst ? `, worst by ${worst.output.days_late}d ("${String(worst.input).slice(0, 40)}")` : "")
     + ".";
 

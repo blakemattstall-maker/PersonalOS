@@ -358,7 +358,9 @@ export default function Welcome() {
         </div>
       </Section>
 
-      <footer className="mx-auto w-full max-w-[46rem] px-5 pb-20 pt-4">
+      {/* pt matches Section's, so the last seam reads the same as every other
+          one now that sections no longer pad their own bottoms. */}
+      <footer className="mx-auto w-full max-w-[46rem] px-5 pb-20 pt-16 sm:pt-24">
         <div className="rounded-card border border-[var(--line)] bg-card p-6 shadow-lift sm:p-8">
 
           <h2 className="pos-display text-[1.6rem] leading-tight text-ink">

@@ -316,6 +316,72 @@ test("every scheduled job points at a job the cron handler actually knows", () =
 });
 
 
+test("the morning chain still runs in the order the brief depends on", () => {
+
+  // The brief is the end of a pipeline: Canvas assignments, the news digest and
+  // the intention review all have to have landed before it is composed, or it
+  // reports a day that is missing whatever came in late. Writing the brief and
+  // announcing it were then split onto two schedules, which added a second
+  // ordering constraint — there is nothing to announce before it is written.
+  //
+  // All five schedules are UTC minutes apart with no dependency declared
+  // anywhere, so a later "let's move one job" is very easy to get wrong and
+  // impossible to notice: the brief would simply be a bit less right, silently.
+  const crons = JSON.parse(fs.readFileSync(path.join(ROOT, "web/vercel.json"), "utf8")).crons;
+
+  const minutesOf = (job) => {
+    const cron = crons.find(c => c.path === `/api/cron/${job}`);
+    assert.ok(cron, `no schedule for ${job}`);
+    const [minute, hour] = cron.schedule.split(" ");
+    return Number(hour) * 60 + Number(minute);
+  };
+
+  const brief = minutesOf("morningBrief");
+
+  for (const upstream of ["connectIslands", "syncNews", "syncCanvas", "reviewIntentions"]) {
+    assert.ok(
+      minutesOf(upstream) < brief,
+      `${upstream} must run before morningBrief composes the day (it is at ${minutesOf(upstream)}, brief at ${brief})`
+    );
+  }
+
+  assert.ok(
+    minutesOf("briefPush") > brief,
+    "briefPush would announce a brief that has not been written yet"
+  );
+
+  // The notification time is the one thing the split was designed NOT to
+  // change: 13:00 UTC is where the push has always gone out, and moving it is a
+  // decision about someone's morning rather than a refactor.
+  assert.equal(minutesOf("briefPush"), 13 * 60, "the brief notification moved off 13:00 UTC");
+
+});
+
+
+test("the brief is written by one job and announced by another", () => {
+
+  const handler = fs.readFileSync(path.join(API, "cron/[job]/handler.js"), "utf8");
+
+  const write = handler.match(/async function morningBrief\(\)[\s\S]*?\n\}/)[0];
+
+  // If morningBrief pushes again, the 4am write becomes a 4am notification and
+  // the entire reason for the split is gone.
+  assert.doesNotMatch(
+    write,
+    /sendPush|pushBrief/,
+    "morningBrief must not notify — it runs at 4am local, which is nobody's idea of a good time to be buzzed"
+  );
+
+  const announce = handler.match(/async function briefPush\(\)[\s\S]*?\n\}\n\n\n/)[0];
+
+  // Splitting one job in two means a failure in the first now costs both the
+  // brief and its notification. briefPush composes as a fallback so 6am is still
+  // a moment when a brief gets made if none exists.
+  assert.match(announce, /composeBrief/, "briefPush must still be able to recover a missing brief");
+
+});
+
+
 test("the old project forwards every API path and nothing else", () => {
 
   const rewrites = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8")).rewrites;

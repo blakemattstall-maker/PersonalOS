@@ -272,7 +272,7 @@ export async function checkMigrations() {
         `${pending.map(p => p.file.replace("docs/", "")).join(", ")}. ` +
         "Paste each into the Supabase SQL editor. Features degrade silently until you do."
       : notReady.length > 0
-        ? `All migrations applied, but ${notReady.length} is not doing anything yet: ` +
+        ? `All migrations applied, but ${notReady.length} ${notReady.length === 1 ? "is" : "are"} not doing anything yet: ` +
           notReady.map(r => r.readiness.detail).join(" ")
         : "All migrations applied and active.",
 
