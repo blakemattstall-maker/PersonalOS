@@ -37,11 +37,24 @@ const money = (n) => {
 };
 
 
+// Coordinates are rounded before they reach the string, and that rounding is
+// load-bearing rather than cosmetic.
+//
+// ECMAScript does not require Math.cos and Math.sin to be correctly rounded,
+// so Node and the browser are entitled to disagree in the last bit or two —
+// and they do. Once this component became "use client" that disagreement
+// started being compared: the server rendered d="…41.431843736591…", the
+// client recomputed d="…41.431843736590984…", and React reported a hydration
+// mismatch on every single arc. Three decimal places is far finer than a
+// 190px chart can express and is identical on both sides.
+const round = (n) => Number(n.toFixed(3));
+
+
 function arc(cx, cy, r, from, to) {
 
   const p = (angle) => [
-    cx + r * Math.cos((angle - 90) * Math.PI / 180),
-    cy + r * Math.sin((angle - 90) * Math.PI / 180)
+    round(cx + r * Math.cos((angle - 90) * Math.PI / 180)),
+    round(cy + r * Math.sin((angle - 90) * Math.PI / 180))
   ];
 
   const [x1, y1] = p(from);
@@ -101,7 +114,7 @@ export function SpendDonut({ categories, total }) {
         ease: "inOut(3)"
       });
 
-    }, { threshold: 0.25 });
+    }, { rootMargin: "0px 0px -15% 0px", threshold: 0 });
 
     observer.observe(root);
 
@@ -245,7 +258,7 @@ export function CategoryBars({ categories, max }) {
         ease: "out(3)"
       });
 
-    }, { threshold: 0.2 });
+    }, { rootMargin: "0px 0px -15% 0px", threshold: 0 });
 
     observer.observe(root);
 

@@ -202,17 +202,23 @@ Call every tool needed to satisfy the request — if one message asks for two th
       // response the phone is waiting on.
       try {
 
-        await supabase.from("prompts").insert([{
+        // PostgREST resolves with an { error } rather than throwing, so a
+        // try/catch alone would swallow every real failure here and report
+        // success. The catch is still needed for a transport-level throw.
+        const { error: promptError } = await supabase.from("prompts").insert([{
           kind: "general_question",
           title: text.length > 90 ? `${text.slice(0, 89)}…` : text,
           body: answer.message,
-          payload: null,
           status: "pending"
         }]);
 
+        if (promptError) {
+          console.error("GENERAL_QUESTION PROMPT FAILED:", promptError.message);
+        }
+
       } catch (promptError) {
 
-        console.error("GENERAL_QUESTION PROMPT FAILED:", promptError.message);
+        console.error("GENERAL_QUESTION PROMPT THREW:", promptError.message);
 
       }
 

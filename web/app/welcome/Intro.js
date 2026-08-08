@@ -236,6 +236,15 @@ export default function Intro({ onDone }) {
 
     timeline.onComplete = finish;
 
+    // The sequence is roughly 4s. This is the backstop for it never finishing
+    // at all, which is not hypothetical: anime.js stops advancing while the
+    // document is hidden, so backgrounding the tab mid-intro leaves the
+    // timeline parked forever. Since the hero underneath is CSS-hidden until
+    // this hands over, a parked timeline does not just mean a stuck overlay —
+    // it means the page behind it never appears either. Whatever happens, the
+    // handover runs.
+    const failsafe = setTimeout(finish, 8000);
+
     const onKey = (event) => {
       if (event.key === "Escape" || event.key === "Enter" || event.key === " ") finish();
     };
@@ -244,6 +253,7 @@ export default function Intro({ onDone }) {
     window.addEventListener("keydown", onKey);
 
     return () => {
+      clearTimeout(failsafe);
       root.removeEventListener("click", finish);
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = previousOverflow;

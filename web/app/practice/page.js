@@ -73,12 +73,17 @@ export default async function Practice() {
         </PageHeader>
       </div>
 
-      <div className="pos-reveal" data-reveal>
+      {/* Each topic is its own reveal target rather than the whole section
+          being one. Beyond reading better, a single target wrapping an
+          arbitrarily long list is what broke this page: see the threshold note
+          in app/motion.js. */}
       <section className="mb-6">
 
-        <SectionTitle count={topics.length} action={<LoadTopicsButton />}>
-          Debate
-        </SectionTitle>
+        <div className="pos-reveal" data-reveal>
+          <SectionTitle count={topics.length} action={<LoadTopicsButton />}>
+            Debate
+          </SectionTitle>
+        </div>
 
         {topics.length === 0 ? (
 
@@ -86,25 +91,30 @@ export default async function Practice() {
           // Supabase. That's a note to whoever maintains this, not something
           // the person using the app can act on — and Diagnostics is where it
           // gets said properly.
-          <Empty>
-            No questions loaded yet. Load topics to frame the first batch —
-            standing questions like whether billionaires should exist, not
-            today&apos;s news, so you can argue any of them cold. If they
-            don&apos;t appear,{" "}
-            <Link href="/settings" className={link()}>Settings</Link>{" "}
-            will say what&apos;s wrong.
-          </Empty>
+          <div className="pos-reveal" data-reveal>
+            <Empty>
+              No questions loaded yet. Load topics to frame the first batch —
+              standing questions like whether billionaires should exist, not
+              today&apos;s news, so you can argue any of them cold. If they
+              don&apos;t appear,{" "}
+              <Link href="/settings" className={link()}>Settings</Link>{" "}
+              will say what&apos;s wrong.
+            </Empty>
+          </div>
 
         ) : (
 
           <div className="space-y-3">
-            {topics.map(topic => <TopicCard key={topic.id} topic={topic} />)}
+            {topics.map(topic => (
+              <div key={topic.id} className="pos-reveal" data-reveal>
+                <TopicCard topic={topic} />
+              </div>
+            ))}
           </div>
 
         )}
 
       </section>
-      </div>
 
       <div className="pos-reveal" data-reveal>
       <Card className="mb-6">

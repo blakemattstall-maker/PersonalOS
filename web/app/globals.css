@@ -238,13 +238,22 @@ body {
   transition: opacity 320ms ease;
 }
 
+/* The element is never removed from the DOM — see the note on BOOT_SCRIPT in
+ * app/layout.js for why deleting a React-owned node is not an option. So it
+ * has to become completely inert instead: transparent, unclickable, and
+ * visibility:hidden so it is out of the accessibility tree too rather than an
+ * invisible pane sitting over the app forever. visibility is transitioned with
+ * a delay so it flips only after the fade has finished. */
 #pos-boot.pos-boot-hide {
   opacity: 0;
   pointer-events: none;
+  visibility: hidden;
+  transition: opacity 320ms ease, visibility 0s linear 320ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
   #pos-boot { transition: none; }
+  #pos-boot.pos-boot-hide { transition: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

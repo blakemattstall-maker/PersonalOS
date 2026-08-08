@@ -97,12 +97,21 @@ export function revealChildren(root, { delay = 0, gap = 60, distance = 14 } = {}
       ease: "out(3)"
     });
 
-  // A card only has to clear the bottom edge by a little before it counts as
-  // "arrived" — too eager here and the animation for the next card down fires
-  // while you're still reading the one above it, which is the exact complaint
-  // this margin exists to prevent. -18% keeps it from starting until a card is
-  // meaningfully inside the viewport rather than just grazing the edge.
-  }, { rootMargin: "0px 0px -18% 0px", threshold: 0.15 });
+  // threshold 0 and a bottom inset, never a fractional threshold.
+  //
+  // A fractional threshold is a trap here, because intersectionRatio is
+  // measured against the ELEMENT's size, not the viewport's. An element taller
+  // than `viewport / threshold` can never reach the ratio no matter how far it
+  // is scrolled, so it simply never reveals and its card stays permanently
+  // blank. At 0.15 that was anything over ~5.5 viewport-heights — which the
+  // whole topic list on /practice was, hence the "massive empty gap".
+  //
+  // threshold 0 fires the moment any pixel crosses into the shrunken root, so
+  // it is correct for an element of any height, and the bottom inset alone
+  // decides how eager it is: a card reveals once its top edge is ~10% up from
+  // the bottom of the viewport. Enough not to fire while you are still reading
+  // the card above, close enough that nothing below the fold looks empty.
+  }, { rootMargin: "0px 0px -10% 0px", threshold: 0 });
 
   targets.forEach(t => observer.observe(t));
 
@@ -162,10 +171,11 @@ export function countUp(el, value, { format = (n) => String(Math.round(n)), dura
       onComplete: finish
     });
 
-  // A number ticking upward before you can actually read it is more jarring
-  // than a card fading in early, so this waits for more of it to be on screen
-  // than revealChildren does.
-  }, { threshold: 0.35 });
+  // Same threshold-0 rule as revealChildren above, for the same reason. A
+  // number ticking up before you can read it is worse than one that starts a
+  // little early, so the inset is deeper — the figure has to be properly on
+  // screen, not just peeking over the bottom edge.
+  }, { rootMargin: "0px 0px -20% 0px", threshold: 0 });
 
   observer.observe(el);
 
@@ -211,11 +221,14 @@ export function sceneTimeline(root, build, { settleOnReduced } = {}) {
     if (visible) timeline.play();
     else timeline.pause();
 
-  // A whole scene is the biggest commitment of the three helpers here — it's
-  // several seconds of choreography — so it waits until a meaningful fraction
-  // of it is actually in view rather than starting the moment its top edge
-  // appears while you're still scrolling toward it.
-  }, { threshold: 0.3 });
+  // Threshold 0 again — and it matters most here, because scenes are the
+  // tallest elements in the app and so the likeliest to be unable to reach a
+  // fractional ratio at all. The deep inset is what holds a multi-second
+  // sequence back until you have actually arrived at it.
+  //
+  // This observer also pauses the timeline when the scene leaves, so the same
+  // inset doubles as the point where an off-screen scene stops costing frames.
+  }, { rootMargin: "0px 0px -25% 0px", threshold: 0 });
 
   observer.observe(root);
 

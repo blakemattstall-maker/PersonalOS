@@ -155,6 +155,75 @@ test("content hidden for animation is restored without motion and without script
 });
 
 
+// intersectionRatio is measured against the ELEMENT, not the viewport, so an
+// element taller than `viewport / threshold` can never reach a fractional
+// threshold however far it is scrolled — it just never reveals, and its card
+// stays blank forever. That shipped: /practice wrapped its entire topic list
+// in one reveal target at threshold 0.15 and rendered as a tall empty gap.
+//
+// threshold 0 plus a bottom rootMargin inset is correct for an element of any
+// height and is the only combination allowed in this codebase.
+test("no scroll observer uses a fractional threshold", () => {
+
+  const files = [
+    "web/app/motion.js",
+    "web/app/MoneyCharts.js",
+    "web/app/welcome/SceneGraph.js"
+  ];
+
+  for (const file of files) {
+
+    const source = read(file);
+
+    const fractional = source.match(/threshold:\s*0?\.\d+/g) || [];
+
+    assert.deepEqual(
+      fractional,
+      [],
+      `${file} uses a fractional IntersectionObserver threshold (${fractional.join(", ")}). ` +
+      "Use threshold: 0 with a rootMargin inset — a tall element can never reach a fractional ratio."
+    );
+
+  }
+
+});
+
+
+// The splash is rendered by React inside the root layout, so React owns that
+// node. Removing it from outside React means the next reconciliation of the
+// layout — which every router.refresh() triggers, and so nearly every server
+// action — operates on a node that is no longer there and throws. With no
+// error.js in this app that surfaced as Next's built-in "This page couldn't
+// load" on navigation and on most buttons.
+test("the boot splash is hidden by class, never removed from the DOM", () => {
+
+  const layout = read("web/app/layout.js");
+
+  const script = layout.slice(layout.indexOf("const BOOT_SCRIPT"), layout.indexOf("export default"));
+
+  assert.ok(
+    script.includes("classList.add"),
+    "the boot splash should be dismissed by adding a class"
+  );
+
+  assert.equal(
+    /\.remove\(\)|removeChild/.test(script),
+    false,
+    "the boot splash must never be removed from the DOM — React rendered it and still owns it"
+  );
+
+  // Hidden has to mean inert, since the element now stays in the tree for the
+  // life of the page rather than being deleted.
+  const css = read("web/app/globals.css");
+
+  const rule = css.slice(css.indexOf("#pos-boot.pos-boot-hide"));
+
+  assert.ok(rule.includes("pointer-events: none"), "a permanent overlay must not swallow clicks");
+  assert.ok(rule.includes("visibility: hidden"), "a permanent overlay must leave the accessibility tree");
+
+});
+
+
 test("the motion layer refuses to animate when the OS asks it not to", () => {
 
   const source = read("web/app/motion.js");

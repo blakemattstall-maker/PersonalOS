@@ -71,6 +71,23 @@ try {
 // this long, however quick the page actually was. The 2500ms line is the
 // failsafe: if DOMContentLoaded is somehow never seen, this is what stops the
 // splash from covering the app forever instead of just looking briefly slow.
+//
+// It adds a class and stops. It must NEVER remove the element.
+//
+// The first version called el.remove(), and that shipped a crash. #pos-boot is
+// rendered by React as part of this layout, so React owns that DOM node and
+// holds a fiber pointing at it. Deleting it from underneath React means the
+// next reconciliation of the layout — which happens on any router.refresh(),
+// and so after almost every server action in the app — tries to operate on a
+// node that is no longer in the tree and throws. With no error.js anywhere in
+// this app that surfaces as Next's built-in "This page couldn't load", which
+// is exactly what it looked like: navigation and most buttons failing, and a
+// full reload always fixing it because that rebuilds the node from HTML.
+//
+// A class is safe where removal is not: React only patches className when the
+// value it rendered changes between renders, and this one is a constant, so a
+// class added from outside survives every re-render. It is the same technique
+// THEME_SCRIPT above already uses on <html data-theme>.
 const BOOT_SCRIPT = `
 (function () {
   var MIN = 260, start = Date.now(), done = false;
@@ -80,9 +97,7 @@ const BOOT_SCRIPT = `
     var remain = MIN - (Date.now() - start);
     setTimeout(function () {
       var el = document.getElementById("pos-boot");
-      if (!el) return;
-      el.classList.add("pos-boot-hide");
-      setTimeout(function () { el.remove(); }, 340);
+      if (el) el.classList.add("pos-boot-hide");
     }, remain > 0 ? remain : 0);
   }
   if (document.readyState !== "loading") hide();
@@ -100,6 +115,13 @@ export default function RootLayout({ children }) {
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        {/* In <head> rather than beside the element it acts on. React warns
+            that scripts rendered inside a component body are never executed on
+            client render, and a <script> sitting in <body> is one more node for
+            React to reconcile on every navigation for no benefit. Here it is
+            parsed once, and it waits for DOMContentLoaded anyway, so it does
+            not care that #pos-boot does not exist yet when it runs. */}
+        <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
         {/* Entrance animations start from opacity 0 and are undone by
             app/motion.js. With scripting off nothing would ever undo them, so
             the whole app would render as a blank page — this is the one
@@ -122,7 +144,6 @@ export default function RootLayout({ children }) {
           <span className="pos-dot" />
           <span className="pos-dot" />
         </div>
-        <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
 
         {/* Fixture mode makes the dashboard look completely real. Say so, so
             nobody reads invented spending figures as their own. */}
