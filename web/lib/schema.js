@@ -1,4 +1,5 @@
 import supabase from "./supabase.js";
+import { probeTable } from "./tableProbe.js";
 
 
 // Which migrations are actually live on this database.
@@ -166,9 +167,12 @@ function missing(error) {
 }
 
 
+// The same probe lib/diagnostics.js counts rows with. It runs this check inside
+// the same Promise.all, so sharing it turns two identical concurrent round trips
+// per table into one — see lib/tableProbe.js.
 async function tableExists(table) {
 
-  const { error } = await supabase.from(table).select("*", { count: "exact", head: true });
+  const { error } = await probeTable(table);
 
   return missing(error) ? false : true;
 

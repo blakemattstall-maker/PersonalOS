@@ -1,4 +1,5 @@
 import supabase from "./supabase.js";
+import { coalesce } from "./async.js";
 
 
 // Server-side settings — only the ones a background job has to read.
@@ -20,6 +21,8 @@ const CACHE_TTL_MS = 60_000;
 
 let cache = null;
 let cachedAt = 0;
+
+const inFlight = new Map();
 
 
 export const DEFAULTS = {
@@ -114,26 +117,40 @@ export async function getSettings() {
 
   if (cache && Date.now() - cachedAt < CACHE_TTL_MS) return cache;
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select("key, value");
+  // Same reasoning as lib/profile.js: the TTL only helps once something is in
+  // it, so concurrent callers on a cold container all missed and all queried.
+  // /settings did exactly that — the page reads settings while buildDiagnostics()
+  // reads them again inside the same Promise.all, so app_settings was fetched
+  // twice on every single visit.
+  return coalesce(inFlight, "settings", async () => {
 
-  if (error) {
+    if (cache && Date.now() - cachedAt < CACHE_TTL_MS) return cache;
 
-    if (!missingTable(error)) {
-      console.error("SETTINGS READ FAILED:", error.message);
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select("key, value");
+
+    if (error) {
+
+      if (!missingTable(error)) {
+        console.error("SETTINGS READ FAILED:", error.message);
+      }
+
+      // Deliberately not cached: this is the "table isn't there yet" fallback,
+      // and caching it would keep serving defaults for a minute after the
+      // migration is finally applied.
+      return { ...DEFAULTS, persisted: false };
+
     }
 
-    return { ...DEFAULTS, persisted: false };
+    const stored = Object.fromEntries((data || []).map(r => [r.key, r.value]));
 
-  }
+    cache = { ...DEFAULTS, ...stored, persisted: true };
+    cachedAt = Date.now();
 
-  const stored = Object.fromEntries((data || []).map(r => [r.key, r.value]));
+    return cache;
 
-  cache = { ...DEFAULTS, ...stored, persisted: true };
-  cachedAt = Date.now();
-
-  return cache;
+  });
 
 }
 

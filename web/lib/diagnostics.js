@@ -1,6 +1,7 @@
 import supabase from "./supabase.js";
 import { getSettings } from "./settings.js";
 import { checkMigrations } from "./schema.js";
+import { probeTable } from "./tableProbe.js";
 
 
 // A single honest answer to "is this thing actually running".
@@ -18,13 +19,13 @@ const TABLES = [
 ];
 
 
+// Shared with lib/schema.js, which asks the identical question about many of the
+// same tables at the same moment — see lib/tableProbe.js.
 async function countOf(table) {
 
-  const { count, error } = await supabase
-    .from(table)
-    .select("*", { count: "exact", head: true });
+  const { count, error } = await probeTable(table);
 
-  return error ? null : (count ?? 0);
+  return error ? null : count;
 
 }
 

@@ -1,4 +1,5 @@
 import supabase from "./supabase.js";
+import { coalesce } from "./async.js";
 
 
 const FALLBACK_TIMEZONE = "America/Los_Angeles";
@@ -13,6 +14,14 @@ let cachedProfile = null;
 let cachedProfileAt = 0;
 
 const PROFILE_TTL_MS = 60 * 1000;
+
+// The TTL above is what makes the row cheap on a warm container. This is what
+// makes it cheap on a cold one: until the first read comes back there is nothing
+// cached, so every concurrent caller misses and every one of them queries. The
+// request that most needed the cache was the only request it did nothing for.
+// buildRichContext() fans out to several tools at once and each of them calls
+// getUserTimezone(), so the stampede was as wide as the fan-out.
+const inFlight = new Map();
 
 
 export function clearProfileCache() {
@@ -29,24 +38,35 @@ export async function getProfile() {
     return cachedProfile;
   }
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .limit(1)
-    .single();
+  return coalesce(inFlight, "profile", async () => {
+
+    // Re-checked inside the coalesced body: a caller that queued behind an
+    // in-flight read gets the cache the moment it lands, rather than being
+    // handed a result computed before it arrived.
+    if (cachedProfile && Date.now() - cachedProfileAt < PROFILE_TTL_MS) {
+      return cachedProfile;
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .limit(1)
+      .single();
 
 
-  if (error) {
-    console.error("PROFILE LOOKUP FAILED:", error.message);
-    return null;
-  }
+    if (error) {
+      console.error("PROFILE LOOKUP FAILED:", error.message);
+      return null;
+    }
 
 
-  cachedProfile = data;
-  cachedProfileAt = Date.now();
+    cachedProfile = data;
+    cachedProfileAt = Date.now();
 
 
-  return data;
+    return data;
+
+  });
 
 }
 
