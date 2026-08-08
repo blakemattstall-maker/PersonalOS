@@ -21,7 +21,7 @@ import { submitPitch, generatePitchTopic, transcribeAudio } from "../../../tools
 import { getDebateTopics, ensureTopicsFramed, retireDebateTopic } from "../../../tools/debateTopics.js";
 import { savePerson, getAllPeople, deletePerson, recordContact, answerRelationshipCheckin } from "../../../tools/people.js";
 import { getFinancialData } from "../../../lib/simplefin.js";
-import { categorizeTransactions, summarise, findRecurring, classifyUnknownMerchants } from "../../../lib/categorize.js";
+import { categorizeTransactions, summarise, findRecurring, classifyUnknownMerchants, FINANCE_RANGES } from "../../../lib/categorize.js";
 import { queryFinances } from "../../../tools/finances.js";
 
 
@@ -549,11 +549,24 @@ async function finance(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const days = Math.min(Number(req.query.days) || 30, 90);
+  // Every range is computed in one request, and the page switches between them
+  // without coming back here.
+  //
+  // It used to fetch per range, and that was slow for a reason worth writing
+  // down. The bank call itself was never the problem — lib/simplefin.js caches
+  // a 100-day window for 12h, so a range change was already only a re-slice.
+  // The cost was categorisation: merchants that no rule matches are classified
+  // by a model, and that answer is memoised only in module scope, so it lives
+  // and dies with the serverless container. Switching to a wider range surfaces
+  // merchants the narrower one never contained, so each switch could hit a
+  // fresh model call on a cold container.
+  //
+  // Categorising the widest window once and slicing it three ways removes that
+  // entirely: strictly fewer model calls than before, and switching becomes
+  // local state rather than a round trip.
+  const WIDEST = Math.max(...FINANCE_RANGES);
 
-  // The 12h cache holds a wide 100-day window, so changing the range here is a
-  // slice of data already in hand rather than another call to the bank.
-  const raw = await getFinancialData({ days });
+  const raw = await getFinancialData({ days: WIDEST });
 
   const accounts = (raw.accounts || []).map(a => ({
     name: a.name,
@@ -566,23 +579,52 @@ async function finance(req, res) {
     { classifyUnknown: classifyUnknownMerchants }
   );
 
-  const summary = summarise(transactions);
+  // Dates are compared as yyyy-MM-dd strings rather than instants, the same
+  // rule trap #1 established for Google Tasks — a transaction dated today must
+  // not fall out of the 7-day window because of a timezone offset.
+  const dayKey = (value) => new Date(value).toISOString().slice(0, 10);
+
+  const cutoffs = {};
+  const views = {};
+
+  for (const range of FINANCE_RANGES) {
+
+    const cutoff = new Date(Date.now() - range * 86400_000).toISOString().slice(0, 10);
+
+    cutoffs[range] = cutoff;
+
+    const slice = transactions.filter(t => dayKey(t.date) >= cutoff);
+
+    views[range] = {
+      ...summarise(slice),
+      recurring: findRecurring(slice),
+      recent: slice
+        .filter(t => t.category !== "transfers")
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 12)
+        .map(t => ({ date: t.date, merchant: t.merchant, amount: Number(t.amount), category: t.category }))
+    };
+
+  }
 
   return res.status(200).json({
     success: true,
-    days,
+    ranges: FINANCE_RANGES,
     cached: raw.cached,
     fetchedAt: raw.fetchedAt,
     accounts,
     totalBalance: Math.round(accounts.reduce((t, a) => t + a.balance, 0) * 100) / 100,
-    ...summary,
-    recurring: findRecurring(transactions),
-    // Newest first, trimmed — the page shows a recent slice, not a ledger.
-    recent: transactions
+    cutoffs,
+    views,
+    // The whole categorised window, newest first, for the per-category
+    // drilldown. Sent once rather than per range because the page filters it
+    // by category and cutoff locally — filtering a list is not arithmetic, and
+    // the figures above it are still the ones computed here.
+    transactions: transactions
       .filter(t => t.category !== "transfers")
       .sort((a, b) => new Date(b.date) - new Date(a.date))
-      .slice(0, 12)
-      .map(t => ({ date: t.date, merchant: t.merchant, amount: Number(t.amount), category: t.category }))
+      .slice(0, 600)
+      .map(t => ({ date: dayKey(t.date), merchant: t.merchant, amount: Number(t.amount), category: t.category }))
   });
 
 }

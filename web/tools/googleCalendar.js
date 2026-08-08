@@ -85,12 +85,29 @@ export async function createEvent({
   let colorId;
 
   if (color) {
+
     colorId = resolveColor(color);
+
   } else {
-    const { auto_color_events } = await getSettings();
-    colorId = auto_color_events
-      ? resolveColor(KIND_COLOR[classifyEvent({ title, start: start.toISO(), end: end.toISO() })])
-      : resolveColor(null);
+
+    const { auto_color_events, event_colors } = await getSettings();
+
+    if (auto_color_events) {
+
+      const kind = classifyEvent({ title, start: start.toISO(), end: end.toISO() });
+
+      // A saved override wins over the shipped default for that kind, and the
+      // shipped default covers every kind with no override. Stored per kind
+      // rather than as a whole map so that adding a new kind here does not
+      // need anyone to re-save their settings to pick up a colour for it.
+      colorId = resolveColor(event_colors?.[kind] || KIND_COLOR[kind]);
+
+    } else {
+
+      colorId = resolveColor(null);
+
+    }
+
   }
 
   const rrule = buildRecurrenceRule(recurrence, start, { count: recurrenceCount });

@@ -107,6 +107,25 @@ export const EVENT_COLORS = {
 export const DEFAULT_EVENT_COLOR = "11";
 
 
+// What each of those colours actually looks like in Google Calendar, so a
+// picker can show the real swatch rather than the word "flamingo" and hope.
+// These are Google's own palette values; they are display-only and nothing is
+// ever sent to the API but the id.
+export const EVENT_COLOR_HEX = {
+  lavender:  "#7986cb",
+  sage:      "#33b679",
+  grape:     "#8e24aa",
+  flamingo:  "#e67c73",
+  banana:    "#f6c026",
+  tangerine: "#f5511d",
+  peacock:   "#039be5",
+  graphite:  "#616161",
+  blueberry: "#3f51b5",
+  basil:     "#0b8043",
+  tomato:    "#d60000"
+};
+
+
 export function resolveColor(color) {
 
   if (!color) return DEFAULT_EVENT_COLOR;

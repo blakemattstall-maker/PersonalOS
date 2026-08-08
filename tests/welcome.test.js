@@ -315,18 +315,36 @@ test("the server and client renderings of a money figure agree", () => {
   }
 
   // …and the copies this test mirrors are still the ones actually shipping.
-  const page = read("web/app/money/page.js");
+  const view = read("web/app/MoneyView.js");
 
-  assert.ok(page.includes("function moneyParts"), "moneyParts has been renamed or removed");
+  assert.ok(view.includes("function moneyParts"), "moneyParts has been renamed or removed");
   assert.equal(
-    (page.match(/v >= 1000/g) || []).length,
+    (view.match(/v >= 1000/g) || []).length,
     2,
     "money() and moneyParts() no longer share the same 1000 threshold"
   );
   assert.equal(
-    /<Stat[^>]*\svalue=/.test(page),
+    /<Stat[^>]*\svalue=/.test(view),
     false,
     "a Stat is still being given a pre-formatted string — it takes `amount` so the figure can be counted"
+  );
+
+});
+
+
+// Switching range must not put a figure on screen that no longer matches the
+// range being shown. <Counted /> writes its text through a ref rather than as
+// rendered children, so React has no reason to update it on a re-render — the
+// previous range's number simply stays there unless the element is remounted.
+test("a counted figure is keyed so a range switch re-runs it", () => {
+
+  const view = read("web/app/MoneyView.js");
+
+  const counted = view.slice(view.indexOf("<Counted"), view.indexOf("</Counted>"));
+
+  assert.ok(
+    /key=\{/.test(counted),
+    "<Counted /> needs a key tied to its value, or a range switch leaves the old figure on screen"
   );
 
 });

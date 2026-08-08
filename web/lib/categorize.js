@@ -149,6 +149,16 @@ export async function categorizeTransactions(transactions, { classifyUnknown = n
 // Everything the dashboard displays, computed here rather than in the page or
 // by a model. Money is the one place in this app where a number being subtly
 // wrong is not a cosmetic problem.
+// The ranges the money page offers, in one place so the API and the switcher
+// cannot drift apart.
+//
+// 90 is the ceiling because lib/simplefin.js caches a 100-day window; a "year"
+// option would either silently clamp or claim a span the data does not cover.
+export const FINANCE_RANGES = [7, 30, 90];
+
+export const FINANCE_RANGE_LABELS = { 7: "Week", 30: "Month", 90: "90 days" };
+
+
 export function summarise(transactions) {
 
   let spent = 0;
@@ -283,7 +293,7 @@ export async function classifyUnknownMerchants(merchants) {
           content:
             `Classify each merchant into exactly one category from this list:\n` +
             `${CATEGORIES.join(", ")}\n\n` +
-            `These are card transactions for a 19-year-old US university student. ` +
+            `These are personal card transactions from a US bank account. ` +
             `Use "other" only when the merchant is genuinely unidentifiable — a guess ` +
             `that is probably right beats "other", because "other" is what makes a ` +
             `spending breakdown useless.\n\n` +

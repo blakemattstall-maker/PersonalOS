@@ -5,6 +5,23 @@ import { readPrefs, writePrefs } from "./prefs.js";
 import { NEURAL_VOICES, VOICE_PREVIEW_TEXT, listVoices, speakWith, playPreset, stop } from "./speech.js";
 import { saveSettingsAction, getDiagnosticsAction, sendTestPushAction } from "./actions.js";
 import PushSetup from "./PushSetup.js";
+import { EVENT_KINDS, KIND_COLOR } from "../lib/eventKind.js";
+import { EVENT_COLOR_HEX } from "../lib/recurrence.js";
+
+
+// The colours worth offering, in the order they read as a palette. Google has
+// eleven; these are the ones distinguishable enough from each other to be worth
+// assigning meaning to.
+const PICKABLE = ["peacock", "basil", "banana", "lavender", "grape", "flamingo", "tangerine", "sage", "blueberry", "graphite", "tomato"];
+
+
+const KIND_LABEL = {
+  meeting: "Meetings",
+  appointment: "Appointments",
+  block: "Focus blocks",
+  reminder: "Reminders",
+  travel: "Travel"
+};
 
 
 const SAMPLE = VOICE_PREVIEW_TEXT;
@@ -60,6 +77,11 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
 
   const [autoColor, setAutoColor] = useState(initialSettings?.auto_color_events !== false);
   const [savingAutoColor, setSavingAutoColor] = useState(false);
+
+  // Only the kinds actually overridden are held here, so anything untouched
+  // keeps following KIND_COLOR rather than being frozen at today's default.
+  const [eventColors, setEventColors] = useState(initialSettings?.event_colors || {});
+  const [colorNote, setColorNote] = useState(null);
 
   const [diag, setDiag] = useState(initialDiagnostics);
   const [refreshing, setRefreshing] = useState(false);
@@ -145,6 +167,35 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
 
     setSavingAutoColor(false);
 
+  };
+
+
+  const setKindColor = async (kind, colour) => {
+
+    // An explicit choice that happens to match the shipped default is stored
+    // as a removal, not as a value. Otherwise picking "the colour it already
+    // was" would pin that kind forever and stop it following the default if
+    // the default ever changes.
+    const next = { ...eventColors };
+
+    if (colour === KIND_COLOR[kind]) delete next[kind];
+    else next[kind] = colour;
+
+    setEventColors(next);
+    setColorNote(null);
+
+    const result = await saveSettingsAction({ event_colors: next });
+
+    setColorNote(result?.success ? "Saved." : result?.error || "Couldn't save.");
+
+  };
+
+
+  const resetKindColors = async () => {
+    setEventColors({});
+    setColorNote(null);
+    const result = await saveSettingsAction({ event_colors: {} });
+    setColorNote(result?.success ? "Back to the defaults." : result?.error || "Couldn't save.");
   };
 
 
@@ -353,6 +404,72 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
             {savingAutoColor ? "…" : autoColor ? "On" : "Off"}
           </span>
         </button>
+
+        {autoColor && (
+
+          <div className="mt-5 border-t border-[var(--line)] pt-4">
+
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-sm text-ink">Which colour is which</p>
+              {Object.keys(eventColors).length > 0 && (
+                <button
+                  onClick={resetKindColors}
+                  className="text-xs text-ink-soft underline decoration-[var(--line)] underline-offset-2 hover:text-ink"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">
+              Pick any colour for any kind. Anything you don&apos;t set follows the
+              default, so changing one doesn&apos;t freeze the rest.
+            </p>
+
+            <div className="mt-4 space-y-3.5">
+              {EVENT_KINDS.map(kind => {
+
+                const active = eventColors[kind] || KIND_COLOR[kind];
+
+                return (
+                  <div key={kind}>
+
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[0.82rem] text-ink">{KIND_LABEL[kind] || kind}</span>
+                      {eventColors[kind] && (
+                        <span className="text-[0.68rem] text-ink-soft">changed</span>
+                      )}
+                    </div>
+
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {PICKABLE.map(colour => (
+                        <button
+                          key={colour}
+                          onClick={() => setKindColor(kind, colour)}
+                          aria-label={`${KIND_LABEL[kind] || kind}: ${colour}`}
+                          aria-pressed={active === colour}
+                          title={colour}
+                          className={`h-7 w-7 rounded-full border-2 transition-transform ${
+                            active === colour
+                              ? "border-ink scale-110"
+                              : "border-transparent hover:scale-105"
+                          }`}
+                          style={{ background: EVENT_COLOR_HEX[colour] }}
+                        />
+                      ))}
+                    </div>
+
+                  </div>
+                );
+
+              })}
+            </div>
+
+            {colorNote && <p className="mt-3 text-xs text-ink-soft">{colorNote}</p>}
+
+          </div>
+
+        )}
 
       </Section>
 

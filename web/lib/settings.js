@@ -30,11 +30,18 @@ export const DEFAULTS = {
   interruption_level: "digest_plus_urgent",
 
   // Whether a newly created Google Calendar event is coloured by what kind of
-  // thing it is (lib/eventKind.js's classifyEvent, mapped through KIND_COLOR)
-  // rather than the flat default. On by default because sorting by kind is the
-  // whole point; a request that names an explicit colour always wins over this
-  // regardless of the setting.
-  auto_color_events: true
+  // thing it is (lib/eventKind.js's classifyEvent) rather than the flat
+  // default. On by default because sorting by kind is the whole point; a
+  // request that names an explicit colour always wins over this regardless of
+  // the setting.
+  auto_color_events: true,
+
+  // Which colour each kind gets, when the above is on. Empty means "use
+  // KIND_COLOR from lib/eventKind.js", so the shipped mapping stays the
+  // default and this only ever holds the kinds actually overridden — a
+  // half-filled object here would otherwise silently freeze the rest of the
+  // defaults at whatever they were the day it was written.
+  event_colors: {}
 };
 
 

@@ -111,7 +111,17 @@ export function revealChildren(root, { delay = 0, gap = 60, distance = 14 } = {}
   // decides how eager it is: a card reveals once its top edge is ~10% up from
   // the bottom of the viewport. Enough not to fire while you are still reading
   // the card above, close enough that nothing below the fold looks empty.
-  }, { rootMargin: "0px 0px -10% 0px", threshold: 0 });
+  //
+  // The enormous TOP margin is the other half, and it is not decoration. With
+  // a top margin of 0, an element that is already above the viewport does not
+  // intersect, so it reports isIntersecting:false, is ignored, and stays at
+  // opacity 0 for good. Anything you scroll past faster than the observer
+  // reacts is stranded blank — and so is every card above the restored scroll
+  // position when you come back to a page. That is what the "large gap between
+  // Top merchants and Recent" was: the Repeating card, skipped and never
+  // revealed. Extending the root far above the viewport means "already passed"
+  // counts as arrived, which is the only sensible reading of it.
+  }, { rootMargin: "9999px 0px -10% 0px", threshold: 0 });
 
   targets.forEach(t => observer.observe(t));
 
@@ -171,11 +181,11 @@ export function countUp(el, value, { format = (n) => String(Math.round(n)), dura
       onComplete: finish
     });
 
-  // Same threshold-0 rule as revealChildren above, for the same reason. A
-  // number ticking up before you can read it is worse than one that starts a
-  // little early, so the inset is deeper — the figure has to be properly on
-  // screen, not just peeking over the bottom edge.
-  }, { rootMargin: "0px 0px -20% 0px", threshold: 0 });
+  // Same threshold-0 rule and same top margin as revealChildren above, for the
+  // same reasons. A number ticking up before you can read it is worse than one
+  // that starts a little early, so the bottom inset is deeper — the figure has
+  // to be properly on screen, not just peeking over the edge.
+  }, { rootMargin: "9999px 0px -20% 0px", threshold: 0 });
 
   observer.observe(el);
 
@@ -228,6 +238,11 @@ export function sceneTimeline(root, build, { settleOnReduced } = {}) {
   //
   // This observer also pauses the timeline when the scene leaves, so the same
   // inset doubles as the point where an off-screen scene stops costing frames.
+  //
+  // Deliberately NO huge top margin here, unlike revealChildren and countUp. A
+  // one-shot reveal wants "already scrolled past" to mean "arrived"; a looping
+  // scene wants it to mean "stop spending frames on this". Adding one here
+  // would keep every scene above you running forever.
   }, { rootMargin: "0px 0px -25% 0px", threshold: 0 });
 
   observer.observe(root);

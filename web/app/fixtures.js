@@ -164,13 +164,97 @@ const ARCHIVED_PROJECTS = {
 };
 
 
-// One shape, reused regardless of the requested day count — a fixture exists
-// to judge layout and density, not to prove the SimpleFIN date-slicing logic,
-// which lib/simplefin.js's own tests already cover.
-function financeFor(days) {
+// Mirrors the real handler's shape: every range precomputed, plus the whole
+// categorised window for the drilldowns. Built from a generated transaction
+// list so the per-category totals and the transactions behind them actually
+// agree — a fixture whose breakdown contradicts its own rows would make the
+// drilldown look broken while the code was fine.
+const FIXTURE_RANGES = [7, 30, 90];
+
+const daysAgoISO = (d) => new Date(now - d * 86400_000).toISOString().slice(0, 10);
+
+const FIXTURE_TX = [
+  [0, "Trader Joe's", -42.10, "groceries"],
+  [1, "Shell", -31.40, "transport"],
+  [2, "Chipotle", -14.80, "eating out"],
+  [3, "Trader Joe's", -38.25, "groceries"],
+  [4, "CVS", -18.75, "health"],
+  [5, "Amazon", -24.99, "shopping"],
+  [6, "Spotify", -11.99, "software"],
+  [9, "Comcast", -79.99, "housing"],
+  [11, "Trader Joe's", -51.30, "groceries"],
+  [13, "Shell", -29.80, "transport"],
+  [15, "Chipotle", -16.40, "eating out"],
+  [18, "Target", -38.00, "shopping"],
+  [21, "Trader Joe's", -44.60, "groceries"],
+  [24, "Shell", -22.90, "transport"],
+  [26, "CVS", -23.00, "health"],
+  [28, "Spotify", -11.99, "software"],
+  [34, "Comcast", -79.99, "housing"],
+  [41, "Trader Joe's", -47.80, "groceries"],
+  [48, "Shell", -33.10, "transport"],
+  [55, "Chipotle", -19.20, "eating out"],
+  [63, "Amazon", -33.41, "shopping"],
+  [70, "Spotify", -11.99, "software"],
+  [78, "Comcast", -79.99, "housing"],
+  [86, "Trader Joe's", -39.90, "groceries"]
+].map(([d, merchant, amount, category]) => ({
+  date: daysAgoISO(d), merchant, amount, category
+}));
+
+
+function summariseFixture(rows) {
+
+  const spent = rows.reduce((t, r) => t + Math.abs(r.amount), 0);
+
+  const byCategory = {};
+  const byMerchant = {};
+
+  for (const r of rows) {
+    const mag = Math.abs(r.amount);
+    byCategory[r.category] = (byCategory[r.category] || 0) + mag;
+    if (!byMerchant[r.merchant]) byMerchant[r.merchant] = { merchant: r.merchant, total: 0, count: 0, category: r.category };
+    byMerchant[r.merchant].total += mag;
+    byMerchant[r.merchant].count += 1;
+  }
+
+  const round = (n) => Math.round(n * 100) / 100;
+
+  return {
+    spent: round(spent),
+    earned: 1450,
+    net: round(1450 - spent),
+    transactionCount: rows.length,
+    categories: Object.entries(byCategory)
+      .map(([name, total]) => ({ name, total: round(total), share: spent > 0 ? Math.round((total / spent) * 1000) / 10 : 0 }))
+      .sort((a, b) => b.total - a.total),
+    merchants: Object.values(byMerchant)
+      .map(m => ({ ...m, total: round(m.total) }))
+      .sort((a, b) => b.total - a.total),
+    recurring: [
+      { merchant: "Comcast", amount: 79.99, occurrences: 3 },
+      { merchant: "Spotify", amount: 11.99, occurrences: 4 }
+    ],
+    recent: rows.slice(0, 12)
+  };
+
+}
+
+
+function financeFixture() {
+
+  const cutoffs = {};
+  const views = {};
+
+  for (const range of FIXTURE_RANGES) {
+    const cutoff = daysAgoISO(range);
+    cutoffs[range] = cutoff;
+    views[range] = summariseFixture(FIXTURE_TX.filter(t => t.date >= cutoff));
+  }
+
   return {
     success: true,
-    days,
+    ranges: FIXTURE_RANGES,
     cached: true,
     fetchedAt: hoursAgo(2),
     accounts: [
@@ -178,43 +262,11 @@ function financeFor(days) {
       { name: "Savings", balance: 3360.12, currency: "USD" }
     ],
     totalBalance: 5500.67,
-    spent: 812.44,
-    earned: 1450,
-    net: 637.56,
-    transactionCount: 26,
-    categories: [
-      { name: "food", total: 268.9, share: 33.1 },
-      { name: "transport", total: 154.2, share: 19 },
-      { name: "housing", total: 120, share: 14.8 },
-      { name: "shopping", total: 96.4, share: 11.9 },
-      { name: "eating out", total: 84.5, share: 10.4 },
-      { name: "health", total: 52.94, share: 6.5 },
-      { name: "education", total: 22.5, share: 2.8 },
-      { name: "business", total: 8.5, share: 1 },
-      { name: "other", total: 4.5, share: 0.6 }
-    ],
-    merchants: [
-      { merchant: "Trader Joe's", total: 148.32, count: 6, category: "food" },
-      { merchant: "Shell", total: 84.1, count: 3, category: "transport" },
-      { merchant: "Comcast", total: 79.99, count: 1, category: "housing" },
-      { merchant: "Chipotle", total: 61.2, count: 4, category: "eating out" },
-      { merchant: "Amazon", total: 58.4, count: 3, category: "shopping" },
-      { merchant: "CVS", total: 41.75, count: 2, category: "health" },
-      { merchant: "Spotify", total: 11.99, count: 1, category: "business" },
-      { merchant: "Steak 'n Shake", total: 23.3, count: 2, category: "eating out" },
-      { merchant: "Target", total: 38, count: 1, category: "shopping" }
-    ],
-    recurring: [
-      { merchant: "Comcast", amount: 79.99, occurrences: 3 },
-      { merchant: "Spotify", amount: 11.99, occurrences: 4 }
-    ],
-    recent: [
-      { date: hoursAgo(4).slice(0, 10), merchant: "Trader Joe's", amount: -42.1, category: "food" },
-      { date: hoursAgo(20).slice(0, 10), merchant: "Payroll", amount: 725, category: "income" },
-      { date: hoursAgo(30).slice(0, 10), merchant: "Shell", amount: -31.4, category: "transport" },
-      { date: hoursAgo(50).slice(0, 10), merchant: "Chipotle", amount: -14.8, category: "eating out" }
-    ]
+    cutoffs,
+    views,
+    transactions: FIXTURE_TX
   };
+
 }
 
 
@@ -223,6 +275,7 @@ const SETTINGS = {
   settings: {
     interruption_level: "digest_plus_urgent",
     auto_color_events: true,
+    event_colors: {},
     persisted: true
   },
   levels: ["silent", "digest", "digest_plus_urgent", "everything"]
@@ -242,10 +295,7 @@ const FIXTURES = {
 
 export function fixtureFor(path) {
 
-  if (path.startsWith("/api/finance")) {
-    const days = Number(new URLSearchParams(path.split("?")[1] || "").get("days")) || 30;
-    return financeFor(days);
-  }
+  if (path.startsWith("/api/finance")) return financeFixture();
 
   return FIXTURES[path] || null;
 
