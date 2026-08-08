@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://web-blake-007c.vercel.app/api/:path*"
+      "destination": "https://web-liart-two-12.vercel.app/api/:path*"
     }
   ]
 }
