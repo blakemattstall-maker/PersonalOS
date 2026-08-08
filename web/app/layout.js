@@ -67,6 +67,13 @@ export default function RootLayout({ children }) {
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        {/* Entrance animations start from opacity 0 and are undone by
+            app/motion.js. With scripting off nothing would ever undo them, so
+            the whole app would render as a blank page — this is the one
+            override that cannot live in a media query. */}
+        <noscript>
+          <style>{`.pos-reveal,.pos-scene-hidden{opacity:1!important;transform:none!important}`}</style>
+        </noscript>
       </head>
       <body className="min-h-full flex flex-col bg-paper text-ink">
         {/* Fixture mode makes the dashboard look completely real. Say so, so

@@ -1,3 +1,8 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import { animate, stagger, createDrawable, countUp, reducedMotion, utils } from "./motion.js";
+
 // Charts for the money page, hand-drawn in SVG rather than pulled from a
 // library — the whole vocabulary needed here is an arc and a rounded bar, and a
 // charting dependency would ship far more than that while fighting the design
@@ -52,6 +57,65 @@ function arc(cx, cy, r, from, to) {
 // compare than a wedge whose area grows with radius.
 export function SpendDonut({ categories, total }) {
 
+  const ref = useRef(null);
+
+  // The arcs draw themselves on in order of size, which is the same order the
+  // legend is in — so the animation is teaching you how to read the chart
+  // rather than decorating it. The total in the hole counts up alongside.
+  //
+  // Nothing here changes a value. `createDrawable` only manipulates
+  // stroke-dasharray, and the count-up interpolates toward the number the
+  // server already computed and is written out exactly at the end.
+  useEffect(() => {
+
+    const root = ref.current;
+
+    if (!root) return;
+
+    const paths = root.querySelectorAll("[data-arc]");
+    const label = root.querySelector("[data-total]");
+
+    const stopCount = countUp(label, total, {
+      format: (n) => {
+        const v = Math.abs(n);
+        return v >= 1000
+          ? `$${Math.round(v).toLocaleString("en-US")}`
+          : `$${v.toFixed(0)}`;
+      }
+    });
+
+    if (reducedMotion() || paths.length === 0) return stopCount;
+
+    let animation = null;
+
+    const observer = new IntersectionObserver((entries) => {
+
+      if (!entries.some(e => e.isIntersecting)) return;
+
+      observer.disconnect();
+
+      animation = animate(createDrawable(paths), {
+        draw: ["0 0", "0 1"],
+        duration: 780,
+        delay: stagger(85),
+        ease: "inOut(3)"
+      });
+
+    }, { threshold: 0.25 });
+
+    observer.observe(root);
+
+    return () => {
+      observer.disconnect();
+      animation?.pause();
+      // Leaving a half-drawn dasharray behind would silently misreport the
+      // split, so unmounting restores the arcs to whole.
+      utils.set(paths, { "stroke-dasharray": "none", "stroke-dashoffset": 0 });
+      stopCount();
+    };
+
+  }, [total, categories]);
+
   const size = 190;
   const stroke = 26;
   const r = (size - stroke) / 2;
@@ -61,18 +125,33 @@ export function SpendDonut({ categories, total }) {
   // A 2px surface gap between segments, so adjacent arcs never appear to merge.
   const gapDegrees = 1.6;
 
-  let cursor = 0;
+  // Built with a plain loop rather than a `.map()` closing over a running
+  // total. The accumulator is only correct if the callback runs exactly once
+  // per item, in order, during this render — which the React Compiler is right
+  // not to assume of a callback. A loop makes the sequencing local and
+  // obvious instead of relying on that.
+  const segments = [];
 
-  const segments = categories.map((c, i) => {
-    const sweep = (c.total / total) * 360;
+  for (let i = 0, cursor = 0; i < categories.length; i++) {
+
+    const category = categories[i];
+    const sweep = (category.total / total) * 360;
     const from = cursor;
     const to = cursor + sweep;
+
+    segments.push({
+      ...category,
+      from,
+      to: Math.max(from + 0.5, to - gapDegrees),
+      colour: RAMP[Math.min(i, RAMP.length - 1)]
+    });
+
     cursor = to;
-    return { ...c, from, to: Math.max(from + 0.5, to - gapDegrees), colour: RAMP[Math.min(i, RAMP.length - 1)] };
-  });
+
+  }
 
   return (
-    <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:gap-7">
+    <div ref={ref} className="flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:gap-7">
 
       <svg
         viewBox={`0 0 ${size} ${size}`}
@@ -85,6 +164,7 @@ export function SpendDonut({ categories, total }) {
         {segments.map(s => (
           <path
             key={s.name}
+            data-arc
             d={arc(cx, cy, r, s.from, s.to)}
             fill="none"
             stroke={s.colour}
@@ -93,7 +173,7 @@ export function SpendDonut({ categories, total }) {
           />
         ))}
 
-        <text x={cx} y={cy - 4} textAnchor="middle" className="pos-data" fontSize="22" fill="var(--ink)">
+        <text x={cx} y={cy - 4} textAnchor="middle" className="pos-data" fontSize="22" fill="var(--ink)" data-total>
           {money(total)}
         </text>
         <text x={cx} y={cy + 14} textAnchor="middle" fontSize="10" fill="var(--ink-soft)">
@@ -129,8 +209,56 @@ export function SpendDonut({ categories, total }) {
 // top one".
 export function CategoryBars({ categories, max }) {
 
+  const ref = useRef(null);
+
+  // Bars grow from the baseline rather than fading in. Length is the thing
+  // being compared here, so growing along that axis is the one animation that
+  // carries the same information the chart does.
+  //
+  // The final width is written into the inline style by React, so it is correct
+  // before any of this runs and stays correct if none of it does. The animation
+  // scales the bar down first and releases it.
+  useEffect(() => {
+
+    const root = ref.current;
+
+    if (!root || reducedMotion()) return;
+
+    const bars = root.querySelectorAll("[data-bar]");
+
+    if (bars.length === 0) return;
+
+    utils.set(bars, { scaleX: 0, transformOrigin: "0% 50%" });
+
+    let animation = null;
+
+    const observer = new IntersectionObserver((entries) => {
+
+      if (!entries.some(e => e.isIntersecting)) return;
+
+      observer.disconnect();
+
+      animation = animate(bars, {
+        scaleX: 1,
+        duration: 700,
+        delay: stagger(70),
+        ease: "out(3)"
+      });
+
+    }, { threshold: 0.2 });
+
+    observer.observe(root);
+
+    return () => {
+      observer.disconnect();
+      animation?.pause();
+      utils.set(bars, { scaleX: 1 });
+    };
+
+  }, [categories]);
+
   return (
-    <div className="flex flex-col gap-3">
+    <div ref={ref} className="flex flex-col gap-3">
       {categories.map((c, i) => (
         <div key={c.name} className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between gap-3">
@@ -139,6 +267,7 @@ export function CategoryBars({ categories, max }) {
           </div>
           <div className="h-2.5 w-full overflow-hidden rounded-[var(--r-pill)] bg-[var(--sunken)]">
             <div
+              data-bar
               className="h-full rounded-[var(--r-pill)]"
               style={{
                 width: `${Math.max(2, (c.total / max) * 100)}%`,

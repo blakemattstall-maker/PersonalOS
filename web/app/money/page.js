@@ -1,4 +1,5 @@
 import { backendGet } from "../backend.js";
+import Reveal, { Counted } from "../Reveal.js";
 import { Page, PageHeader, Card, SectionTitle, Empty, Meta } from "../ui.js";
 import { SpendDonut, CategoryBars, RAMP } from "../MoneyCharts.js";
 
@@ -27,12 +28,33 @@ function money(n, { sign = false } = {}) {
 }
 
 
-function Stat({ label, value, tone = "ink", sub = null }) {
+// The same decision `money()` makes, expressed as the pieces <Counted /> needs.
+// It has to be described rather than passed as a formatter because this is a
+// server component and a function cannot cross that boundary — see Reveal.js.
+function moneyParts(n, { sign = false } = {}) {
+  const v = Math.abs(Number(n) || 0);
+  return {
+    value: v,
+    decimals: v >= 1000 ? 0 : 2,
+    prefix: `${sign && Number(n) < 0 ? "−" : sign ? "+" : ""}$`
+  };
+}
+
+
+function Stat({ label, amount, sign = false, tone = "ink", sub = null }) {
   const colour = tone === "moss" ? "text-moss" : "text-ink";
+  const parts = moneyParts(amount, { sign });
   return (
     <div className="flex flex-col gap-1 px-4 py-3.5">
       <span className="text-[0.72rem] uppercase tracking-[0.08em] text-ink-soft">{label}</span>
-      <span className={`pos-data text-[1.35rem] leading-none ${colour}`}>{value}</span>
+      <Counted
+        value={parts.value}
+        prefix={parts.prefix}
+        decimals={parts.decimals}
+        className={`pos-data text-[1.35rem] leading-none ${colour}`}
+      >
+        {money(amount, { sign })}
+      </Counted>
       {sub && <span className="text-[0.72rem] text-ink-soft">{sub}</span>}
     </div>
   );
@@ -72,18 +94,23 @@ export default async function Money() {
       {/* The four figures worth knowing before anything else. Net is the only
           one that gets colour, and only when it is positive — moss means
           settled, and ember is reserved app-wide for things awaiting him. */}
+      <Reveal gap={70}>
+
+      <div className="pos-reveal" data-reveal>
       <Card className="mb-5 !p-0 overflow-hidden">
         <div className="grid grid-cols-2 divide-x divide-y divide-[var(--line)] [&>*]:border-[var(--line)]">
-          <Stat label="Balance" value={money(f.totalBalance)} sub={`${f.accounts.length} accounts`} />
-          <Stat label="Spent" value={money(f.spent)} sub={`${f.transactionCount} transactions`} />
-          <Stat label="In" value={money(f.earned)} />
+          <Stat label="Balance" amount={f.totalBalance} sub={`${f.accounts.length} accounts`} />
+          <Stat label="Spent" amount={f.spent} sub={`${f.transactionCount} transactions`} />
+          <Stat label="In" amount={f.earned} />
           <Stat
             label="Net"
-            value={money(f.net, { sign: true })}
+            amount={f.net}
+            sign
             tone={f.net >= 0 ? "moss" : "ink"}
           />
         </div>
       </Card>
+      </div>
 
       {f.spent === 0 ? (
 
@@ -92,20 +119,25 @@ export default async function Money() {
       ) : (
 
         <>
+          <div className="pos-reveal" data-reveal>
           <Card className="mb-5">
             <SectionTitle>Where it went</SectionTitle>
             <SpendDonut categories={top} total={f.spent} />
           </Card>
+          </div>
 
+          <div className="pos-reveal" data-reveal>
           <Card className="mb-5">
             <SectionTitle count={f.categories.length}>By category</SectionTitle>
             <CategoryBars categories={top} max={top[0]?.total || 1} />
           </Card>
+          </div>
         </>
 
       )}
 
       {f.merchants.length > 0 && (
+        <div className="pos-reveal" data-reveal>
         <Card className="mb-5">
           <SectionTitle count={f.merchants.length}>Top merchants</SectionTitle>
           <div>
@@ -126,9 +158,11 @@ export default async function Money() {
             ))}
           </div>
         </Card>
+        </div>
       )}
 
       {f.recurring.length > 0 && (
+        <div className="pos-reveal" data-reveal>
         <Card className="mb-5">
           <SectionTitle count={f.recurring.length}>Repeating</SectionTitle>
           <p className="-mt-1 mb-3 text-[0.85rem] leading-relaxed text-ink-soft">
@@ -148,9 +182,11 @@ export default async function Money() {
             ))}
           </div>
         </Card>
+        </div>
       )}
 
       {f.recent.length > 0 && (
+        <div className="pos-reveal" data-reveal>
         <Card>
           <SectionTitle>Recent</SectionTitle>
           <div>
@@ -170,7 +206,10 @@ export default async function Money() {
             ))}
           </div>
         </Card>
+        </div>
       )}
+
+      </Reveal>
 
       <p className="mt-6 text-[0.78rem] text-ink-soft">
         Pulled {f.cached ? "from cache" : "live"} · one bank call per 12 hours, sliced locally.

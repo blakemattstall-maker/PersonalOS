@@ -6,6 +6,7 @@ import ProjectCard from "./ProjectCard.js";
 import ReadAloud from "./ReadAloud.js";
 import PromptCard from "./PromptCard.js";
 import { backendGet } from "./backend.js";
+import Reveal from "./Reveal.js";
 import { Page, Card, SectionTitle, ItemCard, Meta, Empty, btn } from "./ui.js";
 
 
@@ -204,7 +205,14 @@ export default async function Home() {
   return (
     <Page>
 
-      <Headline waiting={needsYou.length} projectCount={projects.length} />
+      {/* One Reveal for the whole page rather than one per card: the stagger
+          only reads as a deliberate sequence if a single component knows the
+          order of everything in it. See app/motion.js. */}
+      <Reveal gap={70}>
+
+      <div className="pos-reveal" data-reveal>
+        <Headline waiting={needsYou.length} projectCount={projects.length} />
+      </div>
 
       {/* Order is state-dependent by design. When something is waiting, it
           comes before the brief — the headline just said so, and scrolling
@@ -214,15 +222,18 @@ export default async function Home() {
       {needsYou.length > 0 && (
         <div className="mb-6 space-y-3">
           {needsYou.map((item) => (
-            item.kind === "thought"
-              ? <DeepThoughtThread key={`thought-${item.id}`} thought={item} turns={item.turns || []} />
-              : item.kind === "prompt"
-                ? <PromptCard key={`prompt-${item.id}`} item={item} />
-                : <NudgeCard key={`nudge-${item.id}`} item={item} />
+            <div key={`${item.kind}-${item.id}`} className="pos-reveal" data-reveal>
+              {item.kind === "thought"
+                ? <DeepThoughtThread thought={item} turns={item.turns || []} />
+                : item.kind === "prompt"
+                  ? <PromptCard item={item} />
+                  : <NudgeCard item={item} />}
+            </div>
           ))}
         </div>
       )}
 
+      <div className="pos-reveal" data-reveal>
       <Card className="mb-6">
 
         <SectionTitle
@@ -256,15 +267,24 @@ export default async function Home() {
         </div>
 
       </Card>
+      </div>
 
       {projects.length > 0 && (
         <section>
-          <SectionTitle count={projects.length}>Projects</SectionTitle>
+          <div className="pos-reveal" data-reveal>
+            <SectionTitle count={projects.length}>Projects</SectionTitle>
+          </div>
           <div className="space-y-3">
-            {projects.map(project => <ProjectCard key={project.id} project={project} />)}
+            {projects.map(project => (
+              <div key={project.id} className="pos-reveal" data-reveal>
+                <ProjectCard project={project} />
+              </div>
+            ))}
           </div>
         </section>
       )}
+
+      </Reveal>
 
     </Page>
   );

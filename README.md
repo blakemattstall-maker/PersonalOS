@@ -47,7 +47,8 @@ version control, so those URLs must not change.
 | `web/app/api/` | HTTP entry points, as Next.js route handlers. Each one is a thin `route.js` wrapping an unchanged Node-style `handler.js` through the adapter in `_node.js` — see the comment there for why the handlers were not rewritten. |
 | `web/lib/` | Shared infrastructure: the router, auth, the Supabase client, the model registry, rich-context assembly, diagnostics, schema probing. |
 | `web/tools/` | One file per capability. A tool is a function the LLM can choose to call. |
-| `web/` | The dashboard. Its own package.json, own Vercel project, own env vars. Design system lives in `web/app/globals.css` (tokens) and `web/app/ui.js` (shape vocabulary) — read the comment at the top of each before restyling anything. |
+| `web/` | The dashboard. Its own package.json, own Vercel project, own env vars. Design system lives in `web/app/globals.css` (tokens) and `web/app/ui.js` (shape vocabulary) — read the comment at the top of each before restyling anything. Motion goes through `web/app/motion.js`, never anime.js directly. |
+| `web/app/welcome/` | The signed-out tour — where the passphrase gate now sends anyone without a session. Prerendered, reads nothing, and must stay that way. |
 | `docs/` | Architecture, current state, the pre-mortem, and the `.sql` migrations. |
 | `tests/` | Fast offline suite (`npm test`) plus the routing eval (`npm run test:routing`). |
 | `dev/` | One-off scripts. Not tests — they print and exit. |
@@ -120,6 +121,16 @@ short version:
    the dial doesn't recognise is silently undeliverable at most settings —
    which is exactly how nudges went unpushable for a week without anyone
    noticing.
+10. **Never hide content for an animation without all three escape hatches.**
+    `.pos-reveal` starts at `opacity: 0` and JavaScript un-hides it, so reduced
+    motion, no scripting, and no `IntersectionObserver` each need their own
+    override — a media query, the `<noscript>` style in `app/layout.js`, and a
+    feature check in `app/motion.js`. Miss one and the app renders as a blank
+    page with no error anywhere. `tests/welcome.test.js` guards the first two.
+11. **The gate's redirect target must be outside the gate's own matcher.**
+    `/welcome` is excluded in `proxy.js`. If it weren't, every visitor without a
+    cookie would be redirected to a page that redirects them back — and the
+    symptom is a spinning browser on the one URL this app gets shared as.
 
 ## Where to look next
 

@@ -157,6 +157,55 @@ is how a memory store fills with things that were never true.
 
 ---
 
+## 7c. The signed-out surface, and motion (Aug 7)
+
+**The gate now redirects to `/welcome`, not `/login`.** The link gets sent to
+people who have no passphrase and never will. A bare password field tells them
+nothing, so the door is now a scrolling tour of what the system does
+(`web/app/welcome/`), with `/login` still reachable from it for the one person
+who can actually get in.
+
+Three constraints on that route, all load-bearing:
+
+- **It is prerendered and reads nothing.** It is the only route outside the
+  session check, so it must not be able to reach Supabase, the bank connection
+  or Google even by accident. Every figure on it is written into its own source
+  and labelled illustrative. A test walks the imports in `web/app/welcome/` and
+  fails if any of them reaches live data.
+- **It must not be behind the gate it redirects to.** `welcome` is excluded from
+  the proxy matcher. Without that exclusion the gate redirects to a page that
+  redirects to the gate — and the symptom is not an error, it is a browser that
+  spins on the one URL the app exists to be shared as. There is a test for this.
+- **The ember rule still applies.** The tour uses moss for everything it
+  highlights and reserves ember for the one section about interruptions, because
+  the tour is also where that rule gets explained.
+
+**Motion goes through `web/app/motion.js`, never anime.js directly.** anime.js
+(4.x, ~18KB gzipped, its own chunk) drives staggered card entry on the dashboard
+and money pages, count-ups on figures, the donut drawing itself, and the tour's
+scenes. The wrapper exists for three reasons:
+
+- **Reduced motion has to be enforced in JavaScript.** `globals.css` neutralises
+  every CSS animation under `prefers-reduced-motion`, but anime.js writes inline
+  styles from a rAF loop and that rule cannot touch it. Every helper checks the
+  media query itself and applies the settled state instead.
+- **Hidden must never mean lost.** Entrance animations start at `opacity: 0` via
+  the `.pos-reveal` class, so there are three ways that could strand content on a
+  blank page: reduced motion, no scripting, and no `IntersectionObserver`. All
+  three have explicit overrides — a media query, a `<noscript>` style in the
+  layout, and a feature check. A test asserts the first two still exist.
+  - The `<noscript>` one is the trap: it cannot live in a media query, and
+    without it the *entire app* renders blank with scripting off.
+  - It was briefly a 2.5-second timer instead of a feature check, which was
+    worse than useless — on any page taller than the viewport it revealed every
+    card below the fold before the reader had scrolled to it.
+- **Animation must not become a second opinion about a number.** `countUp`
+  interpolates toward a value the server computed and writes that exact value on
+  completion, never the last animated frame. The pre-hydration text is the
+  server's own formatted string.
+
+---
+
 ## 8. Open decisions
 
 ### ✅ Resolved since v1.1
@@ -170,9 +219,11 @@ is how a memory store fills with things that were never true.
 6. Backend API authentication — **live**, `API_SECRET` set in production.
 7. Live web search integration — **built**, on the Responses API's hosted `web_search` tool (`tools/research.js`), backing `research_query`, plan-building materials, and Docs export.
 
+### ✅ Resolved since (Aug 7)
+8. Whether the generic `entity_links` table (S7) is ever actually needed — **yes, and it is built.** Direct FKs stopped being sufficient the moment anything needed to ask "what else touches this", which is every detector in `tools/islands.js`.
+
 ### ⬜ Still open
-8. Sync conflict rule (S2) — moot until two-way sync actually gets built, which is now lower-priority than v1.1 assumed.
-9. Whether the generic `entity_links` table (S7) is ever actually needed, or whether direct FKs keep being sufficient.
+9. Sync conflict rule (S2) — moot until two-way sync actually gets built, which is now lower-priority than v1.1 assumed.
 
 ---
 

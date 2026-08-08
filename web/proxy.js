@@ -14,7 +14,12 @@ export function proxy(request) {
     return NextResponse.next();
   }
 
-  return NextResponse.redirect(new URL("/login", request.url));
+  // Anyone without the cookie lands on the tour, not on a password box.
+  // The link gets sent to people who have no credentials and never will —
+  // a bare passphrase field tells them nothing and reads as a dead end.
+  // /login still exists and is linked from the tour for the one person who
+  // does have the passphrase.
+  return NextResponse.redirect(new URL("/welcome", request.url));
 
 }
 
@@ -35,5 +40,5 @@ export function proxy(request) {
 // LOCATION_INGEST_KEY, which are the right kind of credential for a caller
 // that cannot log in.
 export const config = {
-  matcher: ["/((?!api|login|_next/static|_next/image|favicon.ico|sw.js|manifest.json|icon.svg).*)"]
+  matcher: ["/((?!api|login|welcome|_next/static|_next/image|favicon.ico|sw.js|manifest.json|icon.svg).*)"]
 };

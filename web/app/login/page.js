@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -64,6 +65,17 @@ export default async function LoginPage({ searchParams }) {
         >
           Unlock
         </button>
+
+        {/* Without this the tour is a one-way door: the only way back from a
+            passphrase field you can't fill is the browser's back button. */}
+        <p className="mt-5 text-center text-[0.82rem] text-ink-soft">
+          <Link
+            href="/welcome"
+            className="underline decoration-[var(--line)] decoration-1 underline-offset-[3px] transition-colors hover:decoration-[var(--ink)] hover:text-ink"
+          >
+            Back to the tour
+          </Link>
+        </p>
 
       </form>
     </div>

@@ -179,6 +179,40 @@ body {
   animation: pos-ember-pulse 2.8s infinite ease-out;
 }
 
+/* Entrance state for anything animated by app/motion.js.
+ *
+ * The hidden state lives in CSS rather than being set by JavaScript, so there
+ * is no frame where the card is painted and then yanked back to invisible. The
+ * three overrides below are what stop it becoming a trap: without motion the
+ * element is simply visible, without JavaScript it is simply visible, and if
+ * the observer somehow never fires, motion.js has its own timeout. A reveal
+ * animation must never be the reason content cannot be read. */
+.pos-reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  will-change: opacity, transform;
+}
+
+/* Scenes on the welcome page paint their own start state the same way. */
+.pos-scene-hidden { opacity: 0; }
+
+/* An SVG shape scaled with a CSS transform pivots on the SVG user-space origin
+ * — the top-left of the viewBox — not on itself. Without this, a circle at
+ * (300, 170) animating from scale 0 flies in diagonally from the corner
+ * instead of growing where it belongs. */
+.pos-pop {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pos-reveal,
+  .pos-scene-hidden {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pos-dot {
     animation-duration: 0.01ms;

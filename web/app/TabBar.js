@@ -127,9 +127,10 @@ export default function TabBar() {
 
   const pathname = usePathname();
 
-  // The passphrase gate is a single field on an empty page; a nav bar there
-  // would offer five destinations that all bounce straight back to it.
-  if (pathname === "/login") return null;
+  // Neither of the signed-out pages gets a nav bar. On /login it would offer
+  // five destinations that all bounce straight back; on /welcome it would
+  // promise a working app to someone who cannot get into one.
+  if (pathname === "/login" || pathname === "/welcome") return null;
 
   return (
     <nav
