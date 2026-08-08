@@ -1,4 +1,5 @@
 import resourceHandler from "./api/[resource]/handler.js";
+import ingestHandler from "./api/ingest/[kind]/handler.js";
 
 
 // The dashboard's data layer. It no longer speaks HTTP.
@@ -41,8 +42,54 @@ function parsePath(path) {
   // exercised only the routes would ever have caught.
   query.resource = resource;
 
+  // `/api/ingest/*` is a different function with a different dynamic segment,
+  // and it was unreachable from here.
+  //
+  // parsePath only ever produced a `resource`, so backendPost("/api/ingest/push")
+  // asked the [resource] handler for a resource called "ingest", which does not
+  // exist — every attempt to register for notifications came back
+  // {"error":"Unknown resource: ingest"}. Nothing surfaced it because
+  // PushSetup.js discarded the result, so the settings page reported "On" while
+  // the subscription had never been written and no push could ever be delivered.
+  // The HTTP route worked the whole time, which is why this survived the
+  // consolidation: only the in-process caller was broken.
+  if (resource === "ingest") query.kind = rawPath.split("/")[1];
+
   return { resource, query };
 
+}
+
+
+// The two functions the dashboard can call. Anything else under app/api —
+// capture, tts, cron, the OAuth callback — is reached only by a remote caller
+// that genuinely does speak HTTP, so it deliberately has no entry here.
+const HANDLERS = { ingest: ingestHandler };
+
+function handlerFor(resource) {
+  return HANDLERS[resource] || resourceHandler;
+}
+
+
+// The one thing removing the HTTP hop silently changed, put back.
+//
+// `res.json()` used to mean "serialise this and send it", so every value a
+// handler returned reached a page as JSON had left it: a Date became an ISO
+// string, an undefined key vanished, a class instance became a plain object.
+// Calling the handler directly skips all of that and hands the page the live
+// object graph instead — which is how the finance handler's `recent` list,
+// carrying real Date objects out of lib/simplefin.js, took the whole money page
+// down with "Objects are not valid as a React child". It had rendered a raw ISO
+// string for as long as the hop existed, so the bug looked cosmetic right up to
+// the moment it wasn't.
+//
+// Fixing only that one field would leave the trap armed for the next handler
+// that returns something JSON would have flattened. This is one round trip per
+// call — microseconds against the Supabase and OpenAI work underneath it — and
+// it makes the in-process path provably identical to the HTTP one rather than
+// merely intended to be.
+function asJson(payload) {
+  if (payload === undefined || payload === null) return payload;
+  return JSON.parse(JSON.stringify(payload));
 }
 
 
@@ -68,9 +115,9 @@ async function invoke({ method, path, body = undefined }) {
         // A handler error still resolves rather than throwing: every caller in
         // this app already has a try/catch that falls back to an empty state,
         // and they were written against a fetch that resolved on a 500 too.
-        resolve(statusCode >= 400 && payload && !("error" in payload)
+        resolve(asJson(statusCode >= 400 && payload && !("error" in payload)
           ? { ...payload, error: `Request failed with ${statusCode}` }
-          : payload);
+          : payload));
         return res;
       },
       send(payload) { return res.json(payload); },
@@ -93,7 +140,7 @@ async function invoke({ method, path, body = undefined }) {
     const headers = process.env.API_SECRET ? { "x-pos-key": process.env.API_SECRET } : {};
 
     Promise.resolve(
-      resourceHandler({ method, query, body, headers, url: path }, res)
+      handlerFor(resource)({ method, query, body, headers, url: path }, res)
     ).catch(reject);
 
   });

@@ -152,8 +152,10 @@ export async function categorizeTransactions(transactions, { classifyUnknown = n
 // The ranges the money page offers, in one place so the API and the switcher
 // cannot drift apart.
 //
-// 90 is the ceiling because lib/simplefin.js caches a 100-day window; a "year"
-// option would either silently clamp or claim a span the data does not cover.
+// 90 is the ceiling because that is the most history SimpleFIN will serve at all
+// (lib/simplefin.js caches 89 days, the widest window it accepts without
+// complaint); a "year" option would either silently clamp or claim a span the
+// data does not cover.
 export const FINANCE_RANGES = [7, 30, 90];
 
 export const FINANCE_RANGE_LABELS = { 7: "Week", 30: "Month", 90: "90 days" };
@@ -225,6 +227,14 @@ export function findRecurring(transactions) {
 
   for (const t of transactions) {
     if (Number(t.amount) >= 0) continue;
+    // Transfers are skipped for the same reason summarise() skips them: moving
+    // your own money, or sending some to a relative every month, is not
+    // spending you are being invited to re-decide. Without this the card
+    // reported a standing $400 Zelle as a subscription and its "a cycle" total
+    // could exceed the "Spent" figure directly above it — every other number on
+    // the money page is transfer-free, so this one being the exception read as
+    // the page contradicting itself.
+    if (t.category === "transfers") continue;
     (groups[t.merchant] ||= []).push(t);
   }
 

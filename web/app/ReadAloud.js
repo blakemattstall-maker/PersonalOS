@@ -73,7 +73,12 @@ export default function ReadAloud({ text, title, label = false, autoplay = false
 
   // Drawn rather than an emoji: 🔊 renders at a different size and baseline in
   // every browser, and next to a set type scale it read as a sticker.
-  const Glyph = () => (
+  //
+  // A plain JSX value, not a component defined during render. The latter gets a
+  // new function identity on every render, so React tears the <svg> down and
+  // rebuilds it each time `state` changes instead of patching the two paths that
+  // actually differ.
+  const glyph = (
     <svg
       viewBox="0 0 24 24"
       fill="none"
@@ -106,7 +111,7 @@ export default function ReadAloud({ text, title, label = false, autoplay = false
         }`}
         aria-label={state === "speaking" ? "Stop reading" : "Read aloud"}
       >
-        <Glyph />
+        {glyph}
         {label && (
           <span>{state === "loading" ? "Preparing" : state === "speaking" ? "Stop" : "Listen"}</span>
         )}

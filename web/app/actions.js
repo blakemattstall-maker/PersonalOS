@@ -111,16 +111,13 @@ export async function unarchiveProjectAction(id) {
 }
 
 
+// The last caller in this file still fetching over HTTP, which it no longer has
+// any reason to do — the handler is in this deployment. It also meant push setup
+// depended on BACKEND_URL and BACKEND_KEY still being set on a project that no
+// longer needs either: unset one and this became fetch("undefined/api/...").
 export async function getVapidKeyAction() {
 
-  const key = process.env.BACKEND_KEY;
-
-  const res = await fetch(`${process.env.BACKEND_URL}/api/ingest/push`, {
-    cache: "no-store",
-    headers: key ? { "x-pos-key": key } : {}
-  });
-
-  return res.json();
+  return backendGet("/api/ingest/push");
 
 }
 
@@ -128,6 +125,15 @@ export async function getVapidKeyAction() {
 export async function subscribeToPushAction(subscription) {
 
   const result = await backendPost("/api/ingest/push", { subscription });
+
+  // Surfaced rather than returned-and-ignored. This call silently failed for as
+  // long as the in-process route was missing, and because the caller threw the
+  // result away the settings page said "On" every time — the subscription was
+  // never stored and no notification could ever arrive. A registration that did
+  // not register has to be an error the user sees.
+  if (!result?.success) {
+    throw new Error(result?.error || "Couldn't save the subscription.");
+  }
 
   return result;
 

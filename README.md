@@ -179,6 +179,42 @@ short version:
     former's third argument is exactly "what to render before hydration",
     which is the actual problem being solved. See `DeepThoughtThread.js`'s
     `selfName`.
+14. **Removing the HTTP hop removed a JSON serialisation nothing knew it
+    depended on.** `res.json()` used to flatten everything on the way out — a
+    `Date` became an ISO string, an `undefined` key vanished. Calling the
+    handler in-process hands the page the live object graph instead, and a
+    `Date` rendered as a React child throws "Objects are not valid as a React
+    child": with no `error.js` anywhere, the whole page becomes "This page
+    couldn't load". This is how the money page died — `lib/simplefin.js` returns
+    `date` as a real `Date`, and the finance handler's `recent` list passed it
+    straight through. It had rendered a raw ISO string for as long as the hop
+    existed, so it looked cosmetic right up to the moment it wasn't.
+    `app/backend.js` now round-trips every payload through JSON, so the
+    in-process path is provably identical to the HTTP one rather than intended
+    to be. Guarded by `tests/money-page.test.js`.
+15. **A path under `/api/` that is not `/api/[resource]/` needs its own entry in
+    `app/backend.js`.** `parsePath` only ever produced a `resource`, so
+    `backendPost("/api/ingest/push")` asked the `[resource]` handler for a
+    resource named "ingest" and got `{"error":"Unknown resource: ingest"}` every
+    single time — no push subscription was ever stored. The HTTP route worked
+    throughout, which is why the consolidation didn't notice, and `PushSetup.js`
+    discarded the result, so Settings cheerfully reported "On". Two lessons, and
+    the second is the bigger one: **a server action whose result is thrown away
+    cannot fail.** If a write matters, check what it returned.
+16. **SimpleFIN's `errors` array is not only errors.** It also carries
+    advisories about the shape of *your own request* — any window over 45 days is
+    commented on, every call — and those were being reported to the user as bank
+    connection problems and fed to the finance model, which made the one warning
+    that matters (a bank needing re-auth) indistinguishable from permanent
+    noise. `realWarnings()` in `lib/simplefin.js` filters them, on read as well
+    as on write, and logs them so a genuine future cap is still visible.
+17. **Two summarisers over the same transactions will drift, and sharing a route
+    does not stop them.** `tools/finances.js` had its own totals that had never
+    heard of the `transfers` category, so the ask box at the bottom of the money
+    page answered "$2,159.91 spent" about the same 30 days the chart above it
+    labelled "$714.98". Both were deliberately served by one route so they
+    couldn't disagree. Sharing an entry point is not sharing the arithmetic —
+    share the function.
 
 ## Where to look next
 

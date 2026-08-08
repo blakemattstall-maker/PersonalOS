@@ -3,6 +3,7 @@ import { DateTime } from "luxon";
 import { getFinancialData } from "../lib/simplefin.js";
 import { getUserTimezone, getProfileBio } from "../lib/profile.js";
 import { MODELS } from "../lib/models.js";
+import { categorizeByRule } from "../lib/categorize.js";
 
 
 // Every number here is computed in code, never by the model. Asking a language
@@ -14,9 +15,30 @@ import { MODELS } from "../lib/models.js";
 const money = n => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
 
 
+// A transfer is not a purchase, and this file used to be the only place in the
+// app that disagreed.
+//
+// The money page's summariser (lib/categorize.js) has always skipped the
+// `transfers` category; this one totalled every negative row. On live data that
+// put three Zelle payments — $1,444.93 of it — inside "money out", so the ask
+// box at the bottom of the money page answered "$2,159.91" about the same 30
+// days the chart immediately above it labelled "$714.98". Both were served by
+// this one route specifically so they could not drift, and they drifted anyway,
+// because sharing an entry point is not the same as sharing the arithmetic.
+//
+// Rules only, deliberately: categorizeByRule is free, synchronous and
+// deterministic, and the transfer patterns (zelle, venmo, cash app, atm,
+// withdrawal) are rules rather than model guesses. Asking a model would make
+// answering a question about money cost a second classification call and could
+// return a different answer than the chart did.
+const isTransfer = (t) => categorizeByRule(t) === "transfers";
+
+
 function summarize(accounts, tz) {
 
-  const all = accounts.flatMap(a => a.transactions);
+  const all = accounts.flatMap(a => a.transactions).filter(t => !isTransfer(t));
+
+  const transfers = accounts.flatMap(a => a.transactions).filter(isTransfer);
 
   // Positive is money in, negative is money out — sum them separately rather
   // than netting, because "spent $1,400 while $1,500 came in" is a very
@@ -57,7 +79,21 @@ function summarize(accounts, tz) {
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
     .slice(0, 8);
 
-  return { totalSpent, totalIn, spendCount: spend.length, topMerchants, largest };
+  // Kept and passed on rather than simply dropped. "How much did I send my aunt
+  // this month" is a real question about real money leaving the account, and
+  // excluding transfers from `totalSpent` must not also make them unanswerable —
+  // it only means they are not filed as purchases.
+  const transfersOut = transfers.filter(t => t.amount < 0);
+
+  return {
+    totalSpent,
+    totalIn,
+    spendCount: spend.length,
+    topMerchants,
+    largest,
+    transfersOut,
+    transferTotal: transfersOut.reduce((s, t) => s + Math.abs(t.amount), 0)
+  };
 
 }
 
@@ -97,6 +133,10 @@ export async function queryFinances({ question, days = 30 } = {}) {
     .map(t => `  ${money(t.amount)} on ${DateTime.fromJSDate(t.date).setZone(tz).toFormat("MMM d")} — ${t.description.slice(0, 45)}`)
     .join("\n");
 
+  const transfers = s.transfersOut
+    .map(t => `  ${money(t.amount)} on ${DateTime.fromJSDate(t.date).setZone(tz).toFormat("MMM d")} — ${(t.payee || t.description || "").slice(0, 45)}`)
+    .join("\n");
+
 
   const response = await openai.chat.completions.create({
 
@@ -118,7 +158,8 @@ add, re-total or estimate anything yourself.
 Balances (total ${money(netWorth)}):
 ${balances}
 
-Last ${days} days:
+Last ${days} days (transfers excluded from these totals — they are listed
+separately below, because moving money is not buying something):
   Money in:    ${money(s.totalIn)}
   Money out:   ${money(s.totalSpent)}
   Net:         ${money(s.totalIn - s.totalSpent)}
@@ -129,10 +170,17 @@ ${merchants || "  (nothing)"}
 
 Largest single purchases:
 ${biggest || "  (none)"}
+
+Transfers out (Zelle, Venmo, cash withdrawals, moves between own accounts) —
+${money(s.transferTotal)} in total, NOT counted in "Money out" above:
+${transfers || "  (none)"}
 ${warnings.length ? `\nBank connection warnings: ${warnings.join("; ")}` : ""}
 
 RULES:
 - Answer only from the figures above. Never invent a number or a merchant.
+- "Spent" means the Money out figure, which excludes transfers. If a transfer is
+  what the question is actually about, answer from the transfers list and say
+  which it is — never silently add the two together into a new total.
 - The user has told you to be blunt and hold nothing back. If the spending
   contradicts something they've said they want, say so plainly — that is the
   single most useful thing you can do here. Do not moralise or lecture.

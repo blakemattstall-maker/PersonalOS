@@ -44,8 +44,15 @@ function moneyParts(n, { sign = false } = {}) {
 function shortDate(iso) {
   // Parsed as parts rather than through Date, so a yyyy-MM-dd string is not
   // shifted a day west by being read as UTC midnight. Trap #1, again.
-  const [y, m, d] = String(iso).split("-").map(Number);
-  if (!y || !m || !d) return iso;
+  //
+  // The fallback returns a string rather than the input, because the input is
+  // rendered as a React child: when the finance handler leaked a Date object
+  // here it took the whole page down with "Objects are not valid as a React
+  // child". The handler is the fix; this makes the failure a bad-looking date
+  // instead of a blank error screen.
+  const text = String(iso);
+  const [y, m, d] = text.split("-").map(Number);
+  if (!y || !m || !d) return text;
   return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 

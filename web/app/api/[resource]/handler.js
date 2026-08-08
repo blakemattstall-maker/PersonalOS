@@ -582,6 +582,14 @@ async function finance(req, res) {
   // Dates are compared as yyyy-MM-dd strings rather than instants, the same
   // rule trap #1 established for Google Tasks — a transaction dated today must
   // not fall out of the 7-day window because of a timezone offset.
+  // lib/simplefin.js hands back `date` as a real Date object, and every date
+  // leaving this handler has to be a yyyy-MM-dd string before it does. Not for
+  // tidiness: the dashboard calls this function in-process (app/backend.js), so
+  // there is no JSON serialisation between here and the page to stringify a
+  // Date on the way. `recent` used to pass `t.date` straight through, which
+  // rendered as the raw ISO string back when the dashboard still fetched over
+  // HTTP and became "Objects are not valid as a React child" the moment that
+  // hop was removed — the whole money page, on Next's built-in error screen.
   const dayKey = (value) => new Date(value).toISOString().slice(0, 10);
 
   const cutoffs = {};
@@ -602,7 +610,7 @@ async function finance(req, res) {
         .filter(t => t.category !== "transfers")
         .sort((a, b) => new Date(b.date) - new Date(a.date))
         .slice(0, 12)
-        .map(t => ({ date: t.date, merchant: t.merchant, amount: Number(t.amount), category: t.category }))
+        .map(t => ({ date: dayKey(t.date), merchant: t.merchant, amount: Number(t.amount), category: t.category }))
     };
 
   }

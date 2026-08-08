@@ -26,8 +26,44 @@ import supabase from "./supabase.js";
 const CACHE_MAX_AGE_HOURS = 12;
 
 // Wide enough that every real caller's window (7, 30, 90 days) is a slice of
-// what's cached, not a cache miss.
-const CACHE_WINDOW_DAYS = 100;
+// what's cached, not a cache miss — and no wider, because SimpleFIN refuses
+// anything past 90 days.
+//
+// This was 100, which asked for more history than SimpleFIN will serve. It
+// returned the same 89 days either way, so no data was ever missing; what it
+// cost was a permanent `errors` entry ("Requested date range exceeds limit of 90
+// days and was capped") on every single fetch. Measured against the live API:
+// 90 still trips that notice and 89 does not, so the real boundary is 89.
+const CACHE_WINDOW_DAYS = 89;
+
+
+// SimpleFIN's `errors` array is not only errors.
+//
+// Genuine per-institution problems arrive here — a bank needing re-auth is the
+// one that matters — but so do advisories about the shape of *our own request*,
+// and those fire on every call: any window over 45 days is commented on no
+// matter what. That noise reached the user. It went into the finance model's
+// prompt under "Bank connection warnings", which invites it to report a bank
+// problem that does not exist, and it was the first line shown when the bank was
+// genuinely unreachable. Worst of all it made a real re-auth warning
+// indistinguishable from the permanent one nobody needs to read.
+//
+// Advisories are logged rather than dropped: if SimpleFIN ever does enforce the
+// 45-day recommendation, the 90-day range on the money page stops being
+// coverable, and this line in the logs is the warning shot.
+function realWarnings(errors) {
+
+  const all = (errors || []).map(String);
+
+  const advisories = all.filter(e => /date range/i.test(e));
+
+  if (advisories.length > 0) {
+    console.warn("SIMPLEFIN REQUEST ADVISORY (not a bank problem):", advisories.join("; "));
+  }
+
+  return all.filter(e => !/date range/i.test(e));
+
+}
 
 
 function credentials() {
@@ -86,8 +122,9 @@ async function fetchLive() {
 
   // SimpleFIN reports per-institution problems here rather than failing the
   // request — a bank needing re-auth shows up as an error string while other
-  // accounts still return fine.
-  const warnings = data.errors || [];
+  // accounts still return fine. Advisories about our own query are stripped;
+  // see realWarnings().
+  const warnings = realWarnings(data.errors);
 
   const accounts = (data.accounts || []).map(account => ({
     id: account.id,
@@ -215,7 +252,10 @@ export async function getFinancialData({ days = 30 } = {}) {
 
         return {
           ...sliceToWindow(row.payload, days),
-          warnings: [...(row.warnings || []), `Couldn't refresh from the bank just now (${error.message}) — showing data from ${row.fetched_at}.`],
+          // Filtered on the way out as well as on the way in, so the rows
+          // already sitting in finance_cache with the old advisory baked into
+          // them stop surfacing it now rather than in twelve hours' time.
+          warnings: [...realWarnings(row.warnings), `Couldn't refresh from the bank just now (${error.message}) — showing data from ${row.fetched_at}.`],
           days,
           fetchedAt: row.fetched_at,
           cached: true,
@@ -232,7 +272,7 @@ export async function getFinancialData({ days = 30 } = {}) {
 
   return {
     ...sliceToWindow(row.payload, days),
-    warnings: row.warnings || [],
+    warnings: realWarnings(row.warnings),
     days,
     fetchedAt: row.fetched_at,
     cached: true
