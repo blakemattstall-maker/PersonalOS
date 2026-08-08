@@ -18,7 +18,10 @@
 
 import { backendGet } from "../web/app/backend.js";
 
-const OLD_HOST = "https://personal-os-blake-007c.vercel.app";
+// The hostname the previous deployment answered on. Set LEGACY_HOST to check
+// that it still forwards; the script skips those assertions when it is unset,
+// so the value never has to be committed.
+const OLD_HOST = process.env.LEGACY_HOST || "";
 
 const RESOURCES = [
   "/api/brief/latest?peek=true",
@@ -82,7 +85,7 @@ console.log("\n=== 2. the same calls against the deployed two-project setup ===\
 let remoteTotal = 0;
 let remoteOk = 0;
 
-for (const path of RESOURCES.slice(0, 6)) {
+for (const path of OLD_HOST ? RESOURCES.slice(0, 6) : []) {
 
   const started = Date.now();
 

@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
-import { animate, stagger, createTimeline, createDrawable, reducedMotion, utils } from "../motion.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { stagger, createTimeline, createDrawable, reducedMotion, utils } from "../motion.js";
+import Intro from "./Intro.js";
 
 
 // Twelve fixed points and the edges between them, laid out by hand rather than
 // by a force simulation. A simulation would cost a physics loop on first paint
 // for a result nobody can tell apart from this, and it would put the points
-// somewhere slightly different on every load — which is the opposite of a
-// wordmark.
+// somewhere slightly different on every load, which is the opposite of what a
+// wordmark should do.
 const POINTS = [
   [42, 96], [104, 44], [150, 118], [96, 168], [196, 74], [232, 148],
   [286, 62], [300, 132], [252, 196], [166, 202], [58, 176], [212, 26]
@@ -22,22 +23,22 @@ const EDGES = [
 ];
 
 
-// The opening.
-//
-// The constellation is not decoration — it is the thing the rest of the page is
-// about, stated before it is explained. Points appear one at a time, then the
-// edges draw between them, which is exactly the order the real system does it
-// in: entities first, links second, and never a link to something that isn't
-// there yet.
 export default function Hero() {
 
   const ref = useRef(null);
+
+  // The hero holds still until the opening sequence hands over, so its entrance
+  // is something you watch rather than something that already happened behind
+  // an overlay. When there is no intro, this flips immediately.
+  const [ready, setReady] = useState(false);
+
+  const handleIntroDone = useCallback(() => setReady(true), []);
 
   useEffect(() => {
 
     const root = ref.current;
 
-    if (!root) return;
+    if (!root || !ready) return;
 
     const words = root.querySelectorAll("[data-word]");
     const dots = root.querySelectorAll("[data-dot]");
@@ -88,10 +89,12 @@ export default function Hero() {
       utils.set([...words, ...dots, ...lines, ...tail], { opacity: 1, translateY: 0, scale: 1 });
     };
 
-  }, []);
+  }, [ready]);
 
   return (
     <header ref={ref} className="relative overflow-hidden">
+
+      <Intro onDone={handleIntroDone} />
 
       <div className="mx-auto w-full max-w-[46rem] px-5 pt-16 pb-4 sm:pt-24">
 
@@ -105,7 +108,7 @@ export default function Hero() {
               margin doing the spacing the headline is a single run-on word to
               a screen reader, to anyone copying it, and to anything reading
               the page for a link preview. */}
-          {["It", "reads", "the", "day", "before", "you", "do."].map((word, i) => (
+          {["Everything", "you", "said", "you'd", "do,", "already", "sorted."].map((word, i) => (
             <span key={i}>
               <span data-word className="inline-block">{word}</span>
               {i < 6 ? " " : ""}
@@ -114,15 +117,16 @@ export default function Hero() {
         </h1>
 
         <p data-tail className="mt-6 max-w-[34rem] text-[1.05rem] leading-relaxed text-ink-soft">
-          One person&apos;s operating system. It captures what he says in passing,
-          files it, links it to everything it already knows, and interrupts him
-          only when something is genuinely waiting.
+          A personal operating system. Speak or type a single sentence and it is
+          parsed, dated, filed to your calendar, tasks and notes, and connected
+          to everything already on record. Each morning it reads all of that back
+          as a short briefing, and during the day it reaches you only when
+          something genuinely needs an answer.
         </p>
 
         <p data-tail className="mt-3 max-w-[34rem] text-[0.9rem] leading-relaxed text-ink-soft">
-          You don&apos;t have an account here, and that&apos;s fine — this page is the
-          tour. Everything below is the real system, described honestly, with the
-          mechanism folded in underneath each part.
+          This page is a walkthrough of how each part works. Every section opens
+          up into the mechanism behind it, so you can read it either way.
         </p>
 
         <div data-tail className="mt-8 flex flex-wrap items-center gap-3">
@@ -130,22 +134,22 @@ export default function Hero() {
             href="#capture"
             className="inline-flex items-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-3 text-[0.88rem] font-medium text-paper transition-opacity hover:opacity-90"
           >
-            Take the tour
+            See how it works
             <span aria-hidden="true">↓</span>
           </a>
           <Link
             href="/login"
             className="inline-flex items-center rounded-[var(--r-pill)] border border-[var(--line)] px-5 py-3 text-[0.88rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
           >
-            I have a passphrase
+            Sign in
           </Link>
         </div>
 
       </div>
 
-      {/* Sits behind the type at low contrast. It is aria-hidden because it
-          says nothing a screen reader can use — the section it foreshadows
-          explains the same idea in words. */}
+      {/* Sits below the type at low contrast, foreshadowing the section on how
+          records are connected. It is aria-hidden because it says nothing a
+          screen reader can use: that section explains the same idea in words. */}
       <div className="pointer-events-none mx-auto w-full max-w-[46rem] px-5 pb-8">
         <svg
           viewBox="0 0 340 230"

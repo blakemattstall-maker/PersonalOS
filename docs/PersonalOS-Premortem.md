@@ -498,7 +498,7 @@ Six providers, single region, no queue, no retry layer, no circuit breaker. Only
 SimpleFIN failure is explicitly caught and degraded (`financeSignal` → `null`).
 
 Everything else propagates. `getProfile()` returning `null` on a Supabase blip silently
-falls back to `America/Los_Angeles`, which — for a user documented as moving to Illinois
+falls back to `America/Los_Angeles`, which — for a user documented as changing timezone
 on 2026-08-08 — means every relative date resolves two hours off, quietly, with no error.
 
 ---
@@ -705,7 +705,7 @@ incrementally, in order, without breaking a working system.*
 > changes, `cd web && npx vercel --prod --yes` and load `/`, `/data`, `/settings`.
 > Never report a step complete without saying what you actually ran.
 >
-> **Tone:** the builder is 19, no formal CS background, wants high-level "what does this
+> **Tone:** the user has no formal CS background, wants high-level "what does this
 > file do and how does it connect" explanations rather than line-by-line walkthroughs,
 > and has a standing instruction: be blunt, hold nothing back, never soften a finding.
 

@@ -39,7 +39,7 @@ test("trap #1: due-vs-today comparison is a string compare, never an instant com
 
   const due = taskDueDate("2026-08-05T00:00:00.000Z");
 
-  // Today, for a user in Illinois, late in the evening — the moment the
+  // Today, for a user in US Central time, late in the evening — the moment the
   // instant-comparison version of this got it wrong.
   const today = DateTime.fromISO("2026-08-05T23:30:00", { zone: "America/Chicago" });
 

@@ -14,7 +14,7 @@ import path from "node:path";
 // (waitUntil), the ReferenceError never reached the user. buildPlan() had
 // already returned "Building your plan now" and the client had nothing left
 // to await. The background job died silently, the thread reset itself to
-// ready_to_build, and from the dashboard it looked exactly like Blake
+// ready_to_build, and from the dashboard it looked exactly like the user
 // described it: loaded for a few seconds, stopped, no confirmation, no plan.
 //
 // This class of bug — a parameter silently dropped between two functions,

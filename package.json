@@ -7,18 +7,10 @@
     "test": "node --test \"tests/*.test.js\"",
     "test:routing": "node tests/routing.eval.mjs"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/blakemattstall-maker/PersonalOS.git"
-  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
-  "bugs": {
-    "url": "https://github.com/blakemattstall-maker/PersonalOS/issues"
-  },
-  "homepage": "https://github.com/blakemattstall-maker/PersonalOS#readme",
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
     "@vercel/functions": "^3.7.7",

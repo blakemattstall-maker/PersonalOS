@@ -196,7 +196,7 @@ export function Divider() {
 /* ── Controls ───────────────────────────────────────────────────────────── */
 
 // `ember` is deliberately not the default and is not "primary". It is for
-// controls that clear something off Blake's plate. Saving a setting is `solid`.
+// controls that clear something off the user's plate. Saving a setting is `solid`.
 const BTN = {
   base: "inline-flex items-center justify-center gap-2 rounded-[var(--r-pill)] font-medium transition-colors disabled:opacity-45 disabled:cursor-not-allowed",
   size: {

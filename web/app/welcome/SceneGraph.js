@@ -5,22 +5,21 @@ import { animate, stagger, createTimeline, createDrawable, reducedMotion, utils 
 import { Stage, TapHint } from "./parts.js";
 
 
-// A real slice of the graph, shrunk.
+// A slice of the graph, shrunk, built from invented sample records.
 //
-// Every node here is a row in a different table — people, projects, memories,
-// transactions, places, events, intentions — and the whole point of the
-// section is that those used to be islands. A person knew nothing about a
-// charge; a charge belonged to no project; an evening set aside belonged to
-// no one.
+// Every node here comes from a different table: contacts, projects, notes,
+// transactions, places, events, intentions. The point of the section is that
+// those are normally kept apart. A contact knows nothing about a charge, a
+// charge belongs to no project, and an evening set aside belongs to nobody.
 const NODES = [
-  { id: 0, label: "Cooper",             type: "person",      x: 58,  y: 54 },
-  { id: 1, label: "Sponsorship deck",   type: "project",     x: 182, y: 42 },
-  { id: 2, label: "$84.00 Staples",     type: "transaction", x: 306, y: 76 },
+  { id: 0, label: "Priya Raman",         type: "person",      x: 58,  y: 54 },
+  { id: 1, label: "Partner deck",        type: "project",     x: 182, y: 42 },
+  { id: 2, label: "$146.80 Northline",   type: "transaction", x: 306, y: 76 },
   { id: 3, label: "“Printed the decks”", type: "memory",      x: 296, y: 170 },
-  { id: 4, label: "Dinner, Thu 7pm",    type: "event",       x: 176, y: 148 },
-  { id: 5, label: "Mom",                type: "person",      x: 54,  y: 152 },
-  { id: 6, label: "Milner Library",     type: "place",       x: 82,  y: 248 },
-  { id: 7, label: "Edit the reel",      type: "intention",   x: 240, y: 250 }
+  { id: 4, label: "Dinner, Thu 7pm",     type: "event",       x: 176, y: 148 },
+  { id: 5, label: "Dana Whitfield",      type: "person",      x: 54,  y: 152 },
+  { id: 6, label: "Kestrel Coworking",   type: "place",       x: 82,  y: 248 },
+  { id: 7, label: "Onboarding rewrite",  type: "intention",   x: 240, y: 250 }
 ];
 
 const EDGES = [
@@ -210,7 +209,7 @@ export default function SceneGraph() {
           </svg>
         </div>
 
-        {/* The caption is the accessible version of the highlight — the graph
+        {/* The caption is the accessible version of the highlight. The graph
             above says it in position and colour, this says it in words. */}
         <div className="mt-4 min-h-[5.5rem] rounded-item bg-[var(--sunken)] px-4 py-3" aria-live="polite">
           {chosen ? (
@@ -233,10 +232,10 @@ export default function SceneGraph() {
             </>
           ) : (
             <p className="text-[0.85rem] leading-relaxed text-ink-soft">
-              Eight rows from seven different tables. Tap one to see what it is
-              attached to — a charge to the project it paid for, an evening to
-              the person you&apos;re spending it with, a library to both of the
-              things you actually do there.
+              Eight records from seven different tables. Tap one to see what it
+              is attached to: a charge to the project it paid for, an evening to
+              the person you are spending it with, a workspace to both of the
+              things that actually get done there.
             </p>
           )}
         </div>

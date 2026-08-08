@@ -220,7 +220,7 @@ export default function DeepThoughtThread({ thought, turns }) {
           {isBuilding ? (
 
             /* Sunken, not ember. The app is working — nothing is waiting on
-               Blake here, and lighting this up in the one colour that means
+               the user here, and lighting this up in the one colour that means
                "act on me" would teach him to ignore it. */
             <div className="mt-4 rounded-item bg-[var(--sunken)] px-4 py-3.5">
               <div className="pos-display flex items-center gap-2 text-[0.95rem] text-ink">

@@ -5,49 +5,49 @@ import { animate, stagger, reducedMotion, utils } from "../motion.js";
 import { Stage, TapHint } from "./parts.js";
 
 
-// Three things somebody might actually say into a phone, and what the system
-// makes of each.
+// Three kinds of sentence, and what the system makes of each.
 //
-// The examples are chosen to show the part that is easy to get wrong rather
-// than the part that is easy to demo. Every one contains a relative date, and
-// the resolved column is the point: "tomorrow" is resolved against the moment
-// it was said and stored as a fixed date. This app shipped the other way round
-// once and spent a week telling its owner that an internship he had already
-// finished was ending tomorrow.
+// The examples are chosen to show the part that is hard rather than the part
+// that demos well. Every one contains a relative date, and the resolved column
+// is the point: "tomorrow" is fixed to a calendar date at the moment it is
+// said, never stored as the word. Everything here is invented sample data.
 const CAPTURES = [
   {
-    said: "Remind me to send Cooper the sponsorship deck tomorrow — and dinner with Mom is Thursday at 7.",
-    spoken: "Thursday, 6 August, 4:12pm",
+    tab: "A reminder",
+    said: "Remind me to send Priya the partner deck tomorrow, and dinner with Dana is Thursday at 7.",
+    spoken: "Tuesday, 3 June, 4:12pm",
     resolved: [
-      { from: "tomorrow", to: "Fri 7 Aug" },
-      { from: "Thursday at 7", to: "Thu 13 Aug, 7:00pm" }
+      { from: "tomorrow", to: "Wed 4 Jun" },
+      { from: "Thursday at 7", to: "Thu 5 Jun, 7:00pm" }
     ],
     items: [
-      { kind: "task", label: "Task", title: "Send Cooper the sponsorship deck", meta: "Due Fri 7 Aug · Google Tasks" },
-      { kind: "event", label: "Event", title: "Dinner with Mom", meta: "Thu 13 Aug 7:00pm · Google Calendar" },
-      { kind: "link", label: "Links", title: "Cooper · Mom", meta: "matched two people already on file" }
+      { kind: "task", label: "Task", title: "Send Priya the partner deck", meta: "Due Wed 4 Jun, added to your task list" },
+      { kind: "event", label: "Event", title: "Dinner with Dana", meta: "Thu 5 Jun 7:00pm, added to your calendar" },
+      { kind: "link", label: "Links", title: "Priya, Dana", meta: "matched two contacts already on record" }
     ]
   },
   {
-    said: "I keep saying I want to get the film reel edited before school starts and I keep not doing it.",
-    spoken: "Sunday, 2 August, 9:41pm",
+    tab: "An intention",
+    said: "I keep saying I want the onboarding walkthrough rewritten before the quarter closes and I keep not doing it.",
+    spoken: "Sunday, 1 June, 9:41pm",
     resolved: [
-      { from: "before school starts", to: "Mon 18 Aug" }
+      { from: "before the quarter closes", to: "Mon 30 Jun" }
     ],
     items: [
-      { kind: "intention", label: "Intention", title: "Get the film reel edited", meta: "Soft deadline Mon 18 Aug · will be nudged" },
-      { kind: "memory", label: "Memory", title: "Stated it twice without acting", meta: "second time in 11 days" },
-      { kind: "link", label: "Links", title: "→ Reel project", meta: "existing project, marked stalled" }
+      { kind: "intention", label: "Intention", title: "Rewrite the onboarding walkthrough", meta: "Soft deadline Mon 30 Jun, eligible for a reminder" },
+      { kind: "memory", label: "Note", title: "Stated twice without acting on it", meta: "second time in 11 days" },
+      { kind: "link", label: "Links", title: "Onboarding refresh", meta: "existing project, now marked stalled" }
     ]
   },
   {
-    said: "Just spent eighty four dollars at Staples printing the pitch decks, worth it.",
-    spoken: "Tuesday, 4 August, 1:07pm",
+    tab: "An expense",
+    said: "Just spent a hundred and forty six at Northline Print on the partner decks, worth it.",
+    spoken: "Thursday, 5 June, 1:07pm",
     resolved: [],
     items: [
-      { kind: "memory", label: "Memory", title: "Printed pitch decks at Staples", meta: "captured verbatim" },
-      { kind: "link", label: "Links", title: "→ $84.00 Staples", meta: "matched a real charge two days later" },
-      { kind: "link", label: "Links", title: "→ Sponsorship deck", meta: "project cost now $84 recorded" }
+      { kind: "memory", label: "Note", title: "Printed partner decks at Northline Print", meta: "captured word for word" },
+      { kind: "link", label: "Links", title: "$146.80 Northline Print", meta: "matched a real charge that cleared two days later" },
+      { kind: "link", label: "Links", title: "Partner deck", meta: "project spend now recorded at $146.80" }
     ]
   }
 ];
@@ -72,7 +72,7 @@ export default function SceneCapture() {
 
   // Re-runs on every selection, which is the whole interaction: the previous
   // result clears and the new one is built in front of you, in the order the
-  // pipeline actually produces it — text, then dates, then the filed items.
+  // pipeline actually produces it. Text, then dates, then the filed records.
   useEffect(() => {
 
     const root = outRef.current;
@@ -108,7 +108,7 @@ export default function SceneCapture() {
       <div className="mb-4 flex flex-wrap gap-2">
         {CAPTURES.map((c, i) => (
           <button
-            key={i}
+            key={c.tab}
             type="button"
             onClick={() => setIndex(i)}
             aria-pressed={i === index}
@@ -118,7 +118,7 @@ export default function SceneCapture() {
                 : "border border-[var(--line)] text-ink-soft hover:border-ink hover:text-ink"
             }`}
           >
-            {["A reminder", "A wish", "A receipt"][i]}
+            {c.tab}
           </button>
         ))}
       </div>
@@ -129,7 +129,7 @@ export default function SceneCapture() {
 
           <div data-part>
             <p className="pos-data text-[0.68rem] uppercase tracking-[0.12em] text-ink-soft">
-              What he said · {capture.spoken}
+              What was said, {capture.spoken}
             </p>
             <p className="mt-2 text-[1.05rem] leading-relaxed text-ink">
               &ldquo;{capture.said}&rdquo;
@@ -139,7 +139,7 @@ export default function SceneCapture() {
           {capture.resolved.length > 0 && (
             <div data-part className="mt-5">
               <p className="pos-data text-[0.68rem] uppercase tracking-[0.12em] text-ink-soft">
-                Dates pinned at capture
+                Dates fixed at the moment of capture
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {capture.resolved.map(r => (

@@ -133,7 +133,7 @@ const PROJECTS = {
     },
     {
       id: "fx-proj-2",
-      name: "Move to Illinois",
+      name: "Relocate for the new role",
       status: "active",
       description: null,
       next_action: "Confirm the truck booking — the quote expires Thursday.",

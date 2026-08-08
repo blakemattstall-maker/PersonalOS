@@ -78,7 +78,7 @@ export async function link({ from, to, relation = "mentions", confidence = 1, so
 
 
 // Everything touching one entity, in both directions. Direction is preserved
-// because "this memory mentions Cooper" and "Cooper is mentioned by this
+// because "this memory mentions a contact" and "that contact is mentioned by this
 // memory" are the same edge but not the same sentence.
 export async function neighbours({ type, id, relation = null }) {
 
@@ -132,7 +132,7 @@ export function findMentions(text, entities) {
       if (trimmed.length < 3) continue;
 
       // Whole word, case-insensitive. The \b on both sides is what stops
-      // "Jake" matching "Jakeb" and "Cooper" matching "Cooperative".
+      // "Sam" matching "Samuel" and "Art" matching "Cartwright".
       const pattern = new RegExp(`\\b${escape(trimmed)}\\b`, "i");
 
       if (pattern.test(text)) {

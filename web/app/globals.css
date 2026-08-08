@@ -3,10 +3,10 @@
 /* ─────────────────────────────────────────────────────────────────────────
    PersonalOS design tokens
 
-   Palette is the one Blake supplied, used with a rule rather than spread
+   Palette is the one the user supplied, used with a rule rather than spread
    evenly: slate and moss carry the structure, sage does borders and inactive
    tracks and never text, and EMBER IS RESERVED. Orange appears in exactly one
-   circumstance anywhere in this app — something is waiting on him. Not links,
+   circumstance anywhere in this app: something is waiting on you. Not links,
    not headings, not focus rings, not "primary" buttons that merely save a
    form. When the app is caught up there is no orange on screen at all, which
    is the whole point: an assistant whose job is to interrupt sparingly should

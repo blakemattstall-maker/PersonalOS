@@ -2,7 +2,7 @@
 //
 // Building a plan can reach into five different places, and the right set is
 // not the same every time — a plan for "how do I handle this conversation with
-// my co-founder" wants research and nothing else, while "launch the next VATHOS
+// a colleague" wants research and nothing else, while "launch the next
 // drop" wants the whole toolbox. Before this, every build did everything, so
 // the only way to avoid a pile of Google tasks was to not build the plan.
 //

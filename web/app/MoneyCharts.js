@@ -9,7 +9,7 @@ import { animate, stagger, createDrawable, countUp, reducedMotion, utils } from 
 // tokens the rest of the app is built from.
 //
 // Colour is the constrained part, and the constraint is deliberate. Ember is
-// reserved app-wide for one meaning — something is waiting on Blake — so it can
+// reserved app-wide for one meaning — something is waiting on the user — so it can
 // never be a series colour, which leaves the palette essentially two hues. That
 // is fine here, because spending categories are ranked by size: this is a
 // magnitude encoding, not an identity one, so a single-hue sequential ramp is

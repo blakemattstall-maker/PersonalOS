@@ -135,7 +135,7 @@ Return ONLY JSON:
   "should_nudge": boolean,
   "expired": boolean,
   "deliver": "morning" | "midday" | "afternoon" | "evening",
-  "topic": "three or four words naming what this is about, e.g. 'trifilm exit', 'vathos website'",
+  "topic": "three or four words naming what this is about, e.g. 'contract renewal', 'site relaunch'",
   "message": "A short, specific, blunt nudge, written like someone who actually
     remembers what you said and isn't going to dress it up — not a generic
     reminder template. Include a concrete next step. Null if should_nudge is

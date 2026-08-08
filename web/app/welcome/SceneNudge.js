@@ -5,36 +5,35 @@ import { createTimeline, stagger, sceneTimeline, utils } from "../motion.js";
 import { Stage } from "./parts.js";
 
 
-// What the nudge engine throws away.
+// What the reminder engine throws away.
 //
-// The interesting part of an assistant that can message you is not the
-// messaging. It is everything it decides not to send. This ran the naive way
-// for one morning and delivered three notifications about the same thing
-// before breakfast, all of them phrased "tomorrow", about a day that had
-// already happened.
+// The interesting part of a system that can message you is not the messaging.
+// It is everything it decides not to send. Run naively, this kind of engine
+// will happily deliver three notifications about the same thing before
+// breakfast, all of them phrased around a deadline that has already passed.
 //
-// The animation walks the actual pipeline in order: candidates, then dedupe,
-// then the urgency filter, then the per-run cap, then placement into the hour
-// of the day each one is most likely to be acted on.
+// The sequence below walks the real pipeline in order: candidates, then
+// deduplication, then the urgency filter, then the per-run cap, then placement
+// into the hour of day each one is most likely to be acted on. Sample data.
 const CANDIDATES = [
-  { id: 0, text: "Last day at Trifilm is Friday", note: "generated Wed", fate: "merge-target" },
-  { id: 1, text: "Last day at Trifilm is Friday", note: "generated Thu", fate: "duplicate" },
-  { id: 2, text: "Trifilm internship wraps Friday", note: "generated Fri", fate: "duplicate" },
-  { id: 3, text: "Reel still unedited — you said 11 days ago", note: "stalled intention", fate: "keep", at: "6:15pm" },
-  { id: 4, text: "Bodyweight down 1.4lb this week", note: "trend, nothing owed", fate: "below-threshold" },
-  { id: 5, text: "Cooper hasn't heard from you in 19 days", note: "cadence was 14", fate: "keep", at: "8:40am" }
+  { id: 0, text: "Partner deck is due Friday", note: "generated Wednesday", fate: "merge-target" },
+  { id: 1, text: "Partner deck is due Friday", note: "generated Thursday", fate: "duplicate" },
+  { id: 2, text: "Partner deck deadline lands Friday", note: "generated Friday", fate: "duplicate" },
+  { id: 3, text: "Onboarding rewrite still open, stated 11 days ago", note: "stalled intention", fate: "keep", at: "6:15pm" },
+  { id: 4, text: "Spending down 4% against last month", note: "trend, nothing owed", fate: "below-threshold" },
+  { id: 5, text: "Priya has not heard from you in 19 days", note: "cadence set to 14", fate: "keep", at: "8:40am" }
 ];
 
 
 function Row({ item }) {
 
   // Every badge a row can ever show is rendered from the start at opacity 0 and
-  // faded in, because a badge inserted mid-timeline would reflow its row and
+  // faded in, because a badge inserted mid-sequence would reflow its row and
   // shove the rest of the list down under the reader's eye.
   //
   // They are taken out of the flow to do it. The first version left them in the
-  // flex row, where `shrink-0` on three badges — two of them permanently
-  // invisible — ate enough width to wrap a one-line nudge onto five lines. An
+  // flex row, where `shrink-0` on three badges, two of them permanently
+  // invisible, ate enough width to wrap a one-line reminder onto five lines. An
   // element that is never seen is still an element that takes up space.
   const badge = "pos-data pointer-events-none absolute right-3 top-2.5 rounded-[6px] px-2 py-1 text-[0.65rem] opacity-0";
 
@@ -68,10 +67,10 @@ function Row({ item }) {
 
 
 const STEPS = [
-  "Six candidates from three different sources",
-  "Three say the same thing — merged into one",
-  "One is a trend, not a request — below the threshold you set",
-  "Two survive, each placed in the hour you actually act"
+  "Six candidates arrive from three different sources",
+  "Three say the same thing, so they collapse into one",
+  "One is a trend rather than a request, below the threshold you set",
+  "Two survive, each placed in the hour you are most likely to act"
 ];
 
 
@@ -91,17 +90,17 @@ export default function SceneNudge() {
       const dupes = pick("cand", [1, 2]);
       const trend = pick("cand", [4]);
       // Queried from the same root as the rows rather than through a second
-      // ref, so the timeline cannot be built against a half-mounted tree.
+      // ref, so the sequence cannot be built against a half-mounted tree.
       const steps = root.querySelectorAll("[data-step]");
 
       utils.set(all, { opacity: 0, translateY: 8 });
       utils.set(steps, { opacity: 0.25 });
 
-      const timeline = createTimeline({
-        defaults: { ease: "out(3)" },
-        loop: true,
-        loopDelay: 2600
-      });
+      // Plays once and holds on the finished state. It used to loop, which
+      // meant fading everything out and pausing before starting over, so the
+      // panel sat blank for seconds at a time and read as broken to anyone who
+      // scrolled to it a moment late.
+      const timeline = createTimeline({ defaults: { ease: "out(3)" } });
 
       timeline
         // 1. everything arrives
@@ -112,48 +111,36 @@ export default function SceneNudge() {
         //
         // They dim in place rather than being removed. Collapsing them out of
         // the list would leave a hole the height of two rows and shuffle
-        // everything below mid-sentence; the point being made — that these
-        // three are one thing — reads just as clearly at a quarter opacity.
-        .add(steps[0], { opacity: 0.25, duration: 300 }, "+=900")
+        // everything below mid-sentence; the point being made, that these three
+        // are one thing, reads just as clearly at a quarter opacity.
+        .add(steps[0], { opacity: 0.4, duration: 300 }, "+=900")
         .add(steps[1], { opacity: 1, duration: 300 }, "<<")
         .add(dupes, { opacity: 0.28, duration: 480, delay: stagger(90) }, "<<")
         .add(pick("merged", [1, 2]), { opacity: 1, duration: 380 }, "<<")
         .add(pick("merged", [0]), { opacity: 1, duration: 380 }, "-=180")
 
         // 3. the one nothing is owed on
-        .add(steps[1], { opacity: 0.25, duration: 300 }, "+=700")
+        .add(steps[1], { opacity: 0.4, duration: 300 }, "+=700")
         .add(steps[2], { opacity: 1, duration: 300 }, "<<")
         .add(pick("cut", [4]), { opacity: 1, duration: 300 }, "<<")
         .add(trend, { opacity: 0.3, duration: 460 }, "<<")
 
-        // 4. the survivors get an hour
-        .add(steps[2], { opacity: 0.25, duration: 300 }, "+=700")
+        // 4. the survivors get an hour, and the scene stops here
+        .add(steps[2], { opacity: 0.4, duration: 300 }, "+=700")
         .add(steps[3], { opacity: 1, duration: 300 }, "<<")
-        .add(pick("when", [5, 3]), { opacity: 1, scale: [0.9, 1], duration: 420, delay: stagger(140) }, "<<")
-
-        // 5. hold the result, then reset for the loop
-        //
-        // Every property touched above is returned to its start value here
-        // rather than relying on the loop to do it — a timeline that loops
-        // replays its tweens from wherever the elements happen to be.
-        .add(all, { opacity: 0, duration: 420 }, "+=1800")
-        .add(
-          [...pick("merged", [0, 1, 2]), ...pick("when", [3, 5]), ...pick("cut", [4])],
-          { opacity: 0, duration: 200 },
-          "<<"
-        )
-        .add(steps[3], { opacity: 0.25, duration: 200 }, "<<");
+        .add(pick("when", [5, 3]), { opacity: 1, scale: [0.9, 1], duration: 420, delay: stagger(140) }, "<<");
 
       return timeline;
 
     },
 
     {
-      // With motion off the scene is a static list of the six candidates and
-      // the four rules, which is the same information without the theatre.
+      // With motion off the scene is the finished state directly, which is the
+      // same information without the theatre.
       settleOnReduced: (root) => {
         utils.set(root.querySelectorAll("[data-cand]"), { opacity: 1, translateY: 0 });
         utils.set(root.querySelectorAll("[data-cand='1'], [data-cand='2']"), { opacity: 0.28 });
+        utils.set(root.querySelectorAll("[data-cand='4']"), { opacity: 0.3 });
         utils.set(root.querySelectorAll("[data-merged], [data-when], [data-cut]"), { opacity: 1 });
       }
     }

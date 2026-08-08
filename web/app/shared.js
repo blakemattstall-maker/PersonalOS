@@ -49,7 +49,7 @@ export function DeepThoughtBody({ content }) {
     <div className="mt-4 space-y-4">
 
       {/* Moss, not ember. A verdict is a conclusion the app has already
-          reached — the thing still waiting on Blake is the reply box further
+          reached — the thing still waiting on the user is the reply box further
           down, and that's where the one ember dot on this card lives. */}
       <div className="rounded-item bg-moss-wash px-4 py-3.5">
         <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-moss">

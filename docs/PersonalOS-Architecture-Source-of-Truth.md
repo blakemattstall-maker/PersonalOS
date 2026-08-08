@@ -176,9 +176,23 @@ Three constraints on that route, all load-bearing:
   the proxy matcher. Without that exclusion the gate redirects to a page that
   redirects to the gate — and the symptom is not an error, it is a browser that
   spins on the one URL the app exists to be shared as. There is a test for this.
-- **The ember rule still applies.** The tour uses moss for everything it
-  highlights and reserves ember for the one section about interruptions, because
-  the tour is also where that rule gets explained.
+- **It carries no personal data, and that is a standing rule.** Every name,
+  place, merchant and figure on the tour is invented. The link is handed to
+  people who are not the user, and the repository is public, so anything real on
+  that page is disclosed twice over. The same sweep removed identifying detail
+  from code comments and these docs.
+- **It describes techniques, not vendors.** The "how it is built" section names
+  the mechanisms (natural-key upserts, VAPID push, tiered model routing,
+  suspense-per-route) without listing the products underneath them.
+- **The tour opens with a full-screen title sequence** (`welcome/Intro.js`),
+  which assembles a graph and resolves it into the wordmark. It is hidden in the
+  markup and revealed by script, plays once per session, is skippable by click
+  or key, and never runs under reduced motion. The session flag is written when
+  it *finishes*, not when it starts, so an interrupted run replays instead of
+  being silently consumed.
+- **No scene loops.** Each one plays once and holds its finished state. The
+  first version looped with a delay between passes, which meant the panel sat
+  blank for seconds and read as broken to anyone who scrolled to it late.
 
 **Motion goes through `web/app/motion.js`, never anime.js directly.** anime.js
 (4.x, ~18KB gzipped, its own chunk) drives staggered card entry on the dashboard
@@ -211,7 +225,7 @@ scenes. The wrapper exists for three reasons:
 ### ✅ Resolved since v1.1
 1. Notes vs. memories — confirmed as separate (notes = things to look up, memories = facts about the user, intentions = a third, newer category for forward-looking statements).
 2. AI spend ceiling — explicitly declined a hard number; self-monitored via OpenAI's dashboard, auto-refill off (hard ceiling by construction).
-3. Brief cadence — resolved, daily ~6am Pacific (shifts with DST since the cron schedule is UTC-based — watch this, and watch `profiles.timezone` needing a manual update around 2026-08-08/09 when the builder returns to Illinois).
+3. Brief cadence — resolved, daily ~6am Pacific (shifts with DST since the cron schedule is UTC-based — watch this, and watch `profiles.timezone` needing a manual update around 2026-08-08/09 when the user changes timezone).
 4. Location tracking — explicitly declined, not deferred.
 5. Push notifications — Pushcut researched and declined on cost; native notification + Home Screen icon is the accepted fallback.
 

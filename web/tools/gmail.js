@@ -217,7 +217,7 @@ export async function draftEmail({ about, to, tone }) {
 //     to tell a real commitment from a newsletter.
 //   - Nothing is written to memory from here automatically. It returns what it
 //     found and the caller decides. An inbox is full of other people's claims,
-//     and treating those as facts about Blake is how a memory store fills up
+//     and treating those as facts about the user is how a memory store fills up
 //     with things that were never true.
 
 const INBOX_QUERY = "-in:chats -category:promotions -category:social -category:forums";
@@ -234,7 +234,7 @@ function headerMap(headers = []) {
 }
 
 
-// "Jon Ryder <jon@trifilm.com>" -> { name, email }
+// "Ada Lovelace <ada@example.com>" -> { name, email }
 function parseFrom(value = "") {
   const match = value.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
   if (match) return { name: match[1].trim(), email: match[2].trim().toLowerCase() };

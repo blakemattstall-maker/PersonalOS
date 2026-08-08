@@ -5,30 +5,31 @@ import { createTimeline, stagger, sceneTimeline, utils } from "../motion.js";
 import { Stage } from "./parts.js";
 
 
-// The division of labour that makes the morning brief trustworthy.
+// The division of labour that makes a generated briefing trustworthy.
 //
-// Everything on the left is computed in JavaScript from the calendar, the task
-// list, the people table and the bank feed. The model is handed those as
-// settled facts and asked only to decide what matters and say it well. It is
-// told, in the system prompt, not to do arithmetic — because a model that does
-// its own arithmetic will occasionally be wrong and will always sound certain.
+// Everything on the left is computed in ordinary code from the calendar, the
+// task list, the contact records and the transaction feed. The language model
+// is handed those as settled facts and asked only to decide what matters and
+// say it well. It is told in the system prompt not to do arithmetic, because a
+// model that does its own arithmetic will occasionally be wrong and will always
+// sound certain. Sample data throughout.
 const FACTS = [
-  "TODAY: Thursday, 7 August 2026",
+  "TODAY: Thursday, 5 June 2025",
   "CALENDAR (5.5h committed across 4):",
-  "  [meeting] 9:00am-10:30am Sponsor sync with Cooper",
-  "  [block]   11:00am-1:00pm Edit reel",
-  "  [meeting] 1:00pm-1:45pm Advisor check-in",
-  "  [personal] 7:00pm-9:00pm Dinner with Mom",
-  "  OVERLAPS: \"Edit reel\" runs into \"Advisor check-in\"",
-  "OVERDUE (1): Send Cooper the deck (due 2026-08-05)",
+  "  [meeting]  9:00am-10:30am Partner sync with Priya",
+  "  [block]    11:00am-1:00pm Onboarding rewrite",
+  "  [meeting]  1:00pm-1:45pm Design review",
+  "  [personal] 7:00pm-9:00pm Dinner with Dana",
+  "  OVERLAPS: \"Onboarding rewrite\" runs into \"Design review\"",
+  "OVERDUE (1): Send Priya the partner deck (due 2025-06-03)",
   "OPEN TASKS: 14",
-  "GONE QUIET: Cooper — 19d since contact, wanted every 14d"
+  "QUIET CONTACT: Priya, 19d since last contact, cadence set to 14d"
 ];
 
 const BRIEF = [
-  "The deck was due Tuesday and Cooper is in your calendar at nine, so that gets settled before it becomes a conversation about why it didn't.",
-  "The two hours you blocked for the reel run straight into the advisor check-in at one. One of them moves — the check-in is the one with another person's afternoon attached to it, so move the edit.",
-  "Nineteen days without contact and a meeting on the books is not a coincidence you should let him notice. Everything else today is genuinely fine."
+  "The partner deck was due Tuesday and Priya is on your calendar at nine, so that gets settled before it turns into a conversation about why it wasn't.",
+  "The two hours you blocked for the onboarding rewrite run straight into the design review at one. One of them has to move, and the review is the one with other people's afternoons attached to it, so move the rewrite.",
+  "Nineteen days without contact and a meeting on the books is not a coincidence worth letting her notice. Everything else today is genuinely fine."
 ];
 
 
@@ -50,22 +51,18 @@ export default function SceneBrief() {
       utils.set(sentences, { opacity: 0, translateY: 8 });
       utils.set(arrow, { opacity: 0 });
 
-      const timeline = createTimeline({
-        defaults: { ease: "out(3)" },
-        loop: true,
-        loopDelay: 3200
-      });
+      // Plays once and holds. An earlier version looped, which meant clearing
+      // the whole panel and waiting before starting again, so anyone who
+      // arrived a second late read the section as empty and broken. A scene
+      // that has finished should look finished.
+      const timeline = createTimeline({ defaults: { ease: "out(3)" } });
 
       timeline
-        // The facts land one at a time, in the order they're gathered.
+        // The facts land one at a time, in the order they are gathered.
         .add(lines, { opacity: 1, duration: 220, delay: stagger(95) })
         .add(arrow, { opacity: 1, duration: 400 }, "-=200")
         // Only then does anything get written.
-        .add(sentences, { opacity: 1, translateY: 0, duration: 620, delay: stagger(420) }, "-=100")
-        // Reset for the loop.
-        .add(sentences, { opacity: 0, duration: 500 }, "+=2600")
-        .add(lines, { opacity: 0.35, duration: 400 }, "<<")
-        .add(arrow, { opacity: 0, duration: 400 }, "<<");
+        .add(sentences, { opacity: 1, translateY: 0, duration: 620, delay: stagger(420) }, "-=100");
 
       return timeline;
 
@@ -88,7 +85,7 @@ export default function SceneBrief() {
 
         <div>
           <p className="pos-data mb-2 text-[0.68rem] uppercase tracking-[0.12em] text-ink-soft">
-            Computed in code — no model involved
+            Assembled in code, with no model involved
           </p>
           <div className="overflow-x-auto rounded-item bg-[var(--sunken)] px-3.5 py-3">
             <pre className="pos-data text-[0.68rem] leading-[1.7] text-ink sm:text-[0.72rem]">

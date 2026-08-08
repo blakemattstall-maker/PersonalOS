@@ -2,7 +2,7 @@
 --
 -- Run this once in the Supabase SQL editor (Dashboard -> SQL Editor -> New query).
 --
--- Blake's framing, not a resurrection of anything half-built: a people table
+-- the user's framing, not a resurrection of anything half-built: a people table
 -- other features reference — calendar events for someone, periodic check-in
 -- nudges keyed to a relationship — not a standalone feature with its own
 -- silo. Matches the existing pattern (S7 in the architecture doc): a direct

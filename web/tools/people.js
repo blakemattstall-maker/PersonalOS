@@ -10,7 +10,7 @@ import { mapWithConcurrency } from "../lib/async.js";
 import { MODELS } from "../lib/models.js";
 
 
-// Relationship management — Blake's framing, not a resurrection of anything
+// Relationship management — the user's framing, not a resurrection of anything
 // half-built: a people table other features reference, not a standalone
 // silo. Two things actually happen with a person record beyond "read it
 // back": an important date can become a real calendar event, and going

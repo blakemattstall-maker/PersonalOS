@@ -46,11 +46,11 @@ const RULES = [
 
   [/\b(cvs|walgreens|rite aid|pharmacy|dental|dentist|clinic|hospital|gym|planet fitness|lifetime|anytime fitness|supplement|gnc)\b/i, "health"],
 
-  [/\b(illinois state|university|tuition|bursar|textbook|chegg|coursera|student loan|nelnet|mohela|sallie mae)\b/i, "education"],
+  [/\b(university|college|tuition|bursar|textbook|chegg|coursera|student loan|nelnet|mohela|sallie mae)\b/i, "education"],
 
-  [/\b(rent|landlord|property|apartment|electric|comed|nicor|water bill|internet|xfinity|comcast|at&t|verizon|t-mobile)\b/i, "housing"],
+  [/\b(rent|landlord|property|apartment|electric|gas bill|water bill|internet|xfinity|comcast|at&t|verizon|t-mobile)\b/i, "housing"],
 
-  [/\b(vathos|shopify|squarespace|namecheap|godaddy|stripe|printful|alibaba|fragrance|packaging)\b/i, "business"],
+  [/\b(shopify|squarespace|namecheap|godaddy|stripe|printful|alibaba|fragrance|packaging)\b/i, "business"],
 
   [/\b(transfer|zelle|venmo|cash app|paypal|withdrawal|deposit to|atm)\b/i, "transfers"]
 
