@@ -149,6 +149,29 @@ short version:
     other animated element carries from the first byte of HTML. The fix was
     giving it that same class; the lesson is that "the effect will hide it
     before anyone notices" is never true — there is always a frame.
+12b. **Never remove or replace a DOM node React rendered.** React holds a
+    fiber pointing at it, and the next reconciliation of that subtree operates
+    on a node that is no longer there and throws. The root layout reconciles on
+    every `router.refresh()`, so nearly every server action triggers it. With no
+    `error.js` anywhere in this app that surfaces as Next's built-in "This page
+    couldn't load" on navigation and on most buttons, and a full reload always
+    appears to fix it. This shipped once, from `el.remove()` on the boot splash.
+    Add a class instead: React only patches `className` when the value it
+    rendered changes, so a class added from outside survives every re-render.
+    Guarded by `tests/welcome.test.js`.
+12c. **Never give an `IntersectionObserver` a fractional `threshold`.**
+    `intersectionRatio` is measured against the *element*, not the viewport, so
+    an element taller than `viewport / threshold` can never reach the ratio no
+    matter how far it is scrolled — the callback simply never fires. At 0.15
+    that is anything over ~4,400px, which is one long list. The symptom is a
+    tall permanently blank gap, not a slow animation. Use `threshold: 0` and let
+    a `rootMargin` bottom inset decide how eager the trigger is; that is correct
+    for an element of any height. Guarded by `tests/welcome.test.js`.
+12d. **Rounding matters once a component that does trigonometry becomes
+    `"use client"`.** `Math.cos`/`Math.sin` are not required to be correctly
+    rounded, and Node and the browser disagree in the last bits, so an SVG path
+    built from them hydrates with a mismatch on every single element. Round
+    coordinates (`toFixed(3)` is plenty) so both sides produce the same string.
 13. **`readPrefs().displayName` (or anything else read from `localStorage`
     that must differ from what the server rendered) belongs behind
     `useSyncExternalStore`, not a `useState` + `useEffect` pair.** The latter
