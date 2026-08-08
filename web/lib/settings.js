@@ -27,7 +27,14 @@ export const DEFAULTS = {
   // digest            — the daily digest, nothing else
   // digest_plus_urgent— the agreed default: one digest + genuinely urgent things
   // everything        — push anything the observer thinks is worth saying
-  interruption_level: "digest_plus_urgent"
+  interruption_level: "digest_plus_urgent",
+
+  // Whether a newly created Google Calendar event is coloured by what kind of
+  // thing it is (lib/eventKind.js's classifyEvent, mapped through KIND_COLOR)
+  // rather than the flat default. On by default because sorting by kind is the
+  // whole point; a request that names an explicit colour always wins over this
+  // regardless of the setting.
+  auto_color_events: true
 };
 
 

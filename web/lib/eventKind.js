@@ -28,6 +28,19 @@ const TITLE_SIGNALS = [
 ];
 
 
+// The Google Calendar colour each kind gets when auto-colouring is on
+// (lib/settings.js's auto_color_events). Names match lib/recurrence.js's
+// EVENT_COLORS table. Kept as one small map so changing an association is a
+// one-line edit rather than a change spread across files.
+export const KIND_COLOR = {
+  meeting: "peacock",
+  appointment: "banana",
+  block: "basil",
+  reminder: "lavender",
+  travel: "grape"
+};
+
+
 export function classifyEvent(event = {}) {
 
   const title = event.title || "";

@@ -5,6 +5,40 @@
 
 ---
 
+## What shipped Aug 8 — a batch of small fixes and features
+
+A punch list of user-reported bugs and small additions, all deployed together. Nothing here is architectural; see the fold and welcome-tour sections below for the bigger changes from the two prior sessions.
+
+**Fixed:**
+- Read-aloud was only on the brief and thread replies. Added to news cards (reads the full story, not just what's expanded), nudges, and prompts — anywhere there's more than a line or two of text to read.
+- News cards linked the headline to the source, but nothing said so. Added an explicit "Read the original at [source]" link in the expanded view.
+- Every Google Calendar event PersonalOS created was the same colour (Tomato/red — a deliberate choice to make app-created events identifiable, per the comment in `tools/googleCalendar.js`). Now colour-coded by kind via `lib/eventKind.js`'s existing `classifyEvent()`, mapped through a new `KIND_COLOR` table: meetings peacock, appointments banana, focus blocks basil, reminders lavender, travel grape. Toggle in Settings → Calendar, on by default, stored in the existing `app_settings` table (no new migration). An explicit colour request in the capture text still always wins.
+- Entrance animations only ran on the dashboard and money page. Now consistent across every page (news, people, history, practice, data, settings) via the same `Reveal` wrapper.
+- The welcome tour's hero title rendered at full opacity for one paint before its own effect hid it — visible as a pop-then-vanish-then-animate-in flash on every fresh visit. Root cause: it hid itself via a JS effect instead of the `.pos-reveal` CSS class everything else uses, so there was a real frame where it was on-screen unstyled. Fixed by giving it the same CSS-first-hidden treatment as the rest of the app.
+- Scroll-triggered animations (`revealChildren`, `countUp`, `sceneTimeline` in `app/motion.js`) fired too eagerly — a card started animating while still mostly below the fold. Thresholds raised across the board (0.08→0.15 with a deeper root margin for cards, 0.2→0.35 for counted numbers, 0.15→0.3 for full scenes).
+- `general_question` answers (the catch-all for "not a specific tool, but I want an answer") were push-notification-only, and iOS truncates and discards those. Now also filed as a `prompts` row so the full answer sits in the dashboard's "needs you" queue until read — same table `label_place` and the daily digest already use, so it gets read-aloud and dismiss for free.
+
+**Added:**
+- A boot splash (`#pos-boot` in `app/layout.js`, three of the same dots the thinking-indicator already uses) replaces the blank/black moment on first paint, on every route. No name, no wordmark — it fires on `/welcome` too, right before that page's own opening sequence. Held for a minimum 260ms so a fast connection doesn't get a one-frame flicker, hard-capped at 2500ms so a stuck DOMContentLoaded can't leave it on screen forever.
+- A per-user display name (Settings → Appearance → "What should it call itself?"), stored in `localStorage` via `app/prefs.js`, applied to the two thread-reply labels in `DeepThoughtThread.js` and the lock-screen media session title in `app/speech.js`. Read via `useSyncExternalStore` rather than a state-plus-effect, specifically so it doesn't trip `react-hooks/set-state-in-effect` and so the value can update live if changed in another tab. **This is cosmetic only** — the backend, the repo, the deploy target and every doc still say PersonalOS. See "What a real rebrand would take" below for the rest of it.
+- Money page: the Balance stat is now a `<details>` — tap it, see the per-account split. No client JS; it's a native disclosure. Category and merchant lists that used to hard-cut at 7/8 now show the same visible cutoff with a "N more" `<details>` underneath holding the rest. A Week/Month/90-days range switcher (real `<Link>` navigation to `?days=`, not client state — same pattern as every other tab), capped at 90 because `lib/simplefin.js`'s cache only holds a 100-day window; a "year" option would have silently lied. An "Ask about your money" box wired to the *same* `queryFinances()` in `tools/finances.js` the Shortcut's `query_finances` tool already calls — one function, two entry points, so the answer is never a second opinion.
+- `web/app/fixtures.js` gained a `/api/finance` (any `days`) and `/api/settings` fixture. Previously the money and settings pages couldn't be design-reviewed locally at all (`POS_FIXTURES=1` only covered brief/prompts/nudges/projects) — every local preview just showed the empty state. Real going forward, not just for this session.
+
+**What a real rebrand would take**, if the display-name field above stops being enough:
+1. `app/layout.js` — `metadata.title`, `metadata.appleWebApp.title`
+2. `public/manifest.json` — `name`, `short_name`
+3. `public/icon.svg` and the apple-touch-icon
+4. `app/login/page.js` — the hardcoded h1
+5. The two Vercel project names and their generated hostnames (`web-liart-two-12.vercel.app` currently) — changing these breaks the iOS Shortcut, which is hand-edited on the phone and not in version control
+6. `README.md`, both architecture docs, `package.json`'s `name` field
+7. A new domain, if the vercel.app hostname itself is the thing being replaced
+
+None of this is hard, all of it is mechanical, and none of it was worth doing speculatively — the display-name field covers the actual ask ("what does it call itself when it's talking to you") without touching anything that would break the Shortcut or require a redeploy of the forwarder project.
+
+**Verification note:** the money page and settings toggle were checked against `POS_FIXTURES=1` locally, forcing the reveal/animation classes to their settled state to inspect layout without racing `IntersectionObserver`/anime.js timing in a backgrounded browser tab (see the pre-mortem doc's note on this limitation). The Calendar auto-color toggle round-trips through `saveSettingsAction` → `revalidatePath("/settings")` exactly like the pre-existing interruption-level control; in this local environment (no `SUPABASE_URL`), both silently fail to persist and the revalidated fetch returns the default, so the toggle visibly "reverts" after a save — this is a property of the credential-less local environment, not new behaviour, and does not happen in production where the write actually lands.
+
+---
+
 ## About the builder
 
 - The single user of this system. Full profile lives in `profiles.bio` in Supabase and is fed to every reasoning tool via `buildRichContext()`. **Read the field, don't re-derive it.**

@@ -3,7 +3,8 @@ import { getUserTimezone } from "../lib/profile.js";
 import { DateTime } from "luxon";
 import { createCalendarEventRecord, updateCalendarGoogleId, findRecentDuplicateEvent, getEventById, updateEventTimesRecord, syncEventByGoogleId, deleteEventRowByGoogleId } from "../tools/database.js";
 import { buildRecurrenceRule, resolveColor } from "../lib/recurrence.js";
-import { classifyEvent } from "../lib/eventKind.js";
+import { classifyEvent, KIND_COLOR } from "../lib/eventKind.js";
+import { getSettings } from "../lib/settings.js";
 
 
 export async function createEvent({
@@ -76,7 +77,22 @@ export async function createEvent({
 
   }
 
-  const colorId = resolveColor(color);
+  // An explicit colour always wins — the model only sets `color` when the user
+  // actually asked for one, and a direct request outranks a guess from
+  // classifyEvent. Otherwise, when the setting is on, the event is coloured by
+  // what kind of thing it is rather than a flat default, so a glance at the
+  // calendar already sorts meetings from focus blocks from reminders.
+  let colorId;
+
+  if (color) {
+    colorId = resolveColor(color);
+  } else {
+    const { auto_color_events } = await getSettings();
+    colorId = auto_color_events
+      ? resolveColor(KIND_COLOR[classifyEvent({ title, start: start.toISO(), end: end.toISO() })])
+      : resolveColor(null);
+  }
+
   const rrule = buildRecurrenceRule(recurrence, start, { count: recurrenceCount });
 
   const supabaseRecord = await createCalendarEventRecord({

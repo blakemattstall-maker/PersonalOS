@@ -3,6 +3,7 @@ import { backendGet } from "../backend.js";
 import TopicCard from "../TopicCard.js";
 import PitchRecorder from "../PitchRecorder.js";
 import LoadTopicsButton from "../LoadTopicsButton.js";
+import Reveal from "../Reveal.js";
 import { formatDate } from "../shared.js";
 import { Page, PageHeader, Card, SectionTitle, Empty, Meta, link } from "../ui.js";
 
@@ -63,11 +64,16 @@ export default async function Practice() {
   return (
     <Page>
 
-      <PageHeader title="Practice">
-        Argue a real question with the app taking the other side, or record an
-        explainer and find out whether you actually understood something.
-      </PageHeader>
+      <Reveal gap={70}>
 
+      <div className="pos-reveal" data-reveal>
+        <PageHeader title="Practice">
+          Argue a real question with the app taking the other side, or record an
+          explainer and find out whether you actually understood something.
+        </PageHeader>
+      </div>
+
+      <div className="pos-reveal" data-reveal>
       <section className="mb-6">
 
         <SectionTitle count={topics.length} action={<LoadTopicsButton />}>
@@ -98,7 +104,9 @@ export default async function Practice() {
         )}
 
       </section>
+      </div>
 
+      <div className="pos-reveal" data-reveal>
       <Card className="mb-6">
         <SectionTitle>Pitch or explain</SectionTitle>
         <p className="-mt-1 mb-3 text-[0.85rem] leading-relaxed text-ink-soft">
@@ -106,15 +114,20 @@ export default async function Practice() {
         </p>
         <PitchRecorder />
       </Card>
+      </div>
 
       {sessions.length > 0 && (
+        <div className="pos-reveal" data-reveal>
         <Card>
           <SectionTitle count={sessions.length}>Recent sessions</SectionTitle>
           <div>
             {sessions.map(s => <SessionRow key={s.id} session={s} />)}
           </div>
         </Card>
+        </div>
       )}
+
+      </Reveal>
 
     </Page>
   );

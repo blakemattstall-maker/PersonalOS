@@ -4,8 +4,8 @@
   "description": "Your personal operating system.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0b0d10",
-  "theme_color": "#0b0d10",
+  "background_color": "#20272b",
+  "theme_color": "#20272b",
   "icons": [
     {
       "src": "/icon.svg",

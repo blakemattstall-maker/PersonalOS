@@ -1,7 +1,19 @@
+import Link from "next/link";
 import { backendGet } from "../backend.js";
 import Reveal, { Counted } from "../Reveal.js";
+import MoneyAsk from "../MoneyAsk.js";
 import { Page, PageHeader, Card, SectionTitle, Empty, Meta } from "../ui.js";
 import { SpendDonut, CategoryBars, RAMP } from "../MoneyCharts.js";
+
+
+// getFinancialData's cache holds a wide 100-day window (lib/simplefin.js),
+// so 90 is the honest ceiling here — offering a "year" option would either
+// silently clamp to 90 or lie about how far back the numbers actually go.
+const RANGES = [
+  { days: 7, label: "Week" },
+  { days: 30, label: "Month" },
+  { days: 90, label: "90 days" }
+];
 
 
 export const dynamic = "force-dynamic";
@@ -41,11 +53,11 @@ function moneyParts(n, { sign = false } = {}) {
 }
 
 
-function Stat({ label, amount, sign = false, tone = "ink", sub = null }) {
+function StatFace({ label, amount, sign = false, tone = "ink", sub = null }) {
   const colour = tone === "moss" ? "text-moss" : "text-ink";
   const parts = moneyParts(amount, { sign });
   return (
-    <div className="flex flex-col gap-1 px-4 py-3.5">
+    <span className="flex flex-col gap-1">
       <span className="text-[0.72rem] uppercase tracking-[0.08em] text-ink-soft">{label}</span>
       <Counted
         value={parts.value}
@@ -56,14 +68,54 @@ function Stat({ label, amount, sign = false, tone = "ink", sub = null }) {
         {money(amount, { sign })}
       </Counted>
       {sub && <span className="text-[0.72rem] text-ink-soft">{sub}</span>}
+    </span>
+  );
+}
+
+
+function Stat({ label, amount, sign = false, tone = "ink", sub = null }) {
+  return (
+    <div className="px-4 py-3.5">
+      <StatFace label={label} amount={amount} sign={sign} tone={tone} sub={sub} />
     </div>
   );
 }
 
 
-export default async function Money() {
+// The one stat with something real to expand into: which accounts actually
+// make up the total. A native <details> rather than a client component — the
+// disclosure needs no state beyond open/closed, so there's no reason to ship
+// JavaScript for it.
+function BalanceStat({ amount, accounts }) {
+  return (
+    <details className="group px-4 py-3.5 [&::-webkit-details-marker]:hidden">
+      <summary className="cursor-pointer list-none">
+        <StatFace
+          label="Balance"
+          amount={amount}
+          sub={`${accounts.length} account${accounts.length === 1 ? "" : "s"} · tap for the split`}
+        />
+      </summary>
+      <div className="mt-3 space-y-1.5 border-t border-[var(--line)] pt-3">
+        {accounts.map(a => (
+          <div key={a.name} className="flex items-baseline justify-between gap-3 text-[0.85rem]">
+            <span className="min-w-0 truncate text-ink-soft">{a.name}</span>
+            <span className="pos-data shrink-0 text-ink">{money(a.balance)}</span>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
 
-  const days = 30;
+
+export default async function Money({ searchParams }) {
+
+  const params = await searchParams;
+
+  const requested = Number(params?.days);
+
+  const days = RANGES.some(r => r.days === requested) ? requested : 30;
 
   const f = await getFinance(days);
 
@@ -80,26 +132,51 @@ export default async function Money() {
   }
 
   const top = f.categories.slice(0, 7);
+  const restCategories = f.categories.slice(7);
+
+  const shownMerchants = 8;
+  const restMerchants = f.merchants.slice(shownMerchants);
 
   const subscriptionTotal = f.recurring.reduce((t, r) => t + r.amount, 0);
 
   return (
     <Page>
 
-      <PageHeader title="Money">
-        The last {f.days} days, from your accounts directly. Balances are live;
-        spending is categorised here because your bank sends no category at all.
-      </PageHeader>
+      <Reveal gap={70}>
+
+      <div className="pos-reveal mb-6 flex flex-wrap items-start justify-between gap-3" data-reveal>
+
+        <PageHeader title="Money">
+          The last {f.days} days, from your accounts directly. Balances are live;
+          spending is categorised here because your bank sends no category at all.
+        </PageHeader>
+
+        {/* Query-param navigation rather than client state, matching how every
+            other tab in this app switches views — a real Link, a real page,
+            the same loading.js skeleton, nothing to keep in sync by hand. */}
+        <div className="flex shrink-0 gap-1 rounded-[var(--r-pill)] border border-[var(--line)] p-1">
+          {RANGES.map(r => (
+            <Link
+              key={r.days}
+              href={`/money?days=${r.days}`}
+              className={`rounded-[var(--r-pill)] px-3 py-1.5 text-[0.78rem] font-medium transition-colors ${
+                days === r.days ? "bg-ink text-paper" : "text-ink-soft hover:text-ink"
+              }`}
+            >
+              {r.label}
+            </Link>
+          ))}
+        </div>
+
+      </div>
 
       {/* The four figures worth knowing before anything else. Net is the only
           one that gets colour, and only when it is positive — moss means
           settled, and ember is reserved app-wide for things awaiting him. */}
-      <Reveal gap={70}>
-
       <div className="pos-reveal" data-reveal>
       <Card className="mb-5 !p-0 overflow-hidden">
         <div className="grid grid-cols-2 divide-x divide-y divide-[var(--line)] [&>*]:border-[var(--line)]">
-          <Stat label="Balance" amount={f.totalBalance} sub={`${f.accounts.length} accounts`} />
+          <BalanceStat amount={f.totalBalance} accounts={f.accounts} />
           <Stat label="Spent" amount={f.spent} sub={`${f.transactionCount} transactions`} />
           <Stat label="In" amount={f.earned} />
           <Stat
@@ -114,7 +191,9 @@ export default async function Money() {
 
       {f.spent === 0 ? (
 
-        <Empty>Nothing spent in the last {f.days} days.</Empty>
+        <div className="pos-reveal" data-reveal>
+          <Empty>Nothing spent in the last {f.days} days.</Empty>
+        </div>
 
       ) : (
 
@@ -130,6 +209,22 @@ export default async function Money() {
           <Card className="mb-5">
             <SectionTitle count={f.categories.length}>By category</SectionTitle>
             <CategoryBars categories={top} max={top[0]?.total || 1} />
+
+            {restCategories.length > 0 && (
+              <details className="mt-4 border-t border-[var(--line)] pt-3 [&::-webkit-details-marker]:hidden">
+                <summary className="cursor-pointer text-[0.78rem] font-medium text-ink-soft hover:text-ink">
+                  {restCategories.length} more categor{restCategories.length === 1 ? "y" : "ies"}, below the chart&apos;s cutoff
+                </summary>
+                <div className="mt-2 space-y-1.5">
+                  {restCategories.map(c => (
+                    <div key={c.name} className="flex items-baseline justify-between gap-3 text-[0.85rem]">
+                      <span className="min-w-0 truncate capitalize text-ink-soft">{c.name}</span>
+                      <span className="pos-data shrink-0 text-ink">{money(c.total)} · {c.share}%</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </Card>
           </div>
         </>
@@ -141,7 +236,7 @@ export default async function Money() {
         <Card className="mb-5">
           <SectionTitle count={f.merchants.length}>Top merchants</SectionTitle>
           <div>
-            {f.merchants.slice(0, 8).map((m, i) => (
+            {f.merchants.slice(0, shownMerchants).map((m, i) => (
               <div
                 key={m.merchant}
                 className="flex items-baseline gap-3 border-t border-[var(--line)] py-2.5 first:border-t-0 first:pt-0"
@@ -157,6 +252,22 @@ export default async function Money() {
               </div>
             ))}
           </div>
+
+          {restMerchants.length > 0 && (
+            <details className="mt-1 border-t border-[var(--line)] pt-3 [&::-webkit-details-marker]:hidden">
+              <summary className="cursor-pointer text-[0.78rem] font-medium text-ink-soft hover:text-ink">
+                {restMerchants.length} more merchant{restMerchants.length === 1 ? "" : "s"}
+              </summary>
+              <div className="mt-2 space-y-1.5">
+                {restMerchants.map(m => (
+                  <div key={m.merchant} className="flex items-baseline justify-between gap-3 text-[0.85rem]">
+                    <span className="min-w-0 truncate text-ink-soft">{m.merchant}</span>
+                    <span className="pos-data shrink-0 text-ink">{money(m.total)} · {m.count}&times;</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </Card>
         </div>
       )}
@@ -208,6 +319,18 @@ export default async function Money() {
         </Card>
         </div>
       )}
+
+      <div className="pos-reveal" data-reveal>
+      <Card>
+        <SectionTitle>Ask about your money</SectionTitle>
+        <p className="-mt-1 mb-3 text-[0.85rem] leading-relaxed text-ink-soft">
+          Anything from &ldquo;how much did I spend on takeout&rdquo; to
+          &ldquo;am I saving anything this month&rdquo; — answered from the
+          real transactions above, out loud if you&apos;d rather listen.
+        </p>
+        <MoneyAsk days={days} />
+      </Card>
+      </div>
 
       </Reveal>
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { backendGet } from "../backend.js";
 import NewsCard from "../NewsCard.js";
 import RefreshDigestButton from "../RefreshDigestButton.js";
+import Reveal from "../Reveal.js";
 import { Page, PageHeader, Empty, Meta, link } from "../ui.js";
 
 
@@ -51,11 +52,15 @@ export default async function News() {
   return (
     <Page>
 
-      <PageHeader title="News">
-        Ordered by what matters to you, not by what ran most recently.
-      </PageHeader>
+      <Reveal gap={70}>
 
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+      <div className="pos-reveal" data-reveal>
+        <PageHeader title="News">
+          Ordered by what matters to you, not by what ran most recently.
+        </PageHeader>
+      </div>
+
+      <div className="pos-reveal mb-5 flex flex-wrap items-center justify-between gap-3" data-reveal>
 
         {/* The spread, as readings. Not filters — see the note above. */}
         <div className="flex flex-wrap gap-1.5">
@@ -76,25 +81,33 @@ export default async function News() {
 
       {items.length === 0 ? (
 
-        <Empty>
-          Nothing in the feed yet. Pull from the live sources now with
-          Refresh — after that it runs on its own each morning. Stories always
-          come from published feeds, never from a model recalling the news.
-        </Empty>
+        <div className="pos-reveal" data-reveal>
+          <Empty>
+            Nothing in the feed yet. Pull from the live sources now with
+            Refresh — after that it runs on its own each morning. Stories always
+            come from published feeds, never from a model recalling the news.
+          </Empty>
+        </div>
 
       ) : (
 
         <div className="space-y-3">
-          {items.map(item => <NewsCard key={item.id} item={item} />)}
+          {items.map(item => (
+            <div key={item.id} className="pos-reveal" data-reveal>
+              <NewsCard item={item} />
+            </div>
+          ))}
         </div>
 
       )}
 
-      <p className="mt-8 text-[0.82rem] leading-relaxed text-ink-soft">
+      <p className="pos-reveal mt-8 text-[0.82rem] leading-relaxed text-ink-soft" data-reveal>
         Want to argue one of these instead of read it?{" "}
         <Link href="/practice" className={link()}>Practice</Link>{" "}
         has standing questions built for that — no briefing required.
       </p>
+
+      </Reveal>
 
     </Page>
   );

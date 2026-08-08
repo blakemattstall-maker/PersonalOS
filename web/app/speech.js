@@ -269,7 +269,7 @@ function describeToOS(title, onStop) {
 
     navigator.mediaSession.metadata = new window.MediaMetadata({
       title: title || "Brief",
-      artist: "PersonalOS"
+      artist: readPrefs().displayName || "PersonalOS"
     });
 
     navigator.mediaSession.setActionHandler("play", () => audio().play().catch(() => {}));

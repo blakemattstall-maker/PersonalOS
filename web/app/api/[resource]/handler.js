@@ -22,6 +22,7 @@ import { getDebateTopics, ensureTopicsFramed, retireDebateTopic } from "../../..
 import { savePerson, getAllPeople, deletePerson, recordContact, answerRelationshipCheckin } from "../../../tools/people.js";
 import { getFinancialData } from "../../../lib/simplefin.js";
 import { categorizeTransactions, summarise, findRecurring, classifyUnknownMerchants } from "../../../lib/categorize.js";
+import { queryFinances } from "../../../tools/finances.js";
 
 
 // Every read/write endpoint the dashboard uses, behind ONE serverless function.
@@ -526,6 +527,23 @@ async function people(req, res) {
 
 
 async function finance(req, res) {
+
+  // The in-app "ask it a financial question" box and the Shortcut's
+  // query_finances tool call the exact same function — one router entry, so
+  // the two can never quietly drift into answering differently.
+  if (req.method === "POST") {
+
+    const { question, days } = req.body || {};
+
+    if (!question || !String(question).trim()) {
+      return res.status(400).json({ success: false, error: "Ask it something first." });
+    }
+
+    const result = await queryFinances({ question, days: Math.min(Number(days) || 30, 90) });
+
+    return res.status(200).json(result);
+
+  }
 
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });

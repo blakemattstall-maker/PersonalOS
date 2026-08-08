@@ -1,6 +1,7 @@
 import { formatDate } from "../shared.js";
 import DeleteButton from "../DeleteButton.js";
 import { backendGet } from "../backend.js";
+import Reveal from "../Reveal.js";
 import { Page, PageHeader, Card, SectionTitle, Meta } from "../ui.js";
 
 
@@ -48,12 +49,14 @@ function Row({ type, id, primary, secondary }) {
 function Group({ title, items, empty, children }) {
 
   return (
+    <div className="pos-reveal" data-reveal>
     <Card className="mb-4">
       <SectionTitle count={items.length}>{title}</SectionTitle>
       {items.length === 0
         ? <p className="text-[0.85rem] text-ink-soft">{empty}</p>
         : <div>{children}</div>}
     </Card>
+    </div>
   );
 
 }
@@ -66,11 +69,15 @@ export default async function DataPage() {
   return (
     <Page>
 
-      <PageHeader title="What it knows">
-        Everything the app has saved about you. Delete anything that&apos;s
-        wrong, out of date, or filed in the wrong place — it stops being used
-        immediately.
-      </PageHeader>
+      <Reveal gap={70}>
+
+      <div className="pos-reveal" data-reveal>
+        <PageHeader title="What it knows">
+          Everything the app has saved about you. Delete anything that&apos;s
+          wrong, out of date, or filed in the wrong place — it stops being used
+          immediately.
+        </PageHeader>
+      </div>
 
       <Group title="Memories" items={memories} empty="Nothing saved yet.">
         {memories.map(m => (
@@ -107,6 +114,8 @@ export default async function DataPage() {
           />
         ))}
       </Group>
+
+      </Reveal>
 
     </Page>
   );

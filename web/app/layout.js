@@ -59,6 +59,39 @@ try {
 `;
 
 
+// Takes down the #pos-boot splash below. Every route here is force-dynamic —
+// there is no page in this app that resolves instantly — so before this
+// existed, opening it meant a blank paint (whatever the OS/browser shows
+// before the stylesheet is even parsed) followed by the skeleton snapping in
+// the moment data streamed. This closes that gap with something that is
+// already painted in the initial HTML, no JavaScript required to appear.
+//
+// MIN exists so a connection fast enough to resolve before the DOM finishes
+// parsing doesn't get a one-frame flicker — the splash holds for at least
+// this long, however quick the page actually was. The 2500ms line is the
+// failsafe: if DOMContentLoaded is somehow never seen, this is what stops the
+// splash from covering the app forever instead of just looking briefly slow.
+const BOOT_SCRIPT = `
+(function () {
+  var MIN = 260, start = Date.now(), done = false;
+  function hide() {
+    if (done) return;
+    done = true;
+    var remain = MIN - (Date.now() - start);
+    setTimeout(function () {
+      var el = document.getElementById("pos-boot");
+      if (!el) return;
+      el.classList.add("pos-boot-hide");
+      setTimeout(function () { el.remove(); }, 340);
+    }, remain > 0 ? remain : 0);
+  }
+  if (document.readyState !== "loading") hide();
+  else document.addEventListener("DOMContentLoaded", hide);
+  setTimeout(hide, 2500);
+})();
+`;
+
+
 export default function RootLayout({ children }) {
   return (
     <html
@@ -72,10 +105,25 @@ export default function RootLayout({ children }) {
             the whole app would render as a blank page — this is the one
             override that cannot live in a media query. */}
         <noscript>
-          <style>{`.pos-reveal,.pos-scene-hidden{opacity:1!important;transform:none!important}`}</style>
+          {/* Same reasoning as the reveal override above: with scripting off,
+              nothing will ever run BOOT_SCRIPT, so the splash has to get out
+              of the way on its own or it becomes a permanent black screen —
+              the exact thing it exists to prevent. */}
+          <style>{`.pos-reveal,.pos-scene-hidden{opacity:1!important;transform:none!important}#pos-boot{display:none!important}`}</style>
         </noscript>
       </head>
       <body className="min-h-full flex flex-col bg-paper text-ink">
+        {/* No wordmark, no name — deliberately. This fires on every cold open
+            of every route, including /welcome, which has its own full-screen
+            opening sequence right after; a second thing introducing itself
+            here would compete with it rather than just being "warming up". */}
+        <div id="pos-boot" aria-hidden="true">
+          <span className="pos-dot" />
+          <span className="pos-dot" />
+          <span className="pos-dot" />
+        </div>
+        <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
+
         {/* Fixture mode makes the dashboard look completely real. Say so, so
             nobody reads invented spending figures as their own. */}
         {process.env.POS_FIXTURES === "1" && (

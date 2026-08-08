@@ -160,7 +160,7 @@ export default function Welcome() {
         id="insights"
         eyebrow="03 · Patterns"
         title="It reads across your data and tells you what it finds."
-        lede="A set of detectors walks the connections on a schedule, looking for specific shapes that mean something. When a shape is not there, they say nothing, which is most days."
+        lede="A set of detectors walks the connections on a schedule, looking for specific shapes that mean something. When a shape is not there, they say nothing, which is most days. What you can ask it is only half the picture — this is the half where it comes to you first."
         tech={
           <>
             <p>
@@ -190,6 +190,12 @@ export default function Welcome() {
             </div>
           ))}
         </div>
+
+        <p className="mt-5 text-[0.88rem] leading-relaxed text-ink-soft">
+          When one of these actually clears the bar, it is delivered as a real
+          push notification to the phone&apos;s lock screen, not just something
+          waiting the next time the app happens to be opened.
+        </p>
       </Section>
 
       <Section

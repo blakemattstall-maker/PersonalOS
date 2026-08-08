@@ -1,13 +1,27 @@
 "use client";
 
-import { useState, useTransition, useEffect, useRef } from "react";
+import { useState, useTransition, useEffect, useRef, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { respondToThreadAction, buildPlanAction, resolveDeepThought, resetBuildAction } from "./actions.js";
 import { PLAN_TOOLS } from "./planTools.js";
 import VoiceInput from "./VoiceInput.js";
 import { DeepThoughtBody } from "./shared.js";
 import ReadAloud from "./ReadAloud.js";
+import { readPrefs } from "./prefs.js";
 import { ItemCard, btn, field } from "./ui.js";
+
+
+// Stable across renders on purpose — passed to useSyncExternalStore as the
+// subscribe function, which resubscribes whenever its identity changes. A
+// function literal defined inside the component would be a new identity every
+// render, turning "subscribe once" into "subscribe on every render".
+function subscribeToPrefs(callback) {
+  window.addEventListener("pos-prefs", callback);
+  return () => window.removeEventListener("pos-prefs", callback);
+}
+
+const getSelfNameServerSnapshot = () => "PersonalOS";
+const getSelfNameSnapshot = () => readPrefs().displayName || "PersonalOS";
 
 
 function Dots() {
@@ -58,6 +72,18 @@ export default function DeepThoughtThread({ thought, turns }) {
   const [buildResultMessage, setBuildResultMessage] = useState(null);
 
   const [showTools, setShowTools] = useState(false);
+
+  // Cosmetic label only. useSyncExternalStore rather than a state-plus-effect
+  // pair: the third argument is the snapshot used for both the server render
+  // and React's first client render, so hydration compares "PersonalOS"
+  // against "PersonalOS" even when a custom name is actually set — the real
+  // value shows up the moment React re-renders after hydrating, without ever
+  // asserting a value the server couldn't have known.
+  const selfName = useSyncExternalStore(
+    subscribeToPrefs,
+    getSelfNameSnapshot,
+    getSelfNameServerSnapshot
+  );
 
   const [tools, setTools] = useState(() =>
     Object.fromEntries(Object.entries(PLAN_TOOLS).map(([k, v]) => [k, v.default]))
@@ -195,7 +221,7 @@ export default function DeepThoughtThread({ thought, turns }) {
                 >
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <span className="text-[0.65rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
-                      {turn.role === "user" ? "You" : "PersonalOS"}
+                      {turn.role === "user" ? "You" : selfName}
                     </span>
                     {turn.role === "assistant" && (
                       <ReadAloud text={turn.message} title={thought.topic} />
@@ -211,7 +237,7 @@ export default function DeepThoughtThread({ thought, turns }) {
           {isPending && (
             <div className="mt-3 flex items-center gap-2 text-[0.8rem] text-ink-soft">
               <span className="text-[0.65rem] font-medium uppercase tracking-[0.08em]">
-                PersonalOS
+                {selfName}
               </span>
               <Dots />
             </div>

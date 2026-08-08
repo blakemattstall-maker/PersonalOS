@@ -313,3 +313,14 @@ export async function answerPromptAction(id, answer) {
   return result;
 
 }
+
+
+// Same tool the Shortcut's query_finances call reaches, so the answer to
+// "what did I spend on takeout" is identical whether it's asked in the app or
+// spoken into a phone. No revalidatePath — this reads, it never changes what's
+// on the money page underneath it.
+export async function askFinanceAction(question, days) {
+
+  return await backendPost("/api/finance", { question, days });
+
+}

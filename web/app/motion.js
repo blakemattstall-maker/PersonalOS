@@ -97,7 +97,12 @@ export function revealChildren(root, { delay = 0, gap = 60, distance = 14 } = {}
       ease: "out(3)"
     });
 
-  }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+  // A card only has to clear the bottom edge by a little before it counts as
+  // "arrived" — too eager here and the animation for the next card down fires
+  // while you're still reading the one above it, which is the exact complaint
+  // this margin exists to prevent. -18% keeps it from starting until a card is
+  // meaningfully inside the viewport rather than just grazing the edge.
+  }, { rootMargin: "0px 0px -18% 0px", threshold: 0.15 });
 
   targets.forEach(t => observer.observe(t));
 
@@ -157,7 +162,10 @@ export function countUp(el, value, { format = (n) => String(Math.round(n)), dura
       onComplete: finish
     });
 
-  }, { threshold: 0.2 });
+  // A number ticking upward before you can actually read it is more jarring
+  // than a card fading in early, so this waits for more of it to be on screen
+  // than revealChildren does.
+  }, { threshold: 0.35 });
 
   observer.observe(el);
 
@@ -203,7 +211,11 @@ export function sceneTimeline(root, build, { settleOnReduced } = {}) {
     if (visible) timeline.play();
     else timeline.pause();
 
-  }, { threshold: 0.15 });
+  // A whole scene is the biggest commitment of the three helpers here — it's
+  // several seconds of choreography — so it waits until a meaningful fraction
+  // of it is actually in view rather than starting the moment its top edge
+  // appears while you're still scrolling toward it.
+  }, { threshold: 0.3 });
 
   observer.observe(root);
 

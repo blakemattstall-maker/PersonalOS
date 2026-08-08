@@ -78,7 +78,18 @@ state. The `web-preview` entry in `.claude/launch.json` starts it on port 3011
 with a throwaway passphrase and `POS_FIXTURES=1`, which serves a realistic
 dashboard from `web/app/fixtures.js` instead. It paints an orange bar across
 the top so fixture data can't be mistaken for real data, and the flag is set
-nowhere else — not `.env.local`, not Vercel.
+nowhere else — not `.env.local`, not Vercel. Covers the brief, prompts,
+nudges, projects, `/api/finance` (any `days`) and `/api/settings` — money and
+settings are otherwise unreviewable locally, since both hit real Supabase.
+POSTs (a settings save, the money-page ask box) aren't fixture-gated and will
+hit the real backend, which degrades gracefully to a failed save rather than
+crashing — expect a toggle to visibly revert after saving locally, which is
+this and not a bug.
+
+If the app looks stuck on stale content after editing `sw.js` or anything
+under `public/`, the service worker is caching it — `next dev`'s Fast Refresh
+does not know how to bust that. Unregister it from the browser's devtools
+(Application → Service Workers) rather than chasing a ghost.
 
 ```bash
 node --env-file=.env.local -e 'import("./lib/schema.js").then(async m => console.log((await m.checkMigrations()).verdict))'
@@ -131,6 +142,20 @@ short version:
     `/welcome` is excluded in `proxy.js`. If it weren't, every visitor without a
     cookie would be redirected to a page that redirects them back — and the
     symptom is a spinning browser on the one URL this app gets shared as.
+12. **An entrance animation must hide via a static CSS class, never only via a
+    JS effect keyed on a later condition.** `welcome/Hero.js`'s title rendered
+    at full opacity for one real paint because it hid itself inside a
+    `useEffect` gated on `ready`, instead of the `.pos-reveal` class every
+    other animated element carries from the first byte of HTML. The fix was
+    giving it that same class; the lesson is that "the effect will hide it
+    before anyone notices" is never true — there is always a frame.
+13. **`readPrefs().displayName` (or anything else read from `localStorage`
+    that must differ from what the server rendered) belongs behind
+    `useSyncExternalStore`, not a `useState` + `useEffect` pair.** The latter
+    trips `react-hooks/set-state-in-effect` and costs an extra render; the
+    former's third argument is exactly "what to render before hydration",
+    which is the actual problem being solved. See `DeepThoughtThread.js`'s
+    `selfName`.
 
 ## Where to look next
 

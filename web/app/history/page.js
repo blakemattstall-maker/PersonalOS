@@ -1,5 +1,6 @@
 import { formatDate, DeepThoughtBody } from "../shared.js";
 import { backendGet } from "../backend.js";
+import Reveal from "../Reveal.js";
 import { Page, PageHeader, ItemCard, Empty } from "../ui.js";
 
 
@@ -42,27 +43,34 @@ export default async function History() {
   return (
     <Page>
 
-      <PageHeader title="Earlier">
-        Briefs you&apos;ve already read and everything you&apos;ve cleared,
-        newest first.
-      </PageHeader>
+      <Reveal gap={70}>
+
+      <div className="pos-reveal" data-reveal>
+        <PageHeader title="Earlier">
+          Briefs you&apos;ve already read and everything you&apos;ve cleared,
+          newest first.
+        </PageHeader>
+      </div>
 
       {items.length === 0 ? (
 
-        <Empty>
-          Nothing here yet. Anything you resolve on Today lands here, along
-          with every morning brief.
-        </Empty>
+        <div className="pos-reveal" data-reveal>
+          <Empty>
+            Nothing here yet. Anything you resolve on Today lands here, along
+            with every morning brief.
+          </Empty>
+        </div>
 
       ) : (
 
         <div className="space-y-3">
           {items.map((item) => (
 
-            // waiting={false} throughout — the whole page is things already
-            // dealt with, and the ember dot means the opposite of that.
+            <div key={`${item.kind}-${item.id}`} className="pos-reveal" data-reveal>
+
+            {/* waiting={false} throughout — the whole page is things already
+                dealt with, and the ember dot means the opposite of that. */}
             <ItemCard
-              key={`${item.kind}-${item.id}`}
               kind={item.kind}
               waiting={false}
               title={item.kind === "thought" ? item.topic : undefined}
@@ -90,10 +98,14 @@ export default async function History() {
 
             </ItemCard>
 
+            </div>
+
           ))}
         </div>
 
       )}
+
+      </Reveal>
 
     </Page>
   );

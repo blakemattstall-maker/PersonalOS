@@ -99,7 +99,7 @@ export default function SceneGraph() {
           ease: "inOut(2)"
         }, "-=420");
 
-    }, { threshold: 0.2 });
+    }, { threshold: 0.3 });
 
     observer.observe(root);
 

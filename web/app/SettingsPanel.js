@@ -58,6 +58,9 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
   const [levelNote, setLevelNote] = useState(null);
   const [savingLevel, setSavingLevel] = useState(false);
 
+  const [autoColor, setAutoColor] = useState(initialSettings?.auto_color_events !== false);
+  const [savingAutoColor, setSavingAutoColor] = useState(false);
+
   const [diag, setDiag] = useState(initialDiagnostics);
   const [refreshing, setRefreshing] = useState(false);
   const [pushResult, setPushResult] = useState(null);
@@ -131,6 +134,20 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
   };
 
 
+  const toggleAutoColor = async () => {
+
+    const next = !autoColor;
+
+    setAutoColor(next);
+    setSavingAutoColor(true);
+
+    await saveSettingsAction({ auto_color_events: next });
+
+    setSavingAutoColor(false);
+
+  };
+
+
   const refreshDiag = async () => {
     setRefreshing(true);
     setDiag(await getDiagnosticsAction());
@@ -161,6 +178,26 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
               {t}
             </button>
           ))}
+        </div>
+
+        {/* Cosmetic only, and deliberately local. This changes what it calls
+            itself in a couple of places you'd actually see or hear it —
+            nothing server-side, nothing in the data, nothing another device
+            picks up. A real rebrand is a different, bigger job; this is the
+            five-second version of "call it something else". */}
+        <div className="mt-5 border-t border-[var(--line)] pt-4">
+          <label className="block text-sm text-ink">What should it call itself?</label>
+          <input
+            type="text"
+            value={prefs.displayName || ""}
+            onChange={(e) => update({ displayName: e.target.value })}
+            placeholder="PersonalOS"
+            maxLength={24}
+            className="mt-2 w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-sm text-ink outline-none placeholder:text-ink-soft focus:border-ink"
+          />
+          <p className="mt-1.5 text-xs text-ink-soft">
+            Shown in thread replies and on the lock-screen player. Leave blank for PersonalOS.
+          </p>
         </div>
       </Section>
 
@@ -294,6 +331,30 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
 
 
       <PushSetup />
+
+
+      <Section title="Calendar">
+
+        <button
+          onClick={toggleAutoColor}
+          className="mt-4 flex w-full items-start justify-between gap-3 text-left"
+        >
+          <span>
+            <span className="block text-sm text-ink">Colour events by what kind they are</span>
+            <span className="mt-0.5 block text-xs leading-relaxed text-ink-soft">
+              Meetings peacock, appointments banana, focus blocks basil, reminders
+              lavender, travel grape. Off means every new event is the same colour.
+              A colour you asked for by name always wins over this.
+            </span>
+          </span>
+          <span className={`mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-xs ${
+            autoColor ? "border-moss text-moss" : "border-[var(--line)] text-ink-soft"
+          }`}>
+            {savingAutoColor ? "…" : autoColor ? "On" : "Off"}
+          </span>
+        </button>
+
+      </Section>
 
 
       <Section title="How much it interrupts you">

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { deleteNewsAction } from "./actions.js";
+import ReadAloud from "./ReadAloud.js";
 
 
 // A story in the news feed.
@@ -54,6 +55,17 @@ export default function NewsCard({ item }) {
 
   const viewpoints = Array.isArray(item.viewpoints) ? item.viewpoints : [];
 
+  // The whole story, not just what happens to be expanded — the point of
+  // listening instead of reading is not needing to have tapped "Background"
+  // first.
+  const spoken = [
+    item.headline,
+    item.summary,
+    item.relevance ? `Why this matters to you: ${item.relevance}` : null,
+    item.context ? `How we got here: ${item.context}` : null,
+    ...viewpoints.map(v => `${v.label}: ${v.take}`)
+  ].filter(Boolean).join(" ");
+
   return (
     <article className="rounded-card bg-card p-5 shadow-lift">
 
@@ -81,15 +93,21 @@ export default function NewsCard({ item }) {
 
         </div>
 
-        <button
-          onClick={remove}
-          disabled={isPending}
-          aria-label="Remove this story"
-          title="Remove this story"
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ember hover:text-ember disabled:opacity-45"
-        >
-          {isPending ? "…" : "Remove"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+
+          <ReadAloud text={spoken} title={item.headline} />
+
+          <button
+            onClick={remove}
+            disabled={isPending}
+            aria-label="Remove this story"
+            title="Remove this story"
+            className="inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ember hover:text-ember disabled:opacity-45"
+          >
+            {isPending ? "…" : "Remove"}
+          </button>
+
+        </div>
 
       </div>
 
@@ -150,6 +168,18 @@ export default function NewsCard({ item }) {
 
             </div>
 
+          )}
+
+          {item.source_url && (
+            <a
+              href={item.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-[0.78rem] font-medium text-ink underline decoration-[var(--line)] decoration-1 underline-offset-[3px] hover:decoration-[var(--ink)]"
+            >
+              Read the original at {item.source}
+              <span aria-hidden="true">↗</span>
+            </a>
           )}
 
         </div>

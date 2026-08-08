@@ -108,15 +108,22 @@ export default function Hero() {
               margin doing the spacing the headline is a single run-on word to
               a screen reader, to anyone copying it, and to anything reading
               the page for a link preview. */}
+          {/* pos-reveal is what keeps these invisible from the very first byte
+              of HTML — the same class app/globals.css already hides
+              `data-reveal` content behind, with the same reduced-motion and
+              no-JS overrides. Without it these render at full opacity for the
+              one paint before this effect runs, then the intro overlay's own
+              effect covers them, then they animate in on top of that: a
+              visible pop-then-vanish-then-animate on every fresh visit. */}
           {["Everything", "you", "said", "you'd", "do,", "already", "sorted."].map((word, i) => (
             <span key={i}>
-              <span data-word className="inline-block">{word}</span>
+              <span data-word className="pos-reveal inline-block">{word}</span>
               {i < 6 ? " " : ""}
             </span>
           ))}
         </h1>
 
-        <p data-tail className="mt-6 max-w-[34rem] text-[1.05rem] leading-relaxed text-ink-soft">
+        <p data-tail className="pos-reveal mt-6 max-w-[34rem] text-[1.05rem] leading-relaxed text-ink-soft">
           A personal operating system. Speak or type a single sentence and it is
           parsed, dated, filed to your calendar, tasks and notes, and connected
           to everything already on record. Each morning it reads all of that back
@@ -124,12 +131,12 @@ export default function Hero() {
           something genuinely needs an answer.
         </p>
 
-        <p data-tail className="mt-3 max-w-[34rem] text-[0.9rem] leading-relaxed text-ink-soft">
+        <p data-tail className="pos-reveal mt-3 max-w-[34rem] text-[0.9rem] leading-relaxed text-ink-soft">
           This page is a walkthrough of how each part works. Every section opens
           up into the mechanism behind it, so you can read it either way.
         </p>
 
-        <div data-tail className="mt-8 flex flex-wrap items-center gap-3">
+        <div data-tail className="pos-reveal mt-8 flex flex-wrap items-center gap-3">
           <a
             href="#capture"
             className="inline-flex items-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-3 text-[0.88rem] font-medium text-paper transition-opacity hover:opacity-90"
@@ -161,6 +168,7 @@ export default function Hero() {
             <line
               key={i}
               data-line
+              className="pos-scene-hidden"
               x1={POINTS[a][0]} y1={POINTS[a][1]}
               x2={POINTS[b][0]} y2={POINTS[b][1]}
               stroke="var(--line)"
@@ -171,7 +179,7 @@ export default function Hero() {
             <circle
               key={i}
               data-dot
-              className="pos-pop"
+              className="pos-pop pos-scene-hidden"
               cx={x} cy={y}
               r={i % 4 === 0 ? 4.5 : 3}
               fill={i % 4 === 0 ? "var(--moss)" : "var(--ink-soft)"}

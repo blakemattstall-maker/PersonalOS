@@ -17,7 +17,10 @@ export const DEFAULTS = {
   voice: "sage",          // an OpenAI voice when engine is neural
   deviceVoiceURI: null,   // a SpeechSynthesis voiceURI when engine is device
   rate: 1.0,
-  autoplayBrief: false
+  autoplayBrief: false,
+  // Cosmetic label swap only — see the note in SettingsPanel.js. Empty means
+  // "PersonalOS".
+  displayName: ""
 };
 
 

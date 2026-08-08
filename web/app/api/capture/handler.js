@@ -9,6 +9,7 @@ import { resumePendingClarification } from "../../../tools/modify.js";
 import { MODELS } from "../../../lib/models.js";
 import { transcribeAudio } from "../../../tools/pitch.js";
 import { notifyCapture } from "../../../lib/captureNotify.js";
+import supabase from "../../../lib/supabase.js";
 
 export default async function handler(req, res) {
 
@@ -191,6 +192,29 @@ Call every tool needed to satisfy the request — if one message asks for two th
       // the Shortcut silent this notification is the entire reply, so it
       // matters most on exactly the path that produces no artefact to link to.
       await notifyCapture([{ tool: "general_question", result: answer }], text);
+
+      // The push notification truncates and disappears once dismissed, which
+      // is the whole complaint this fixes: a real answer with nowhere left to
+      // live once the notification is swiped away. Filed as a prompt — the
+      // same table label_place and the daily digest already use — so the full
+      // text sits in the dashboard's "needs you" queue until read, with its
+      // own read-aloud and its own dismiss. Never allowed to block or fail the
+      // response the phone is waiting on.
+      try {
+
+        await supabase.from("prompts").insert([{
+          kind: "general_question",
+          title: text.length > 90 ? `${text.slice(0, 89)}…` : text,
+          body: answer.message,
+          payload: null,
+          status: "pending"
+        }]);
+
+      } catch (promptError) {
+
+        console.error("GENERAL_QUESTION PROMPT FAILED:", promptError.message);
+
+      }
 
       return res.status(200).json({
         success: true,

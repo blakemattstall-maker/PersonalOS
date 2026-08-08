@@ -213,6 +213,40 @@ body {
   }
 }
 
+/* The boot splash. Sits in the initial HTML so it is the very first thing
+ * painted — before hydration, before any route's own loading.js skeleton —
+ * which is what actually replaces the blank/black moment on a cold open. It
+ * carries no name and no wordmark on purpose: this fires on every launch,
+ * including the reload a slow connection forces mid-session, and it needs to
+ * read as "the app is warming up" rather than as a second, competing intro.
+ *
+ * Removed by a short inline script in layout.js. If that script never runs —
+ * scripting disabled — the <noscript> rule below drops it immediately rather
+ * than leaving a permanent screen over the app. */
+#pos-boot {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 2.1rem;
+  background: var(--paper);
+  color: var(--ink-soft);
+  opacity: 1;
+  transition: opacity 320ms ease;
+}
+
+#pos-boot.pos-boot-hide {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #pos-boot { transition: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pos-dot {
     animation-duration: 0.01ms;

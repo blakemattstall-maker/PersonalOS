@@ -32,7 +32,7 @@ export const TOOLS = [
           color: {
             type: "string",
             enum: ["red", "tomato", "tangerine", "banana", "basil", "sage", "peacock", "blueberry", "lavender", "grape", "flamingo", "graphite"],
-            description: "Only if the user asked for a specific colour. Omit otherwise — anything created here is red by default so it's identifiable."
+            description: "Only if the user asked for a specific colour. Omit otherwise — events are coloured automatically by what kind of thing they are."
           }
         },
         required: ["title", "year", "month", "day", "hour", "minute"]

@@ -3,17 +3,20 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { answerPromptAction } from "./actions.js";
+import ReadAloud from "./ReadAloud.js";
 import { ItemCard, btn, field } from "./ui.js";
 
 
 // Things the app raised on its own: a place it wants named, a daily
-// observation, an alert. Anything with a question gets an answer box; anything
-// that's just telling you something gets dismissed.
+// observation, an alert, or the answer to something you asked in passing that
+// wasn't tied to a specific tool. Anything with a question gets an answer box;
+// anything that's just telling you something gets dismissed.
 
 const HEADINGS = {
   label_place: "What is this place?",
   digest: "Something worth noticing",
-  relationship_checkin: "Time to check in"
+  relationship_checkin: "Time to check in",
+  general_question: "You asked"
 };
 
 
@@ -42,7 +45,10 @@ export default function PromptCard({ item }) {
   return (
     <ItemCard kind="prompt" title={item.title || HEADINGS[item.kind]}>
 
-      <p className="mt-2 leading-relaxed text-ink">{item.body}</p>
+      <div className="mt-2 flex items-start justify-between gap-3">
+        <p className="leading-relaxed text-ink">{item.body}</p>
+        <ReadAloud text={item.body} title={item.title || HEADINGS[item.kind]} />
+      </div>
 
       {needsAnswer ? (
 

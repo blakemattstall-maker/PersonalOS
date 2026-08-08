@@ -170,7 +170,10 @@ function NudgeCard({ item }) {
   return (
     <ItemCard kind="nudge" meta={formatDate(item.created_at)}>
 
-      <p className="mt-3.5 leading-relaxed text-ink">{item.message}</p>
+      <div className="mt-3.5 flex items-start justify-between gap-3">
+        <p className="leading-relaxed text-ink">{item.message}</p>
+        <ReadAloud text={item.message} title="Nudge" />
+      </div>
 
       {item.intentions?.content && (
         <p className="mt-2 text-[0.82rem] text-ink-soft">

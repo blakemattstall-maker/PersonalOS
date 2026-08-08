@@ -1,6 +1,7 @@
 import Link from "next/link";
 import SettingsPanel from "../SettingsPanel.js";
 import { backendGet } from "../backend.js";
+import Reveal from "../Reveal.js";
 import { Page, PageHeader, Card } from "../ui.js";
 
 
@@ -53,8 +54,13 @@ export default async function Settings() {
   return (
     <Page>
 
-      <PageHeader title="Settings" />
+      <Reveal gap={70}>
 
+      <div className="pos-reveal" data-reveal>
+        <PageHeader title="Settings" />
+      </div>
+
+      <div className="pos-reveal" data-reveal>
       <Card className="mb-2">
         <div className="-my-1">
           {ELSEWHERE.map(entry => (
@@ -74,11 +80,16 @@ export default async function Settings() {
           ))}
         </div>
       </Card>
+      </div>
 
+      <div className="pos-reveal" data-reveal>
       <SettingsPanel
         initialSettings={settings?.settings || null}
         initialDiagnostics={diagnostics}
       />
+      </div>
+
+      </Reveal>
 
     </Page>
   );

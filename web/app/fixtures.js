@@ -164,16 +164,89 @@ const ARCHIVED_PROJECTS = {
 };
 
 
+// One shape, reused regardless of the requested day count — a fixture exists
+// to judge layout and density, not to prove the SimpleFIN date-slicing logic,
+// which lib/simplefin.js's own tests already cover.
+function financeFor(days) {
+  return {
+    success: true,
+    days,
+    cached: true,
+    fetchedAt: hoursAgo(2),
+    accounts: [
+      { name: "Checking", balance: 2140.55, currency: "USD" },
+      { name: "Savings", balance: 3360.12, currency: "USD" }
+    ],
+    totalBalance: 5500.67,
+    spent: 812.44,
+    earned: 1450,
+    net: 637.56,
+    transactionCount: 26,
+    categories: [
+      { name: "food", total: 268.9, share: 33.1 },
+      { name: "transport", total: 154.2, share: 19 },
+      { name: "housing", total: 120, share: 14.8 },
+      { name: "shopping", total: 96.4, share: 11.9 },
+      { name: "eating out", total: 84.5, share: 10.4 },
+      { name: "health", total: 52.94, share: 6.5 },
+      { name: "education", total: 22.5, share: 2.8 },
+      { name: "business", total: 8.5, share: 1 },
+      { name: "other", total: 4.5, share: 0.6 }
+    ],
+    merchants: [
+      { merchant: "Trader Joe's", total: 148.32, count: 6, category: "food" },
+      { merchant: "Shell", total: 84.1, count: 3, category: "transport" },
+      { merchant: "Comcast", total: 79.99, count: 1, category: "housing" },
+      { merchant: "Chipotle", total: 61.2, count: 4, category: "eating out" },
+      { merchant: "Amazon", total: 58.4, count: 3, category: "shopping" },
+      { merchant: "CVS", total: 41.75, count: 2, category: "health" },
+      { merchant: "Spotify", total: 11.99, count: 1, category: "business" },
+      { merchant: "Steak 'n Shake", total: 23.3, count: 2, category: "eating out" },
+      { merchant: "Target", total: 38, count: 1, category: "shopping" }
+    ],
+    recurring: [
+      { merchant: "Comcast", amount: 79.99, occurrences: 3 },
+      { merchant: "Spotify", amount: 11.99, occurrences: 4 }
+    ],
+    recent: [
+      { date: hoursAgo(4).slice(0, 10), merchant: "Trader Joe's", amount: -42.1, category: "food" },
+      { date: hoursAgo(20).slice(0, 10), merchant: "Payroll", amount: 725, category: "income" },
+      { date: hoursAgo(30).slice(0, 10), merchant: "Shell", amount: -31.4, category: "transport" },
+      { date: hoursAgo(50).slice(0, 10), merchant: "Chipotle", amount: -14.8, category: "eating out" }
+    ]
+  };
+}
+
+
+const SETTINGS = {
+  success: true,
+  settings: {
+    interruption_level: "digest_plus_urgent",
+    auto_color_events: true,
+    persisted: true
+  },
+  levels: ["silent", "digest", "digest_plus_urgent", "everything"]
+};
+
+
 const FIXTURES = {
   "/api/brief/latest?peek=true": BRIEF,
   "/api/deepThoughts": DEEP_THOUGHTS,
   "/api/data?prompts=1": PROMPTS,
   "/api/nudges": NUDGES,
   "/api/projects": PROJECTS,
-  "/api/projects?status=archived": ARCHIVED_PROJECTS
+  "/api/projects?status=archived": ARCHIVED_PROJECTS,
+  "/api/settings": SETTINGS
 };
 
 
 export function fixtureFor(path) {
+
+  if (path.startsWith("/api/finance")) {
+    const days = Number(new URLSearchParams(path.split("?")[1] || "").get("days")) || 30;
+    return financeFor(days);
+  }
+
   return FIXTURES[path] || null;
+
 }
