@@ -1,7 +1,7 @@
 import supabase from "../lib/supabase.js";
 import tzLookup from "tz-lookup";
 import { DateTime } from "luxon";
-import { getProfile, clearProfileCache } from "../lib/profile.js";
+import { getProfile, clearProfileCache, FALLBACK_TIMEZONE } from "../lib/profile.js";
 import { sendPush } from "../lib/push.js";
 import { pushAllowed } from "../lib/settings.js";
 
@@ -247,7 +247,7 @@ export async function ingestLocationPoints(rawPoints) {
   }
 
   const profile = await getProfile();
-  const tz = profile?.timezone || "America/Chicago";
+  const tz = profile?.timezone || FALLBACK_TIMEZONE;
 
   let stored = 0;
   let newPlaces = 0;

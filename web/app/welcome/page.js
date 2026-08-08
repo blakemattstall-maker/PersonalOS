@@ -93,6 +93,7 @@ export default function Welcome() {
       <Section
         id="capture"
         eyebrow="01 · Capture"
+        tone="ember"
         title="Say it once and it files itself."
         lede="One sentence, typed or spoken, gets parsed into the right kind of record, given a real date, written to your calendar, task list or notes, and attached to anything it mentions. There is no form to fill in and no category to choose."
         tech={
@@ -126,6 +127,7 @@ export default function Welcome() {
       <Section
         id="graph"
         eyebrow="02 · Connections"
+        tone="tide"
         title="Every record knows what it relates to."
         lede="Most tools keep tidy separate lists: contacts in one place, spending in another, notes somewhere else. The useful information lives between them. That a charge paid for a specific project, that an evening belongs to a specific person, that one workspace is where two different things actually get done."
         tech={
@@ -159,6 +161,7 @@ export default function Welcome() {
       <Section
         id="insights"
         eyebrow="03 · Patterns"
+        tone="iris"
         title="It reads across your data and tells you what it finds."
         lede="A set of detectors walks the connections on a schedule, looking for specific shapes that mean something. When a shape is not there, they say nothing, which is most days. What you can ask it is only half the picture — this is the half where it comes to you first."
         tech={
@@ -201,6 +204,7 @@ export default function Welcome() {
       <Section
         id="brief"
         eyebrow="04 · Daily briefing"
+        tone="ember"
         title="A short briefing each morning that has done the reading for you."
         lede="Not a list of your events read back to you. Every figure is calculated before a model sees anything, and the model is asked only to decide what actually matters today and say it in three short paragraphs."
         tech={
@@ -233,6 +237,7 @@ export default function Welcome() {
       <Section
         id="nudges"
         eyebrow="05 · Interruptions"
+        tone="moss"
         title="It only reaches you when something genuinely needs an answer."
         lede="Anything that can reach your lock screen has to earn it every time. Candidates are generated freely, and most of the work goes into throwing them away."
         tech={
@@ -268,6 +273,7 @@ export default function Welcome() {
       <Section
         id="money"
         eyebrow="06 · Spending"
+        tone="tide"
         title="Spending sorted into real categories, without tagging anything."
         lede="Bank feeds arrive as a merchant string and an amount, with no category attached to them. Every transaction here is classified on arrival, ranked by size, and checked for the charges that repeat."
         tech={
@@ -301,6 +307,7 @@ export default function Welcome() {
       <Section
         id="stack"
         eyebrow="07 · How it is built"
+        tone="iris"
         title="The parts that make the rest of it possible."
         lede="Described by technique rather than by product name. Everything listed here runs today."
       >

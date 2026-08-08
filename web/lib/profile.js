@@ -2,7 +2,19 @@ import supabase from "./supabase.js";
 import { coalesce } from "./async.js";
 
 
-const FALLBACK_TIMEZONE = "America/Los_Angeles";
+// Where the user actually is, used only when the profile row cannot be read.
+//
+// Exported because it was not, and three files had quietly disagreed about it:
+// this one said America/Los_Angeles while lib/signals.js and tools/location.js
+// each hardcoded their own America/Chicago. A Supabase blip therefore resolved
+// dates in one zone for the brief and another for the signals feeding it, with no
+// error anywhere — §1 of the pre-mortem flags exactly this. One constant now, and
+// nothing else is allowed a literal.
+//
+// Chicago as of 2026-08-08. If this moves again, the Vercel cron schedules in
+// web/vercel.json are UTC and do NOT follow it — tests/api-routes.test.js checks
+// them against this value so the two cannot drift apart silently.
+export const FALLBACK_TIMEZONE = "America/Chicago";
 
 
 // The profile row is read constantly — getUserTimezone() alone is called by

@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { DateTime } from "luxon";
 
 import { nodeRoute } from "../web/app/api/_node.js";
+import { FALLBACK_TIMEZONE } from "../web/lib/profile.js";
 
 
 // The backend used to be its own Vercel project of plain Node functions. It now
@@ -350,10 +352,51 @@ test("the morning chain still runs in the order the brief depends on", () => {
     "briefPush would announce a brief that has not been written yet"
   );
 
-  // The notification time is the one thing the split was designed NOT to
-  // change: 13:00 UTC is where the push has always gone out, and moving it is a
-  // decision about someone's morning rather than a refactor.
-  assert.equal(minutesOf("briefPush"), 13 * 60, "the brief notification moved off 13:00 UTC");
+});
+
+
+test("the morning jobs land in the morning wherever the user actually is", () => {
+
+  // Vercel cron schedules are UTC and have no idea about timezones, so moving
+  // house silently reschedules the user's entire morning. That is not
+  // hypothetical: the schedule was tuned for America/Los_Angeles, the user moved
+  // to America/Chicago, and every one of these jumped two hours later — the brief
+  // written at 6am instead of 4 and announced at 8 instead of 6, which is the
+  // opposite of what the earlier-brief work was for.
+  //
+  // Asserting against FALLBACK_TIMEZONE ties the UTC numbers to the one place the
+  // user's zone is written down in code, so changing that constant without
+  // rescheduling fails here instead of in someone's morning.
+  const crons = JSON.parse(fs.readFileSync(path.join(ROOT, "web/vercel.json"), "utf8")).crons;
+
+  const localHours = (job) => {
+    const cron = crons.find(c => c.path === `/api/cron/${job}`);
+    const [minute, hour] = cron.schedule.split(" ");
+    // Both sides of a DST boundary: a UTC schedule drifts an hour twice a year,
+    // and the requirement is that it stays in a civilised window either way.
+    return ["2026-07-01", "2026-12-01"].map(day =>
+      DateTime.fromISO(`${day}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`, { zone: "utc" })
+        .setZone(FALLBACK_TIMEZONE).hour
+    );
+  };
+
+  for (const hour of localHours("morningBrief")) {
+    assert.ok(hour >= 2 && hour <= 5,
+      `the brief should be written in the small hours so it is ready however early the app is opened; got ${hour}:00 local`);
+  }
+
+  for (const hour of localHours("briefPush")) {
+    assert.ok(hour >= 5 && hour <= 7,
+      `the brief notification has to land at a civilised hour, not ${hour}:00 local`);
+  }
+
+  // Nudges are the one thing that should reach the user while they are awake.
+  for (const cron of crons.filter(c => c.path.endsWith("deliverNudges"))) {
+    const [minute, hour] = cron.schedule.split(" ");
+    const local = DateTime.fromISO(`2026-07-01T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`, { zone: "utc" })
+      .setZone(FALLBACK_TIMEZONE).hour;
+    assert.ok(local >= 6 && local <= 21, `a nudge slot fires at ${local}:00 local, which is not waking hours`);
+  }
 
 });
 

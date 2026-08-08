@@ -11,6 +11,20 @@
    form. When the app is caught up there is no orange on screen at all, which
    is the whole point: an assistant whose job is to interrupt sparingly should
    look like one.
+
+   Two colours were added on 2026-08-08, and the rule above is why they had to
+   be. Moss means "settled" and ember means "waiting", so both were spoken for,
+   and the app had nothing left to say "this is a different KIND of thing" —
+   four kinds of card shared three greys. --tide and --iris carry identity and
+   never state. The test of whether a colour belongs in that group: if seeing
+   more of it should not make you feel any differently about your day, it is
+   identity. If it should, it is moss or ember and it obeys their rules.
+
+   The one exception to "no orange unless something is waiting" is /welcome,
+   which is the signed-out tour. Nothing there is waiting on anybody — there is
+   no session, no queue and no state — so ember carries no signal to dilute and
+   is used as the brand accent it looks like. Ember inside the app still means
+   exactly one thing.
    ───────────────────────────────────────────────────────────────────────── */
 
 :root {
@@ -33,6 +47,25 @@
   --ember: #e07038;          /* RESERVED: awaiting you */
   --ember-wash: #f7e3d7;     /* ember at rest, for tiles and fills */
   --moss-wash: #dde5e1;
+
+  /* Ember, dark enough to set small text in. --ember is 2.76:1 on --paper,
+     which is under AA even for large text — it was only ever meant for the dot,
+     a fill, or display-size numerals. Anything smaller uses this: 4.94:1 on
+     paper, 5.60:1 on card. In dark mode the two are the same colour, because
+     --ember is already 5.77:1 there. */
+  --ember-ink: #a84a18;
+
+  /* Identity, not status.
+     Moss and ember both MEAN something, which left the app with no colour at
+     all for saying "this is a different kind of thing" — so four kinds of card
+     shared three greys and every page header was the same slate. These two are
+     deliberately meaningless: they identify, they never report state. Matched to
+     moss's contrast profile (5.0–5.9:1 on paper and card, 4.6–4.8 on sunken) so
+     anywhere moss works as text, these do too. */
+  --tide: #3f6b7d;           /* reasoning, reading, the written */
+  --tide-wash: #dde6ea;
+  --iris: #6a5b8a;           /* practice, argument, exploration */
+  --iris-wash: #e4dfee;
   --slate-wash: #e3e6e6;     /* neutral tile — always LIGHTER than --card in
                                 dark mode, so a tile reads as a raised chip
                                 rather than a hole punched in the widget */
@@ -62,8 +95,13 @@
     --moss: #7ba396;
     --ember: #f0824a;
     --ember-wash: #46332a;
+    --ember-ink: #f0824a;
     --moss-wash: #2f3d39;
     --slate-wash: #3a464c;
+    --tide: #7fa8bb;
+    --tide-wash: #2b3b43;
+    --iris: #a99bc8;
+    --iris-wash: #38334a;
     --lift: 0 1px 2px rgba(0, 0, 0, 0.2), 0 10px 26px -14px rgba(0, 0, 0, 0.5);
     --lift-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
   }
@@ -79,8 +117,13 @@
   --moss: #7ba396;
   --ember: #f0824a;
   --ember-wash: #46332a;
+  --ember-ink: #f0824a;
   --moss-wash: #2f3d39;
   --slate-wash: #3a464c;
+  --tide: #7fa8bb;
+  --tide-wash: #2b3b43;
+  --iris: #a99bc8;
+  --iris-wash: #38334a;
   --lift: 0 1px 2px rgba(0, 0, 0, 0.2), 0 10px 26px -14px rgba(0, 0, 0, 0.5);
   --lift-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
@@ -94,9 +137,14 @@
   --color-line: var(--line);
   --color-moss: var(--moss);
   --color-ember: var(--ember);
+  --color-ember-ink: var(--ember-ink);
   --color-ember-wash: var(--ember-wash);
   --color-moss-wash: var(--moss-wash);
   --color-slate-wash: var(--slate-wash);
+  --color-tide: var(--tide);
+  --color-tide-wash: var(--tide-wash);
+  --color-iris: var(--iris);
+  --color-iris-wash: var(--iris-wash);
 
   --radius-card: var(--r-card);
   --radius-item: var(--r-item);

@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 import supabase from "./supabase.js";
 import { getFinancialData } from "./simplefin.js";
+import { FALLBACK_TIMEZONE } from "./profile.js";
 
 
 // A compact cross-domain snapshot, shared by every tool that reasons.
@@ -233,7 +234,7 @@ async function projectSignal(tz) {
 }
 
 
-export async function buildSignals({ days = 30, tz = "America/Chicago" } = {}) {
+export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
 
   // Every signal is independently optional. One table missing or one query
   // failing must degrade that line only — a signals build that throws would

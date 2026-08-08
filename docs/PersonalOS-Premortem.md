@@ -498,8 +498,22 @@ Six providers, single region, no queue, no retry layer, no circuit breaker. Only
 SimpleFIN failure is explicitly caught and degraded (`financeSignal` → `null`).
 
 Everything else propagates. `getProfile()` returning `null` on a Supabase blip silently
-falls back to `America/Los_Angeles`, which — for a user documented as changing timezone
-on 2026-08-08 — means every relative date resolves two hours off, quietly, with no error.
+falls back to a hardcoded zone, which — for a user documented as changing timezone
+on 2026-08-08 — means every relative date resolves hours off, quietly, with no error.
+
+**Partly addressed 2026-08-08.** The fallback was worse than described: three files
+disagreed about it (`lib/profile.js` said `America/Los_Angeles`, `lib/signals.js` and
+`tools/location.js` each hardcoded `America/Chicago`), so a Supabase blip resolved dates
+in one zone for the brief and another for the signals feeding it. There is now one
+exported `FALLBACK_TIMEZONE` in `lib/profile.js`, set to Chicago, and no other literal.
+The silent-degradation problem itself remains: a failed profile read still falls back
+rather than saying so.
+
+Related, and still open: Vercel cron schedules are UTC and do not follow that constant.
+Moving from Pacific to Central pushed every morning job two hours later until the
+schedules were moved by hand. `tests/api-routes.test.js` now asserts the local landing
+times against `FALLBACK_TIMEZONE`, on both sides of a DST boundary, so the two cannot
+drift silently — but a UTC cron still shifts an hour twice a year.
 
 ---
 

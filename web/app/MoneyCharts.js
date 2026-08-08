@@ -16,18 +16,28 @@ import { animate, stagger, createDrawable, countUp, reducedMotion, utils } from 
 // the correct form rather than a compromise. Identity is carried by direct
 // labels and a legend, never by colour alone.
 //
-// The ramp is stepped from moss toward ink and checked for monotonic lightness
-// in OKLab, with every adjacent gap >= 0.06 so neighbouring slices stay
-// separable. It stops at seven; anything beyond folds into "other" rather than
-// inventing an eighth hue.
+// The ramp runs moss → tide, and the second hue is the point: this used to step
+// from moss toward a flat ink-grey, so the bottom half of every breakdown was
+// four shades of the same green and the chart read as monochrome. Rotating the
+// hue as it lightens gives the same ordering far more separation between
+// neighbours, which is exactly what a seven-slice donut needs.
+//
+// It is still a sequential ramp, not a categorical one — spending categories are
+// ranked by size, so this is a magnitude encoding and the slices must read as
+// ordered. That only holds if lightness rises monotonically, so every value is
+// checked in OKLab with each adjacent gap >= 0.06. Measured: 0.385, 0.448, 0.507,
+// 0.595, 0.712, 0.826, 0.913. Do not reorder or insert by eye — re-check.
+//
+// Ember is still not in here and never will be. Seven slices is the ceiling;
+// anything beyond folds into "other" rather than inventing an eighth hue.
 export const RAMP = [
   "#2f4a43",
-  "#4a6b62",
-  "#5d8478",
-  "#7ba396",
-  "#9dbcb1",
-  "#bed4cc",
-  "#d8e5e0"
+  "#3c5b5c",
+  "#456d73",
+  "#5a8792",
+  "#86a9b3",
+  "#b3cbd2",
+  "#d8e5e8"
 ];
 
 

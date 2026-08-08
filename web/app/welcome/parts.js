@@ -18,7 +18,23 @@ import { revealChildren } from "../motion.js";
 // hydration.
 
 
-export function Section({ id, eyebrow, title, lede, children, tech, techLabel = "Under the hood" }) {
+// The eyebrow's colour, per section. The eyebrows are already numbered
+// (01 · CAPTURE), so the sections genuinely are a sequence and colour reinforces
+// structure that is really there rather than decorating a flat list.
+//
+// Ember is in this rotation, which it would never be inside the app. /welcome is
+// the signed-out tour: there is no session, no queue, nothing waiting on anyone,
+// so orange carries no signal here to dilute. See the note in globals.css.
+const TONE = {
+  ember: "text-ember-ink",
+  moss: "text-moss",
+  tide: "text-tide",
+  iris: "text-iris",
+  ink: "text-ink-soft"
+};
+
+
+export function Section({ id, eyebrow, title, lede, children, tech, tone = "ink", techLabel = "Under the hood" }) {
 
   const ref = useRef(null);
 
@@ -39,7 +55,7 @@ export function Section({ id, eyebrow, title, lede, children, tech, techLabel = 
     >
 
       <div className="pos-reveal" data-reveal>
-        <p className="pos-data text-[0.7rem] uppercase tracking-[0.14em] text-ink-soft">
+        <p className={`pos-data text-[0.7rem] uppercase tracking-[0.14em] ${TONE[tone] || TONE.ink}`}>
           {eyebrow}
         </p>
         <h2 className="pos-display mt-2.5 text-[1.9rem] leading-[1.1] text-ink sm:text-[2.4rem]">

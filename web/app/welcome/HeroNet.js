@@ -76,11 +76,36 @@ const EDGES = (() => {
 })();
 
 
-// A handful of nodes carry moss, the colour this app uses for "settled, on
-// record". The rest are the same soft ink as body copy. Fixed indices rather
-// than "whichever are nearest the camera", so the colour is a property of the
-// structure and not a lighting effect that crawls around as it turns.
-const ACCENTS = new Set([0, 5, 11, 17, 23]);
+// What the net is a net OF.
+//
+// Turning abstractly is decoration. Seven of the twenty-four nodes are named for
+// a kind of record this app actually keeps, and the tag fades in as its node
+// comes round to the front and out again as it recedes — so over one revolution
+// the thing tells you it is made of tasks, people, charges and evenings, rather
+// than leaving you to assume it means something.
+//
+// Fixed indices, not "whichever are nearest": the Fibonacci lattice runs
+// pole-to-pole, so every third or so is spread in both latitude and longitude and
+// they arrive at the front in turn instead of in a clump.
+//
+// Ember, because that is what was asked for and because on this page it costs
+// nothing — /welcome is signed out, nothing is waiting on anybody, so orange has
+// no signal here to dilute. --ember-ink rather than --ember: these are 9px
+// letters, and --ember is 2.76:1 on --paper.
+const TAGS = {
+  2:  "Task",
+  5:  "Person",
+  8:  "Note",
+  11: "Event",
+  14: "Charge",
+  17: "Intention",
+  20: "Place"
+};
+
+// A tag is only legible on a node that is genuinely facing you, and two tags
+// crossing each other read as neither. Above 0.62 depth roughly three of the
+// seven are showing at once.
+const TAG_THRESHOLD = 0.62;
 
 
 const SIZE = { w: 340, h: 236 };
@@ -109,7 +134,13 @@ const edgeOpacity = (a, b) => round(0.22 + 0.5 * ((a + b) / 2));
 
 // One frame. Returns screen position, plus the 0..1 depth everything else is
 // derived from: 0 is the far pole, 1 the near one.
-function project(node, angle) {
+//
+// `spread` is the entrance: at 1 every node sits well outside the sphere along
+// its own radius, at 0 it is home. Animating it to 0 is twenty-four separate
+// records converging into one structure, which is the sentence this whole graphic
+// is trying to be. It multiplies the radius rather than adding a random offset,
+// so nodes arrive along the line they will occupy instead of swirling.
+function project(node, angle, spread = 0) {
 
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
@@ -119,11 +150,13 @@ function project(node, angle) {
   const x = node.x * cos - node.z * sin;
   const z = node.x * sin + node.z * cos;
 
+  const reach = 1 + spread * 1.9;
+
   const scale = CAMERA / (CAMERA - z);
 
   return {
-    x: round(CENTRE.x + x * RADIUS * scale),
-    y: round(CENTRE.y + node.y * RADIUS * scale),
+    x: round(CENTRE.x + x * RADIUS * scale * reach),
+    y: round(CENTRE.y + node.y * RADIUS * scale * reach),
     depth: round((z + 1) / 2),
     scale: round(scale)
   };
@@ -141,16 +174,19 @@ export default function HeroNet() {
 
     if (!root) return;
 
+    const stage = root.querySelector("[data-net-stage]");
     const dots = [...root.querySelectorAll("[data-net-dot]")];
     const lines = [...root.querySelectorAll("[data-net-line]")];
+    const tags = [...root.querySelectorAll("[data-net-tag]")];
 
-    // The initial render is already a complete, correct frame at angle 0, so
-    // reduced motion needs no settled state applied — it just never moves.
+    // The initial render is already a complete, correct frame at angle 0 and
+    // fully converged, so reduced motion needs no settled state applied — the
+    // `.pos-scene-hidden` override in globals.css reveals it and it never moves.
     if (reducedMotion()) return;
 
-    const paint = (angle) => {
+    const paint = (angle, spread) => {
 
-      const points = NODES.map(node => project(node, angle));
+      const points = NODES.map(node => project(node, angle, spread));
 
       dots.forEach((dot, i) => {
         const p = points[i];
@@ -166,7 +202,20 @@ export default function HeroNet() {
         line.setAttribute("y1", points[a].y);
         line.setAttribute("x2", points[b].x);
         line.setAttribute("y2", points[b].y);
-        line.setAttribute("opacity", edgeOpacity(points[a].depth, points[b].depth));
+        // Edges hold off until the nodes have nearly landed. Drawn during the
+        // converge they whip around the frame and the entrance reads as chaos
+        // rather than as things finding each other.
+        line.setAttribute("opacity", round(edgeOpacity(points[a].depth, points[b].depth) * Math.max(0, 1 - spread * 2.2)));
+      });
+
+      tags.forEach(tag => {
+        const p = points[Number(tag.dataset.netTag)];
+        tag.setAttribute("x", p.x);
+        tag.setAttribute("y", round(p.y - 8 - 3 * p.scale));
+        // Ramped over the top third of the turn toward the viewer, so a tag
+        // arrives and leaves rather than blinking.
+        const shown = Math.max(0, (p.depth - TAG_THRESHOLD) / (1 - TAG_THRESHOLD));
+        tag.setAttribute("opacity", round(shown * (1 - spread)));
       });
 
     };
@@ -181,15 +230,36 @@ export default function HeroNet() {
     // the shape of anime's instance, and a wrong guess here fails exactly the way
     // the bug this file replaces failed: silently, as a thing that renders once
     // and never moves.
-    const state = { angle: 0 };
+    const state = { angle: 0, spread: 1 };
 
     const spin = animate(state, {
       angle: Math.PI * 2,
       duration: 54000,
       ease: "linear",
       loop: true,
-      onUpdate: () => paint(state.angle)
+      onUpdate: () => paint(state.angle, state.spread)
     });
+
+    // The converge. A second animation with no onUpdate of its own — it only
+    // mutates `state`, and the spin above is already repainting every frame, so
+    // this costs no extra work and there is no second render loop to keep in step.
+    const converge = animate(state, {
+      spread: 0,
+      duration: 1600,
+      ease: "out(3)"
+    });
+
+    // Painted before being revealed, and in that order deliberately.
+    //
+    // `.pos-scene-hidden` holds the group at opacity 0 from the first byte of
+    // HTML, so the settled sphere React rendered is never shown. But revealing it
+    // before the first frame exists would put that settled sphere on screen for a
+    // frame anyway, and the entrance would read as a glitch — assembled, flung
+    // apart, reassembled. So the scattered frame is written synchronously here,
+    // and only then does the group become visible.
+    paint(0, 1);
+
+    stage.style.opacity = "1";
 
     // Off-screen it is invisible and still costing a frame every 16ms on a
     // phone. The hero is at the top of a long page, so it leaves the viewport
@@ -220,28 +290,66 @@ export default function HeroNet() {
         aria-hidden="true"
         fill="none"
       >
-        {EDGES.map(([a, b], i) => (
-          <line
-            key={i}
-            data-net-line
-            x1={initial[a].x} y1={initial[a].y}
-            x2={initial[b].x} y2={initial[b].y}
-            stroke="var(--ink-soft)"
-            strokeWidth="0.9"
-            opacity={edgeOpacity(initial[a].depth, initial[b].depth)}
-          />
-        ))}
+        {/* One group so the whole thing can be held back for the entrance with a
+            single class — the same `.pos-scene-hidden` every other scene on this
+            page uses, which globals.css un-hides under reduced motion and
+            layout.js's <noscript> un-hides without scripting. */}
+        <g data-net-stage className="pos-scene-hidden">
 
-        {initial.map((p, i) => (
-          <circle
-            key={i}
-            data-net-dot
-            cx={p.x} cy={p.y}
-            r={round(1.7 + 2.2 * p.scale * p.depth)}
-            fill={ACCENTS.has(i) ? "var(--moss)" : "var(--ink-soft)"}
-            opacity={round(0.3 + 0.7 * p.depth)}
-          />
-        ))}
+          {EDGES.map(([a, b], i) => (
+            <line
+              key={i}
+              data-net-line
+              x1={initial[a].x} y1={initial[a].y}
+              x2={initial[b].x} y2={initial[b].y}
+              stroke="var(--ink-soft)"
+              strokeWidth="0.9"
+              opacity={edgeOpacity(initial[a].depth, initial[b].depth)}
+            />
+          ))}
+
+          {initial.map((p, i) => (
+            <circle
+              key={i}
+              data-net-dot
+              cx={p.x} cy={p.y}
+              r={round(1.7 + 2.2 * p.scale * p.depth)}
+              fill={TAGS[i] ? "var(--ember-ink)" : "var(--ink-soft)"}
+              opacity={round(0.3 + 0.7 * p.depth)}
+            />
+          ))}
+
+          {/* A named record's dot is ember and so is its tag, so the label and
+              the thing it labels are obviously the same object. Rendered last to
+              sit above the mesh. */}
+          {Object.entries(TAGS).map(([index, label]) => {
+            const p = initial[Number(index)];
+            const shown = Math.max(0, (p.depth - TAG_THRESHOLD) / (1 - TAG_THRESHOLD));
+            return (
+              <text
+                key={index}
+                data-net-tag={index}
+                x={p.x} y={round(p.y - 8 - 3 * p.scale)}
+                textAnchor="middle"
+                fontSize="9"
+                className="pos-data"
+                fill="var(--ember-ink)"
+                /* A halo in the page colour, painted under the glyphs. These tags
+                   travel across a mesh of lines and other nodes' dots, so no
+                   static position is clear of everything and a 9px label crossing
+                   a stroke is unreadable. paintOrder lays the stroke down first,
+                   so it reads as clearance rather than as an outline. */
+                stroke="var(--paper)"
+                strokeWidth="2.6"
+                paintOrder="stroke"
+                opacity={round(shown)}
+              >
+                {label}
+              </text>
+            );
+          })}
+
+        </g>
       </svg>
     </div>
   );

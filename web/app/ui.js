@@ -6,11 +6,29 @@
 // Everything here is presentational and server-safe; interactive components
 // import the class helpers (btn, field) rather than the elements.
 
+// Four kinds of thing, four colours. Three of them used to be grey: `thought`
+// and `brief` were both slate-wash, so the two most different items in the queue
+// — a thing the app reasoned out on its own and the morning's reading — were
+// distinguishable only by their glyph and by reading a small uppercase word.
+//
+// The colours are identity, not severity. Tide for the two that are the app
+// having read something, moss for a nudge because a nudge is the app acting on
+// something settled, ember for `prompt` because "Noticed" genuinely is waiting on
+// an answer — which is the one meaning ember is allowed to carry.
+//
+// The ember glyph is --ember-ink rather than --ember: a 1.6px stroke of --ember
+// on --ember-wash measures 2.59:1, which is not a legible icon. --ember-ink is
+// the same orange, dark enough to draw with.
+// `text` is the kind's name in the kind's colour. The tile alone was too quiet
+// to do the job: in dark mode a wash sits about 1.1:1 against the card, which is
+// a deliberate whisper, so at a glance the queue still looked like a stack of
+// identical grey cards with slightly different icons. The label is the part the
+// eye lands on. All four are >= 4.5:1 on both card and paper.
 const KINDS = {
-  thought: { label: "Deep thinking", tile: "bg-slate-wash text-ink" },
-  nudge:   { label: "Nudge",         tile: "bg-moss-wash text-moss" },
-  prompt:  { label: "Noticed",       tile: "bg-ember-wash text-ember" },
-  brief:   { label: "Brief",         tile: "bg-slate-wash text-ink-soft" }
+  thought: { label: "Deep thinking", tile: "bg-tide-wash text-tide",       text: "text-tide" },
+  nudge:   { label: "Nudge",         tile: "bg-moss-wash text-moss",       text: "text-moss" },
+  prompt:  { label: "Noticed",       tile: "bg-ember-wash text-ember-ink", text: "text-ember-ink" },
+  brief:   { label: "Brief",         tile: "bg-iris-wash text-iris",       text: "text-iris" }
 };
 
 
@@ -145,6 +163,11 @@ export function kindLabel(kind) {
 }
 
 
+export function kindTone(kind) {
+  return (KINDS[kind] || KINDS.brief).text;
+}
+
+
 // One item in the triage queue. Its own widget rather than a row separated by
 // a hairline — three different kinds of thing used to render as one
 // undifferentiated list distinguishable only by reading a small grey word.
@@ -158,7 +181,7 @@ export function ItemCard({ kind, title, meta, waiting = true, children }) {
         <Tile kind={kind} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="text-[0.7rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
+            <span className={`text-[0.7rem] font-medium uppercase tracking-[0.08em] ${kindTone(kind)}`}>
               {kindLabel(kind)}
             </span>
             {waiting && <EmberDot />}
