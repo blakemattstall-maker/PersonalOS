@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { subscribeToPushAction, getVapidKeyAction } from "./actions.js";
 
 
@@ -8,6 +8,43 @@ import { subscribeToPushAction, getVapidKeyAction } from "./actions.js";
 // Screen. From a normal Safari tab the permission prompt still appears, is
 // still granted, and notifications then silently never arrive — so the state is
 // detected and explained up front rather than letting that happen.
+
+
+const isStandalone = () =>
+  window.matchMedia?.("(display-mode: standalone)").matches ||
+  window.navigator.standalone === true;
+
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+
+// What this browser is capable of, which is a fact about the environment rather
+// than something that happens over time — so it is read, not discovered by an
+// effect that then writes it into state.
+//
+// It cannot be read during the server render, which is the only reason it looked
+// like effect work: "checking" is what the server and React's first client render
+// have to agree on, and useSyncExternalStore's third argument is exactly that.
+// The snapshot is a string, so it needs no caching — a primitive compares by
+// value under Object.is.
+function capabilitySnapshot() {
+
+  if (typeof window === "undefined") return "checking";
+
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
+
+  if (isIOS() && !isStandalone()) return "needs-install";
+
+  return "ready";
+
+}
+
+const capabilityServerSnapshot = () => "checking";
+
+// Nothing to subscribe to: neither the presence of PushManager nor iOS's
+// display-mode survives a change without a reload. Stable identity so
+// useSyncExternalStore does not resubscribe every render.
+const subscribeToCapability = () => () => {};
+
 
 function urlBase64ToUint8Array(base64) {
 
@@ -22,49 +59,53 @@ function urlBase64ToUint8Array(base64) {
 
 export default function PushSetup() {
 
-  const [state, setState] = useState("checking");
+  const capability = useSyncExternalStore(
+    subscribeToCapability,
+    capabilitySnapshot,
+    capabilityServerSnapshot
+  );
+
+  // Everything that happens after the environment has been read: an existing
+  // subscription found on disk, or the user pressing the button. `capability` is
+  // the floor; this is anything that has moved on from it.
+  const [progress, setProgress] = useState(null);
+
+  const state = progress ?? capability;
+
   const [error, setError] = useState(null);
 
-  const isStandalone = () =>
-    window.matchMedia?.("(display-mode: standalone)").matches ||
-    window.navigator.standalone === true;
 
-  const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent);
-
-
+  // The one genuinely asynchronous question — is this device already registered?
+  // setProgress is called from a promise callback, not from the effect body, and
+  // "ready" is already the value being refined, so a registration failure needs
+  // no handling beyond staying put.
   useEffect(() => {
 
-    if (typeof window === "undefined") return;
+    if (capability !== "ready" || progress) return;
 
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      setState("unsupported");
-      return;
-    }
-
-    if (isIOS() && !isStandalone()) {
-      setState("needs-install");
-      return;
-    }
+    let cancelled = false;
 
     navigator.serviceWorker.register("/sw.js")
       .then(reg => reg.pushManager.getSubscription())
-      .then(sub => setState(sub ? "subscribed" : "ready"))
-      .catch(() => setState("ready"));
+      .then(sub => { if (sub && !cancelled) setProgress("subscribed"); })
+      .catch(() => {});
 
-  }, []);
+    return () => { cancelled = true; };
+
+  }, [capability, progress]);
 
 
   const enable = async () => {
 
     setError(null);
-    setState("working");
+    setProgress("working");
 
     try {
 
       const permission = await Notification.requestPermission();
 
       if (permission !== "granted") {
-        setState("denied");
+        setProgress("denied");
         return;
       }
 
@@ -82,11 +123,11 @@ export default function PushSetup() {
 
       await subscribeToPushAction(JSON.parse(JSON.stringify(subscription)));
 
-      setState("subscribed");
+      setProgress("subscribed");
 
     } catch (e) {
       setError(e.message);
-      setState("ready");
+      setProgress("ready");
     }
 
   };

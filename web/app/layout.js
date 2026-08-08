@@ -112,6 +112,18 @@ export default function RootLayout({ children }) {
     <html
       lang="en"
       className={`h-full ${bricolage.variable} ${inter.variable} ${dmMono.variable}`}
+      // THEME_SCRIPT below sets data-theme before React hydrates, deliberately —
+      // that is the whole reason it is a blocking script. React then finds an
+      // attribute the server never rendered and logs a hydration mismatch on
+      // every page load, forever, for something working exactly as designed.
+      //
+      // It is left alone either way ("This won't be patched up"), so the warning
+      // changes nothing except what else you can see: a console with a permanent
+      // error in it is a console nobody reads, and the real mismatches this app
+      // has actually shipped (see traps #12b and #12d) look identical to it.
+      // Suppression here covers this element's attributes only, which is the
+      // narrowest scope that covers the script.
+      suppressHydrationWarning
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />

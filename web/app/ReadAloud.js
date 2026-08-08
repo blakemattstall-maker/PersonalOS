@@ -52,7 +52,17 @@ export default function ReadAloud({ text, title, label = false, autoplay = false
 
     if (!readPrefs().autoplayBrief) return;
 
-    start();
+    // Kicked off after this effect returns rather than from inside it. start()
+    // sets React state synchronously, and doing that in an effect body forces
+    // exactly the cascading render react-hooks/set-state-in-effect exists to
+    // catch: the brief renders, immediately re-renders into "loading", and only
+    // then does the browser get to paint. Autoplay has no business being part of
+    // the first paint. The timer also gives unmount something to cancel, so a
+    // brief navigated away from in that first tick never starts talking from a
+    // component that no longer exists.
+    const kickoff = setTimeout(start, 0);
+
+    return () => clearTimeout(kickoff);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoplay, text]);

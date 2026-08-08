@@ -1,25 +1,23 @@
 "use client";
 
-import { useState, useTransition, useEffect, useRef, useSyncExternalStore } from "react";
+import { useState, useTransition, useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { respondToThreadAction, buildPlanAction, resolveDeepThought, resetBuildAction } from "./actions.js";
 import { PLAN_TOOLS } from "./planTools.js";
 import VoiceInput from "./VoiceInput.js";
 import { DeepThoughtBody } from "./shared.js";
 import ReadAloud from "./ReadAloud.js";
-import { readPrefs } from "./prefs.js";
+import { readPrefs, subscribeToPrefs } from "./prefs.js";
 import { ItemCard, btn, field } from "./ui.js";
 
 
-// Stable across renders on purpose — passed to useSyncExternalStore as the
-// subscribe function, which resubscribes whenever its identity changes. A
-// function literal defined inside the component would be a new identity every
-// render, turning "subscribe once" into "subscribe on every render".
-function subscribeToPrefs(callback) {
-  window.addEventListener("pos-prefs", callback);
-  return () => window.removeEventListener("pos-prefs", callback);
-}
-
+// subscribeToPrefs now lives in prefs.js, shared with SettingsPanel — it is the
+// same subscription, and keeping two copies meant only one of them invalidated
+// the snapshot cache that module now keeps.
+//
+// These two snapshots stay local because they return a string. A primitive is
+// compared by value, so recomputing it per render is safe without going through
+// that cache.
 const getSelfNameServerSnapshot = () => "PersonalOS";
 const getSelfNameSnapshot = () => readPrefs().displayName || "PersonalOS";
 
@@ -60,8 +58,31 @@ export default function DeepThoughtThread({ thought, turns }) {
   // silence is exactly what shipped as a real bug (a dropped parameter threw
   // inside the background job) and is worth guarding against even now that
   // bug is fixed — any future failure in there would look identical.
-  const wasBuildingRef = useRef(false);
   const [buildFailed, setBuildFailed] = useState(false);
+
+  // Both of the above are derived from a *transition* in isBuilding, not from
+  // its current value, so they need one bit of history. That history is state
+  // compared during render rather than a ref written from an effect.
+  //
+  // The effect version called setBuildFailed/setBuildStalled synchronously in
+  // its body, which is React's "adjust state when a prop changes" problem solved
+  // the expensive way: the component painted with the stale value first and then
+  // re-rendered, and it is what react-hooks/set-state-in-effect flags. Comparing
+  // during render is the documented shape for this — React discards the
+  // in-progress render and redoes it immediately, before the browser paints
+  // anything, so there is no intermediate frame and no cascading render.
+  const [buildingLastRender, setBuildingLastRender] = useState(isBuilding);
+
+  if (buildingLastRender !== isBuilding) {
+
+    setBuildingLastRender(isBuilding);
+
+    // Entering a build clears both flags. Leaving one without having reached
+    // "active" — the status a successful build sets — is the failure signal.
+    setBuildStalled(false);
+    setBuildFailed(!isBuilding && thought.thread_status !== "active");
+
+  }
 
   // buildPlan() now detects a previous failed attempt itself (it keys off
   // project_id, set the moment the project is created, not thread_status) and
@@ -91,37 +112,32 @@ export default function DeepThoughtThread({ thought, turns }) {
 
   // The build runs in the background on the server now, so the page has to
   // come back and look. Stops as soon as thread_status moves off "building".
+  //
+  // Only the timers live here now — the two flags they used to also maintain are
+  // set from the transition check above. This is the half of the old effect that
+  // is genuinely an effect: it drives things outside React (an interval and a
+  // timeout) and setBuildStalled is called from the timeout's callback, not from
+  // the effect body, which is the distinction the lint rule is drawing.
+  //
+  // thought.thread_status is no longer a dependency because isBuilding is
+  // derived from it: while isBuilding holds, the status is "building" by
+  // definition, so the only thing the extra dependency ever did was restart the
+  // 90-second stall timer when router.refresh() brought back an identical
+  // status.
   useEffect(() => {
 
-    if (isBuilding) {
+    if (!isBuilding) return;
 
-      wasBuildingRef.current = true;
-      setBuildFailed(false);
+    const timer = setInterval(() => router.refresh(), 4000);
 
-      const timer = setInterval(() => router.refresh(), 4000);
+    // A build normally lands in ~20-45s. If it's still going well past
+    // that, the server-side work was probably killed — offer a way out
+    // rather than spinning forever.
+    const stall = setTimeout(() => setBuildStalled(true), 90000);
 
-      // A build normally lands in ~20-45s. If it's still going well past
-      // that, the server-side work was probably killed — offer a way out
-      // rather than spinning forever.
-      const stall = setTimeout(() => setBuildStalled(true), 90000);
+    return () => { clearInterval(timer); clearTimeout(stall); };
 
-      return () => { clearInterval(timer); clearTimeout(stall); };
-
-    }
-
-    setBuildStalled(false);
-
-    // Was building, isn't anymore, and never reached "active" (which is what
-    // a successful build sets). That combination only happens one way: the
-    // background job threw and the server put it back where the user can
-    // retry. Say so, rather than letting the button just silently reappear.
-    if (wasBuildingRef.current && thought.thread_status !== "active") {
-      setBuildFailed(true);
-    }
-
-    wasBuildingRef.current = false;
-
-  }, [isBuilding, thought.thread_status, router]);
+  }, [isBuilding, router]);
 
 
   const handleResetBuild = () => {

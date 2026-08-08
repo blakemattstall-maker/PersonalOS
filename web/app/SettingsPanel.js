@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { readPrefs, writePrefs } from "./prefs.js";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { writePrefs, prefsSnapshot, prefsServerSnapshot, subscribeToPrefs } from "./prefs.js";
 import { NEURAL_VOICES, VOICE_PREVIEW_TEXT, listVoices, speakWith, playPreset, stop } from "./speech.js";
 import { saveSettingsAction, getDiagnosticsAction, sendTestPushAction } from "./actions.js";
 import PushSetup from "./PushSetup.js";
@@ -68,7 +68,18 @@ function Choice({ selected, onClick, name, blurb, trailing }) {
 
 export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
 
-  const [prefs, setPrefs] = useState(null);
+  // Prefs live in localStorage, which the server render cannot see.
+  //
+  // This was a useState(null) plus an effect that filled it in, which meant the
+  // entire panel returned null on the server and on React's first client render
+  // — the settings page shipped as an empty page and popped into existence after
+  // hydration. useSyncExternalStore's third argument is precisely "what to
+  // render before you can read the store", so the panel now server-renders with
+  // the defaults and corrects to the saved values on the first render after
+  // hydrating. Same technique as DeepThoughtThread's selfName; see trap #13 in
+  // the README for why the state-plus-effect shape is the wrong one.
+  const prefs = useSyncExternalStore(subscribeToPrefs, prefsSnapshot, prefsServerSnapshot);
+
   const [deviceVoices, setDeviceVoices] = useState([]);
 
   const [level, setLevel] = useState(initialSettings?.interruption_level || "digest_plus_urgent");
@@ -90,14 +101,10 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
   const [previewing, setPreviewing] = useState(null);
 
 
-  // Prefs live in localStorage, which the server render can't see, so the
-  // panel paints from defaults for one frame and then corrects itself. Doing
-  // it the other way round would mean a settings page that flashes the wrong
-  // state on every visit.
-  useEffect(() => {
-    setPrefs(readPrefs());
-    return () => stop();
-  }, []);
+  // Leaving this page mid-preview must not leave a voice talking over the next
+  // one. All that is left of the old prefs effect, which is the only part of it
+  // that was ever effect-shaped.
+  useEffect(() => stop, []);
 
 
   useEffect(() => {
@@ -124,10 +131,12 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
   }, []);
 
 
-  if (!prefs) return null;
-
-
-  const update = (patch) => setPrefs(writePrefs(patch));
+  // No `if (!prefs) return null` any more: the snapshot is always a complete
+  // prefs object, defaults included, so there is no un-renderable state to guard
+  // against. writePrefs dispatches the event the store subscribes to, so the
+  // re-render comes from the store rather than from a second copy of the value
+  // held in component state.
+  const update = (patch) => writePrefs(patch);
 
 
   const previewNeural = (voice) => {

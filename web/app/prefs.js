@@ -55,9 +55,67 @@ export function writePrefs(patch) {
 
   if ("theme" in patch) applyTheme(next.theme);
 
+  cached = null;
+
   window.dispatchEvent(new CustomEvent("pos-prefs", { detail: next }));
 
   return next;
+
+}
+
+
+// The useSyncExternalStore face of this module, for components that render from
+// prefs rather than only writing them.
+//
+// The cache is the whole point and is not an optimisation. React calls
+// getSnapshot on every render and compares the result with Object.is, so a
+// getSnapshot that returned readPrefs() directly would hand back a fresh object
+// every time and re-render forever — a hang, with no error anywhere. Components
+// whose snapshot is a primitive (DeepThoughtThread's selfName is a string) are
+// safe without this; anything reading the whole object is not.
+let cached = null;
+
+// Frozen and module-level so the server snapshot is one stable reference too —
+// the same Object.is comparison applies during hydration.
+const SERVER_SNAPSHOT = Object.freeze({ ...DEFAULTS });
+
+export function prefsSnapshot() {
+
+  if (typeof window === "undefined") return SERVER_SNAPSHOT;
+
+  if (!cached) cached = readPrefs();
+
+  return cached;
+
+}
+
+export function prefsServerSnapshot() {
+  return SERVER_SNAPSHOT;
+}
+
+
+// Stable across renders on purpose: useSyncExternalStore resubscribes whenever
+// this function's identity changes, so a literal defined inside a component
+// would turn "subscribe once" into "subscribe on every render".
+//
+// `storage` is listened to as well as the app's own event because localStorage
+// changes made in another tab fire only that one — without it, changing the
+// reading voice in one tab left every other tab rendering the old choice until
+// a reload.
+export function subscribeToPrefs(callback) {
+
+  const invalidate = () => {
+    cached = null;
+    callback();
+  };
+
+  window.addEventListener("pos-prefs", invalidate);
+  window.addEventListener("storage", invalidate);
+
+  return () => {
+    window.removeEventListener("pos-prefs", invalidate);
+    window.removeEventListener("storage", invalidate);
+  };
 
 }
 
