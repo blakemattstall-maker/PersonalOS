@@ -163,3 +163,5 @@ short version:
 - `docs/PersonalOS-Architecture-Source-of-Truth.md` — why it is built this way.
 - `docs/PersonalOS-Premortem.md` — every way this project can fail, what to do
   about each, and a rebuild brief in §3.
+- `docs/PersonalOS-Roadmap-2026-08-08.md` — what to build next, sized small to
+  big, for picking up a long session cold.
