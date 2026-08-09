@@ -129,6 +129,7 @@ A wrong edge is worse than a missing one, because everything downstream treats e
 | `neighbours()` | the raw edges touching one node |
 | `walk({ type, id, depth })` | everything connected, resolved to readable rows, ranked by distance → confidence → recency |
 | `describeNeighbourhood()` | that neighbourhood as a few dozen tokens, for a prompt |
+| `connectionsForText({ text })` | what the graph knows about whatever this text is about — the bridge into `buildRichContext()` |
 | `resolveReference({ text })` | "the thing with Priya" → ranked candidates + an honest ambiguity flag |
 
 Bounded in three ways, because a graph walk is the easiest place in this codebase to accidentally build something expensive: depth capped at 2, node count capped, and hydration is **one query per type** rather than one per node.
@@ -145,7 +146,9 @@ Four mechanisms, each answering a different question. `lib/context.js`'s `buildR
 
 **2. Cross-domain signals** (`lib/signals.js`) — seven computed lines: money, follow-through, outstanding, intentions, relationships, projects, presence. A few dozen tokens, not a data dump, because this rides in every reasoning call.
 
-**3. The graph** — `walk()` and `resolveReference()`, above.
+**3. Connections** (`connectionsForText()`) — **the other axis, and the one that was missing.** Semantic retrieval answers *what else is ABOUT this*. The graph answers *what else is CONNECTED to this*, and the two have different answers: a project's twelve open tasks and what it has cost do not resemble a question about the project, so no amount of cosine similarity will ever surface them.
+
+It is free when it doesn't apply, which is what makes it affordable in every reasoning call. The entity roster is cached for a minute and the matching is a regex, so a question naming nobody on file returns `null` in **0 ms without touching the database** — measured, not assumed. When something *is* named the work is bounded by construction: at most two anchors, one hop each, one query per entity type rather than one per node.
 
 **4. Insights** (`tools/islands.js`) — what walking the graph noticed, carried forward as context rather than pushed and forgotten. An insight raised last week is context for a deep thought today.
 
@@ -177,6 +180,16 @@ The pipeline that makes this an operating system rather than a chatbot. Each sta
 Findings are **detected in code**; the model is only ever asked to phrase them, with the exact figures given and an instruction never to invent, round or recompute one. An insight is a claim about someone's life — *"you keep spending on X while saying you want Y"* — and a model inventing those produces confident, specific, unfalsifiable nonsense. A detected finding can be wrong, but it can be checked.
 
 This is the most important rule in the codebase and it appears everywhere: **never let a model do arithmetic and then narrate it.** Compute in code, hand the model the figure as fact.
+
+**Grouping is part of the arithmetic.** Each detector fires blind to the others, so a `relationship_debt` and a `project_cost` about the same project used to arrive as two notifications about one situation — out of a budget of one message a day. Every finding now carries typed entity `refs`, and union-find groups them by shared entity before anything is phrased. It handles the transitive case: A shares a project with B, B shares a spending category with C, so all three are one story.
+
+**And here is the line that must not be crossed.**
+
+> Grouping findings that share an entity is **arithmetic** — two findings either name the same project or they do not, and the graph already says which. Deriving one finding **from another finding's output** is not, and is forbidden.
+
+A chain of inferences starts sounding more certain than any link in it, and the compute-in-code discipline is the first thing to break. So: group, then phrase **once**, from the raw detected facts of every member. A phrased insight is never fed back in as evidence for detecting a new one. `tests/synthesis.test.js` asserts the model's input contains facts and no `body`.
+
+Grouping runs **before** the already-said check, and both the composite fingerprint and each member's own are checked. Otherwise a group's second member survives on its own the night after the group was raised, and arrives as a separate notification about a situation already described.
 
 ### Intervention is judgment, and defaults to silence
 
@@ -232,11 +245,12 @@ Stating the boundaries is part of defining the framework.
 
 Honest gaps, so nobody has to rediscover them.
 
-- **Longitudinal understanding is a substrate with almost no readers.** `daily_metrics` is read by the observer and nothing else. Correct definitions now exist and history is accumulating; the analysis is deliberately deferred until there are 6–8 weeks of it. **Do not ship trend claims before then.**
-- **Insights are terminal.** `insights.entities` — the structured facts that produced a finding — is never read back, and `acted_on` is never set, so nothing can learn which findings were worth making.
-- **Findings do not see each other.** A `relationship_debt` and a `project_cost` about the same project are two notifications. Grouping them by shared entity is arithmetic and is safe; letting one finding be *built from* another's output is not, and that line should not be crossed — a chain of inferences starts sounding more certain than any link in it.
-- **The graph is not yet read by context assembly.** `walk()` exists and is tested; `buildRichContext()` does not call it yet.
-- **Only memories are embedded.** Notes, intentions and deep thoughts are retrieved by recency, not relevance.
+- **Longitudinal understanding is a substrate with almost no readers.** `daily_metrics` is read by the observer and nothing else. Correct definitions now exist and history is accumulating; the analysis is deliberately deferred until there are 6–8 weeks of it. **Do not ship trend claims before then** — revisit mid-September 2026.
+- **The feedback loop is one tap wide.** `acted_on` is now written, but only from an explicit button. Nothing infers that a finding mattered from what the user subsequently did, and with a handful of insights on file there is not yet enough signal to rank the detectors by. It is a loop that exists rather than a loop that works.
+- **Only memories are embedded.** Notes, intentions and deep thoughts are retrieved by recency, not relevance. The graph partly compensates — a note naming a project is now reachable through that project — but a note that is *about* something without naming it is still invisible to retrieval.
+- **`resolveReference()` is not wired to capture.** It resolves "the thing with Priya" and reports honestly whether the answer is ambiguous; nothing calls it from the capture path yet, so `tools/pending.js` still only handles the one-shot case where the router asks and the next utterance answers.
+- **The graph has no surface of its own.** No `/graph` page, no `query_connections` tool. Connections reach the user only through what a reasoning call happens to say about them.
+- **Place linking is thin.** A visit joins a calendar *event*, and nothing else. Transactions cannot join at all (see §3), and Supabase's `calendar_events` is a partial mirror since the query tools read Google live — so the join reaches less than it looks like it should.
 
 ---
 

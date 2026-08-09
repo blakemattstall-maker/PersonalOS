@@ -11,7 +11,14 @@
 >
 > **A fifth defect, in the same family, found by a test written for Phase 1:** PostgREST caps responses at 1000 rows and `.limit()` does not raise it. `visitsInWindow` shipped with it, and `shouldCreatePlace` plus the orphan-adoption pass in `tools/location.js` had it already. See README trap #21.
 >
-> **Still open, deliberately:** Phase 2 (connection-aware context, cross-finding synthesis) and Phase 3 (longitudinal — blocked until ~mid-September 2026, when there are 6–8 weeks of correctly-defined `daily_metrics`).
+> **Phase 2 shipped the same day** (`ea12fe4`): connection-aware context wired into `buildRichContext`, cross-finding synthesis by shared entity, and insights given a surface and a feedback signal. 161 tests.
+>
+> Three things Phase 2 turned up that this audit did not anticipate:
+> - **Insights had no surface at all**, not merely a weak one. §2.2 G5 called them "terminal" — the truer statement is that at every interruption level below `everything` they were written and then unreachable by any means. Three were sitting undelivered and unseeable.
+> - **The connection lookup is genuinely free when it does not apply** (0 ms, zero queries). That property is what makes it safe in every reasoning call, and it was not obvious in advance that it could be had.
+> - **A server action that throws takes down the whole page.** There is no `error.js` anywhere in this app, so `resolveInsight` throwing on a bad id would have meant "This page couldn't load" for a button that clears one card. Two failure shapes have to be checked, not one — see README trap #15.
+>
+> **Still open, deliberately:** Phase 3 (longitudinal — blocked until ~mid-September 2026, when there are 6–8 weeks of correctly-defined `daily_metrics`), wiring `resolveReference()` into the capture path, and giving the graph a surface of its own.
 >
 > The framework this audit describes is now defined properly in **`PersonalOS-Knowledge-Architecture.md`**, which is the document to read first.
 

@@ -265,6 +265,19 @@ short version:
     query, page or context assembly could ask the graph anything. It was a real
     graph and an unreadable one, and nothing about it looked broken. Ship the
     reader with the writer.
+23. **`app/backend.js` turns a handler that threw into `{ error }` with no
+    `success` key**, so a caller testing only `result.success === false` reads
+    a 500 as a success. `InsightCard` checks both shapes. This is trap #15's
+    sibling: there, a discarded result could not fail; here, a checked result
+    fails in a shape the check didn't cover. Whenever a write matters, check
+    what it returned **and** know every shape "it went wrong" can arrive in.
+24. **There is no `error.js` anywhere in this app, so a throw out of a server
+    action replaces the entire page** with Next's "This page couldn't load".
+    `resolveInsight` therefore returns `{ success: false, error }` instead of
+    throwing — a button that clears one card must not be able to take down the
+    dashboard. Note the other half: an update that matched **zero rows** is
+    reported by PostgREST as an empty array and no error, so "did nothing" has
+    to be checked for separately or a stale id looks like a success.
 
 ## Where to look next
 

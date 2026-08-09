@@ -45,10 +45,23 @@ The merchant classifier could return `transfers`, and on live data it was callin
 
 **PostgREST caps a response at 1000 rows, and `.limit()` does not raise it.** `visitsInWindow` shipped asking for 5,000, got 1,000, and reported three visits across a fortnight because it had only ever seen one day. `shouldCreatePlace` and the orphan-adoption pass in `tools/location.js` had the same bug already — so a newly recognised place could be created *already missing the visits that created it*. `selectAll()` in `lib/supabase.js` pages properly; a test rejects any `.limit()` above the cap.
 
+### Then Phase 2, same session — the graph reached what the system says
+
+**Connection-aware context.** `buildRichContext()` retrieved memories by semantic similarity — things *about* a subject — and had no way to reach things *connected* to it. Asking "how is the Trifilm thing going" now also carries its twelve open tasks, the deep thoughts about it and what it has cost, none of which resemble the question and none of which cosine similarity will ever surface.
+
+It costs **0 ms and zero queries when the text names nobody on file** (measured, not assumed) — the roster is cached and the match is a regex, so the common case returns before touching the database, and the calls that pass no query at all (observer, brief, nudge review) skip it entirely. Wired into `general_question` and deep thinking.
+
+**Cross-finding synthesis.** Findings now carry typed entity refs, and union-find groups them by shared entity before anything is phrased — transitively, so A→project→B→category→C is one story. Grouping runs *before* the already-said check and both composite and member fingerprints are checked, or a group's second member arrives alone the next night about something already described.
+
+The line, which is in the tests: grouping is arithmetic and safe; deriving one finding **from another finding's output** is forbidden. A chain of inferences starts sounding more certain than any link in it.
+
+**Insights exist now.** An insight was only ever a push — at every interruption level below "everything", which is every level they are tiered above, the finding was written and then unreachable, and a swiped notification meant it was gone. Three had been sitting undelivered and unseeable. They now ride back with prompts, render as their own "Connected" card, and carry `acted_on` — a column that has existed since the graph shipped with nothing ever writing to it.
+
 ### What was deliberately NOT done
 
 - **No trend or correlation claims.** `daily_metrics` has 14 correct days. The observer's refusal to claim a trend below 14 days stays exactly as it is. Revisit in **mid-September**, not before.
-- **`buildRichContext()` does not call `walk()` yet.** The read side is built and tested; wiring it into every reasoning call is the next phase, and it should be done with the token budget in view.
+- **`resolveReference()` is not wired to capture.** It works and is tested; `tools/pending.js` asking the question when `unambiguous` is false is the remaining half.
+- **The graph has no surface of its own.** No `/graph` page, no `query_connections` tool.
 - **No new ambient input.** Passive already outweighs active ~3:1 and the passive data that existed was doing nothing. Connect before collecting.
 
 ---
