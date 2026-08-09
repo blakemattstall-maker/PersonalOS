@@ -51,7 +51,13 @@ ${JSON.stringify(context.memories, null, 2)}
 Where things actually stand right now — real figures, already calculated,
 use them as fact and never re-total them:
 ${context.signals || "(no cross-domain data yet)"}
-
+${context.connections ? `
+What is already connected to the things this decision names. These are
+recorded connections, not guesses — a task really does belong to that
+project, a charge really was for it. Use them to be specific about what
+this decision would actually disturb:
+${context.connections}
+` : ""}
 Return ONLY a JSON object with this exact shape:
 
 {

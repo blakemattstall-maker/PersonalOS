@@ -104,6 +104,34 @@ const PROMPTS = {
       created_at: hoursAgo(20),
       payload: {}
     }
+  ],
+
+  // Insights ride back on the same call as prompts. Both shapes are here so
+  // the two cards can be compared side by side locally — they sit in the same
+  // queue and must not read as the same kind of thing: a prompt asks you
+  // something, an insight tells you something and asks only whether it was
+  // worth telling you.
+  //
+  // The second one is deliberately a synthesis — two findings the graph
+  // confirmed were about the same project — because that is the case the
+  // grouping exists for and the one hardest to picture from the code.
+  insights: [
+    {
+      id: "fx-insight-1",
+      kind: "insight",
+      title: "Eating out vs. the cut",
+      body: "You've spent $184 eating out in 30 days while the intention you saved on the 12th was to be lean by winter. That's the second-largest category this month.",
+      created_at: hoursAgo(6),
+      seen: false
+    },
+    {
+      id: "fx-insight-2",
+      kind: "insight",
+      title: "The presentation is costing twice",
+      body: "MKT 337 has taken $61 in printing and coffee since Tuesday and it's the same project Marcus is on — the one you haven't replied to in three weeks. The deadline is Thursday.",
+      created_at: hoursAgo(30),
+      seen: true
+    }
   ]
 };
 

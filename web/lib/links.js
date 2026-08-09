@@ -417,6 +417,60 @@ export async function resolveReference({ text, types = null, limit = 8 } = {}) {
 }
 
 
+// What the graph knows about whatever this text is about.
+//
+// The bridge between the graph and every reasoning call. buildRichContext()
+// already retrieves memories by semantic similarity — things that are ABOUT
+// the same subject. This adds the other axis: things that are CONNECTED to it.
+// Asking "how is the Trifilm thing going" retrieves memories that mention it
+// and now also its twelve open tasks, the two deep thoughts about it and what
+// it has cost, none of which need to resemble the question to be relevant.
+//
+// ── Why this is nearly free ──────────────────────────────────────────────
+//
+// It costs nothing at all unless the text names something the system already
+// knows. The roster is cached for a minute and the matching is a regex, so a
+// question that names no person, project or place does one cached lookup and
+// returns null before touching the database. That property is deliberate:
+// this rides in every reasoning call, and most of them mention nobody.
+//
+// When something IS named, the work is bounded by construction — at most two
+// anchors, one hop each, and walk() issues one query per entity type rather
+// than one per node.
+export async function connectionsForText({ text, maxAnchors = 2, perAnchor = 8 } = {}) {
+
+  if (!text) return null;
+
+  const entities = await loadEntities();
+
+  const anchors = [];
+
+  for (const [entityType, roster] of Object.entries(entities)) {
+    for (const hit of findMentions(text, roster)) {
+      anchors.push({ type: entityType, id: String(hit.id), name: hit.name });
+    }
+  }
+
+  // The common case. No database work has happened.
+  if (anchors.length === 0) return null;
+
+  const walks = await Promise.all(
+    anchors.slice(0, maxAnchors).map(anchor =>
+      walk({ type: anchor.type, id: anchor.id, depth: 1, limit: perAnchor })
+        .catch(() => null)
+    )
+  );
+
+  const described = walks
+    .filter(Boolean)
+    .map(result => describeNeighbourhood(result, { limit: perAnchor }))
+    .filter(Boolean);
+
+  return described.length ? described.join("\n\n") : null;
+
+}
+
+
 // ── Recognising entities in text ─────────────────────────────────────────
 //
 // Name matching, with the obvious traps handled. "Jake" must not match inside

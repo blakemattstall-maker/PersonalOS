@@ -321,6 +321,28 @@ export async function answerPromptAction(id, answer) {
 }
 
 
+// Clearing an insight, and saying whether it was worth making.
+//
+// The second half is the point. `insights.acted_on` has existed since the
+// graph shipped and nothing has ever written to it, so four detectors have
+// been firing with no feedback whatsoever about which of them produce
+// something a person acts on. "Got it" and "Did something about this" are one
+// extra tap and the only signal that difference has ever had.
+export async function resolveInsightAction(id, acted) {
+
+  const result = await backendPost("/api/data", {
+    type: "insight",
+    id,
+    answer: acted ? "acted" : "dismissed"
+  });
+
+  revalidatePath("/");
+
+  return result;
+
+}
+
+
 // Same tool the Shortcut's query_finances call reaches, so the answer to
 // "what did I spend on takeout" is identical whether it's asked in the app or
 // spoken into a phone. No revalidatePath — this reads, it never changes what's

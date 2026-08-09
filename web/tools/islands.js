@@ -239,6 +239,11 @@ async function detectFindings(tz) {
         kind: "relationship_debt",
         strength: Math.min(1, mentions / 5),
         fingerprint: `relationship_debt:${person.id}`,
+        // The typed entities this finding is ABOUT, as opposed to `facts`,
+        // which is what it says. Grouping needs the first and phrasing needs
+        // the second, and conflating them is why nothing could previously tell
+        // that two findings concerned the same project.
+        refs: [{ type: "person", id: String(person.id) }],
         facts: {
           person: person.name,
           mentionedIn: mentions,
@@ -280,6 +285,15 @@ async function detectFindings(tz) {
         kind: "contradiction",
         strength: Math.min(1, spent / 200),
         fingerprint: `contradiction:${intention.id}:${category}`,
+        // Two refs, because this finding genuinely is about two things. The
+        // category ref is what lets it group with a `concentration` finding
+        // about the same spending — "eating out is 45% of your month" and
+        // "you said you wanted to cut and spent $180 eating out" are one
+        // story, and were being pushed as two notifications.
+        refs: [
+          { type: "intention", id: String(intention.id) },
+          { type: "category", id: category }
+        ],
         facts: {
           intention: intention.content,
           category: label,
@@ -312,6 +326,7 @@ async function detectFindings(tz) {
       kind: "project_cost",
       strength: 0.6,
       fingerprint: `project_cost:${project.id}:${now.toFormat("yyyy-LL")}`,
+      refs: [{ type: "project", id: String(project.id) }],
       facts: { project: project.name, spent30d: Math.round(spent * 100) / 100, charges: ids.length }
     });
 
@@ -331,6 +346,10 @@ async function detectFindings(tz) {
       kind: "concentration",
       strength: share,
       fingerprint: `concentration:${category}:${now.toFormat("yyyy-LL")}`,
+      // A spending category is not a row in any table, so it gets a synthetic
+      // ref. It still groups: a concentration in "eating out" and an intention
+      // contradicted by "eating out" are the same story told twice.
+      refs: [{ type: "category", id: category }],
       facts: {
         category,
         spent30d: Math.round(amount * 100) / 100,
@@ -343,6 +362,84 @@ async function detectFindings(tz) {
 
 
   return findings.sort((a, b) => b.strength - a.strength);
+
+}
+
+
+// ── Grouping ─────────────────────────────────────────────────────────────
+//
+// Each detector fires independently and none of them can see the others, so a
+// `relationship_debt` and a `project_cost` about the same project arrived as
+// two separate notifications about one situation. Getting two buzzes for one
+// thing is the fastest way to make someone mute this app, and the interruption
+// budget is one message a day — spending it twice on the same story is worse
+// than spending it once.
+//
+// The rule this obeys, and the line it must not cross:
+//
+//   Grouping findings that share an entity is ARITHMETIC. Two findings either
+//   name the same project or they do not, and the graph already says which.
+//
+//   Deriving one finding FROM another finding's output is NOT, and is
+//   forbidden. A chain of inferences starts sounding more certain than any
+//   link in it, and the whole "compute in code, model only phrases" discipline
+//   is what breaks first. So: group, then phrase once, from the raw facts of
+//   every member. Never feed a phrased insight back in as evidence.
+//
+// Union-find over shared refs, which handles the transitive case — A shares a
+// project with B, B shares a category with C, so all three are one story.
+export function groupFindings(findings) {
+
+  const parent = findings.map((_, i) => i);
+
+  const find = (i) => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]];
+      i = parent[i];
+    }
+    return i;
+  };
+
+  const union = (a, b) => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent[rootB] = rootA;
+  };
+
+  const byRef = new Map();
+
+  findings.forEach((finding, index) => {
+    for (const ref of finding.refs || []) {
+      const key = `${ref.type}:${ref.id}`;
+      if (byRef.has(key)) union(byRef.get(key), index);
+      else byRef.set(key, index);
+    }
+  });
+
+  const groups = new Map();
+
+  findings.forEach((finding, index) => {
+    const root = find(index);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(finding);
+  });
+
+  return [...groups.values()].map(members => {
+
+    const sorted = members.slice().sort((a, b) => b.strength - a.strength);
+
+    return {
+      members: sorted,
+      // The strongest member decides how loudly the group speaks.
+      strength: sorted[0].strength,
+      kind: sorted.length === 1 ? sorted[0].kind : "synthesis",
+      // Composite, and stable regardless of detection order, so the same
+      // situation re-detected tomorrow produces the same fingerprint and is
+      // recognised as already said.
+      fingerprint: sorted.map(f => f.fingerprint).sort().join(" + ")
+    };
+
+  }).sort((a, b) => b.strength - a.strength);
 
 }
 
@@ -360,12 +457,25 @@ export async function findInsights({ deliverImmediately = false } = {}) {
 
   if (findings.length === 0) return { success: true, found: 0, written: 0 };
 
-  // Already-known findings are dropped before anything is phrased, so a
-  // standing situation costs nothing to re-detect every night.
+  // Grouped BEFORE the known check, deliberately. Checking first and grouping
+  // after would let a group's second member survive on its own the night after
+  // the group was raised, and arrive as a separate notification about a
+  // situation already described.
+  const groups = groupFindings(findings);
+
+  // Both the composite fingerprint and every member's own fingerprint are
+  // checked, so a group is recognised as already-said whether it was raised
+  // whole or whether one of its members was raised alone before the other
+  // appeared.
+  const allFingerprints = [
+    ...groups.map(g => g.fingerprint),
+    ...findings.map(f => f.fingerprint)
+  ];
+
   const { data: existing, error } = await supabase
     .from("insights")
     .select("fingerprint")
-    .in("fingerprint", findings.map(f => f.fingerprint));
+    .in("fingerprint", allFingerprints);
 
   if (error && /schema cache|does not exist/i.test(error.message)) {
     return { success: false, skipped: "insights table not created yet" };
@@ -373,9 +483,11 @@ export async function findInsights({ deliverImmediately = false } = {}) {
 
   const known = new Set((existing || []).map(r => r.fingerprint));
 
-  const fresh = findings.filter(f => !known.has(f.fingerprint)).slice(0, MAX_NEW_INSIGHTS);
+  const fresh = groups
+    .filter(g => !known.has(g.fingerprint) && !g.members.every(m => known.has(m.fingerprint)))
+    .slice(0, MAX_NEW_INSIGHTS);
 
-  if (fresh.length === 0) return { success: true, found: findings.length, written: 0 };
+  if (fresh.length === 0) return { success: true, found: findings.length, groups: groups.length, written: 0 };
 
 
   const response = await openai.chat.completions.create({
@@ -388,19 +500,34 @@ export async function findInsights({ deliverImmediately = false } = {}) {
       {
         role: "system",
         content:
-          `Each finding below was DETECTED from this person's own data by walking connections ` +
+          `Each item below was DETECTED from this person's own data by walking connections ` +
           `between domains that normally cannot see each other — what he writes about, who he ` +
           `contacts, what he spends, what he said he wanted.\n\n` +
-          `Write each one as one or two sentences he would actually want to read. Blunt and ` +
+          `An item may contain SEVERAL findings. When it does, they were verified to be about ` +
+          `the same thing — the same project, person, intention or spending category — and you ` +
+          `must write them as ONE observation, not a list. That single sentence is the whole ` +
+          `point: each finding on its own is a fact he could have looked up, and putting them ` +
+          `side by side is the part he cannot do himself.\n\n` +
+          `Write each item as one or two sentences he would actually want to read. Blunt and ` +
           `specific; he has asked never to have things softened. Use the exact figures given ` +
-          `and never invent, round or recompute one. Say the connection plainly — the value is ` +
-          `that these two facts had never been put side by side.\n\n` +
-          `Do not moralise and do not give generic advice. If a finding is not genuinely worth ` +
+          `and never invent, round or recompute one. Do not hedge about how the findings relate ` +
+          `— they were confirmed to share a subject before reaching you.\n\n` +
+          `Do not moralise and do not give generic advice. If an item is not genuinely worth ` +
           `interrupting someone for, set worth_saying to false.\n\n` +
           `Return ONLY JSON: {"insights":[{"index":number,"title":"three or four words",` +
           `"body":"","worth_saying":boolean}]}`
       },
-      { role: "user", content: JSON.stringify(fresh.map((f, i) => ({ index: i, kind: f.kind, facts: f.facts })), null, 1) }
+      {
+        role: "user",
+        content: JSON.stringify(
+          fresh.map((group, i) => ({
+            index: i,
+            findings: group.members.map(m => ({ kind: m.kind, facts: m.facts }))
+          })),
+          null,
+          1
+        )
+      }
     ]
 
   });
@@ -424,7 +551,12 @@ export async function findInsights({ deliverImmediately = false } = {}) {
       kind: fresh[p.index].kind,
       title: p.title || "Noticed",
       body: p.body,
-      entities: fresh[p.index].facts,
+      // Every member's facts, so the evidence behind a synthesised insight is
+      // recoverable rather than living only in the sentence it produced.
+      entities: {
+        findings: fresh[p.index].members.map(m => ({ kind: m.kind, facts: m.facts })),
+        refs: fresh[p.index].members.flatMap(m => m.refs || [])
+      },
       strength: fresh[p.index].strength,
       status: "new",
       // Insights ride the same spread-through-the-day delivery as nudges, so
@@ -433,13 +565,20 @@ export async function findInsights({ deliverImmediately = false } = {}) {
       deliver_at: deliverImmediately ? null : now.set({ hour: 16, minute: 0 }).toISO()
     }));
 
-  if (rows.length === 0) return { success: true, found: findings.length, written: 0 };
+  if (rows.length === 0) return { success: true, found: findings.length, groups: groups.length, written: 0 };
 
   const { error: writeError } = await supabase.from("insights").upsert(rows, { onConflict: "fingerprint" });
 
   if (writeError) throw new Error(writeError.message);
 
-  return { success: true, found: findings.length, written: rows.length, insights: rows.map(r => r.title) };
+  return {
+    success: true,
+    found: findings.length,
+    groups: groups.length,
+    merged: rows.filter(r => r.kind === "synthesis").length,
+    written: rows.length,
+    insights: rows.map(r => r.title)
+  };
 
 }
 
@@ -496,6 +635,7 @@ export async function recentInsights({ limit = 5 } = {}) {
   const { data, error } = await supabase
     .from("insights")
     .select("kind, title, body, created_at")
+    .neq("status", "dismissed")
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -504,5 +644,76 @@ export async function recentInsights({ limit = 5 } = {}) {
   if (!data || data.length === 0) return null;
 
   return data.map(i => `- ${i.title}: ${i.body}`).join("\n");
+
+}
+
+
+// Insights the user has not seen yet, for the dashboard.
+//
+// Until now an insight existed ONLY as a push notification. If the phone was
+// silent — which it is at every interruption level below "everything", where
+// insights are tiered — or if the notification was swiped away, the finding
+// was gone: nothing listed it, no page showed it, and the only trace was a row
+// nobody could reach. Three insights had been sitting undelivered and
+// unseeable when this was written.
+//
+// The same posture the observer already takes with prompts: the row is written
+// regardless of whether the phone is allowed to buzz, because muting should
+// mean "stop interrupting me", not "stop telling me".
+export async function pendingInsights({ limit = 10 } = {}) {
+
+  const { data, error } = await supabase
+    .from("insights")
+    .select("id, kind, title, body, strength, created_at, pushed_at")
+    .eq("status", "new")
+    .order("strength", { ascending: false })
+    .limit(limit);
+
+  if (error) return [];
+
+  return data || [];
+
+}
+
+
+// The user did something about an insight, or decided not to.
+//
+// `acted_on` has existed as a column since the graph shipped and nothing has
+// ever set it, so there has never been any signal about which kinds of finding
+// are worth making. Four detectors fire blind and always will until something
+// records whether anyone cared. This is the minimum version of that: an
+// explicit answer from the person it was about.
+export async function resolveInsight({ id, acted = false }) {
+
+  // Reported rather than thrown, and rather than ignored.
+  //
+  // Thrown, a bad id takes down the whole dashboard — there is no error.js
+  // anywhere in this app, so any throw out of a server action becomes Next's
+  // "This page couldn't load" over the entire page, for a button that clears
+  // one card. Ignored, it becomes trap #15: a write that silently did nothing
+  // while the UI cheerfully moved on. So the result is returned, and the
+  // caller can decide.
+  const { data, error } = await supabase
+    .from("insights")
+    .update({
+      status: acted ? "acted" : "dismissed",
+      acted_on: acted === true
+    })
+    .eq("id", id)
+    .select("id");
+
+  if (error) {
+    console.error("INSIGHT RESOLVE FAILED:", error.message);
+    return { success: false, error: error.message };
+  }
+
+  // An update that matched nothing is not a success. PostgREST reports zero
+  // affected rows as an empty array and no error, so without this a stale id
+  // from a page that had not refreshed would look like it worked.
+  if (!data || data.length === 0) {
+    return { success: false, error: "That insight no longer exists." };
+  }
+
+  return { success: true, message: acted ? "Noted — marked as acted on." : "Dismissed." };
 
 }

@@ -23,6 +23,7 @@ import { savePerson, getAllPeople, deletePerson, recordContact, answerRelationsh
 import { loadMoney } from "../../../lib/money.js";
 import { summarise, findRecurring, FINANCE_RANGES } from "../../../lib/categorize.js";
 import { queryFinances } from "../../../tools/finances.js";
+import { pendingInsights, resolveInsight } from "../../../tools/islands.js";
 
 
 // Every read/write endpoint the dashboard uses, behind ONE serverless function.
@@ -49,16 +50,38 @@ async function data(req, res) {
     // observation.
     if (req.query.prompts) {
 
-      const { data, error } = await supabase
-        .from("prompts")
-        .select("*")
-        .eq("status", "pending")
-        .order("created_at", { ascending: false })
-        .limit(20);
+      // Insights come back alongside prompts rather than on their own route.
+      // They are the same thing from the user's side — something the app
+      // raised on its own that is waiting for them — and until now an insight
+      // had no surface at all: it existed only as a push, so a swiped
+      // notification meant the finding was gone for good.
+      const [{ data, error }, insights] = await Promise.all([
+        supabase
+          .from("prompts")
+          .select("*")
+          .eq("status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(20),
+        pendingInsights({ limit: 10 }).catch(() => [])
+      ]);
 
       if (error) throw new Error(error.message);
 
-      return res.status(200).json({ success: true, prompts: data || [] });
+      return res.status(200).json({
+        success: true,
+        prompts: data || [],
+        // Shaped like a prompt so the dashboard renders them with the same
+        // card, but kept under their own key so the two can never be confused
+        // when one is answered.
+        insights: insights.map(i => ({
+          id: i.id,
+          kind: "insight",
+          title: i.title,
+          body: i.body,
+          created_at: i.created_at,
+          seen: Boolean(i.pushed_at)
+        }))
+      });
 
     }
 
@@ -79,6 +102,15 @@ async function data(req, res) {
 
     if (!type || !id) {
       return res.status(400).json({ error: "Missing type or id" });
+    }
+
+    if (type === "insight") {
+
+      // "acted" is the only answer that means anything beyond clearing it —
+      // it is the first and currently only signal this system has about which
+      // kinds of finding were worth making.
+      return res.status(200).json(await resolveInsight({ id, acted: answer === "acted" }));
+
     }
 
     if (type === "prompt") {

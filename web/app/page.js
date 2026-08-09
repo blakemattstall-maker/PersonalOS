@@ -5,6 +5,7 @@ import DeepThoughtThread from "./DeepThoughtThread.js";
 import ProjectCard from "./ProjectCard.js";
 import ReadAloud from "./ReadAloud.js";
 import PromptCard from "./PromptCard.js";
+import InsightCard from "./InsightCard.js";
 import { backendGet } from "./backend.js";
 import Reveal from "./Reveal.js";
 import { Page, Card, SectionTitle, ItemCard, Meta, Empty, btn } from "./ui.js";
@@ -63,17 +64,21 @@ async function getPendingDeepThoughts() {
 }
 
 
+// Prompts and insights come back together — one round trip, because they are
+// the same thing from here: something the app raised on its own that is
+// waiting on you. They stay in separate arrays because answering one is not
+// answering the other.
 async function getPendingPrompts() {
 
   try {
 
     const data = await backendGet("/api/data?prompts=1");
 
-    return data.prompts || [];
+    return { prompts: data.prompts || [], insights: data.insights || [] };
 
   } catch (error) {
 
-    return [];
+    return { prompts: [], insights: [] };
 
   }
 
@@ -191,7 +196,7 @@ function NudgeCard({ item }) {
 
 export default async function Home() {
 
-  const [brief, pendingThoughts, pendingNudges, projects, prompts] = await Promise.all([
+  const [brief, pendingThoughts, pendingNudges, projects, raised] = await Promise.all([
     getBrief(),
     getPendingDeepThoughts(),
     getPendingNudges(),
@@ -202,7 +207,11 @@ export default async function Home() {
   const needsYou = [
     ...pendingThoughts.map(t => ({ ...t, kind: "thought" })),
     ...pendingNudges.map(n => ({ ...n, kind: "nudge" })),
-    ...prompts.map(p => ({ ...p, kind: "prompt" }))
+    ...raised.prompts.map(p => ({ ...p, kind: "prompt" })),
+    // Insights had no surface at all before this: they existed only as a push,
+    // so at any interruption level below "everything" — which is every level
+    // they are tiered above — the finding was written and then unreachable.
+    ...raised.insights.map(i => ({ ...i, kind: "insight" }))
   ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   return (
@@ -230,7 +239,9 @@ export default async function Home() {
                 ? <DeepThoughtThread thought={item} turns={item.turns || []} />
                 : item.kind === "prompt"
                   ? <PromptCard item={item} />
-                  : <NudgeCard item={item} />}
+                  : item.kind === "insight"
+                    ? <InsightCard item={item} />
+                    : <NudgeCard item={item} />}
             </div>
           ))}
         </div>

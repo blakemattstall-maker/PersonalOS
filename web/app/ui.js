@@ -28,7 +28,15 @@ const KINDS = {
   thought: { label: "Deep thinking", tile: "bg-tide-wash text-tide",       text: "text-tide" },
   nudge:   { label: "Nudge",         tile: "bg-moss-wash text-moss",       text: "text-moss" },
   prompt:  { label: "Noticed",       tile: "bg-ember-wash text-ember-ink", text: "text-ember-ink" },
-  brief:   { label: "Brief",         tile: "bg-iris-wash text-iris",       text: "text-iris" }
+  brief:   { label: "Brief",         tile: "bg-iris-wash text-iris",       text: "text-iris" },
+
+  // Shares tide with `thought` on purpose, and that is not the "four kinds
+  // sharing three greys" problem this vocabulary was built to fix. Both are
+  // the system having worked something out rather than asking you something,
+  // so they belong to one family; the glyph and the label are what separate
+  // them, and they separate them properly. Ember stays reserved — the ember
+  // dot already says this is waiting on you, so the tile does not have to.
+  insight: { label: "Connected",     tile: "bg-tide-wash text-tide",       text: "text-tide" }
 };
 
 
@@ -131,6 +139,18 @@ const GLYPHS = {
     <>
       <path d="M2.8 12S6.2 6 12 6s9.2 6 9.2 6-3.4 6-9.2 6-9.2-6-9.2-6z" />
       <circle cx="12" cy="12" r="2.6" />
+    </>
+  ),
+  // Two things it found were the same thing. The glyph is the finding itself:
+  // separate nodes with an edge drawn between them.
+  insight: (
+    <>
+      <circle cx="6" cy="7" r="2.4" />
+      <circle cx="18" cy="7" r="2.4" />
+      <circle cx="12" cy="17.5" r="2.4" />
+      <path d="M8.4 7h7.2" />
+      <path d="M7.2 9.1l3.6 6.3" />
+      <path d="M16.8 9.1l-3.6 6.3" />
     </>
   )
 };

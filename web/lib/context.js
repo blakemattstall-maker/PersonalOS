@@ -39,7 +39,7 @@ export async function buildRichContext({ query } = {}) {
 
   const tz = await getUserTimezone();
 
-  const [memories, bio, bodyweightLogs, signals, insights] = await Promise.all([
+  const [memories, bio, bodyweightLogs, signals, insights, connections] = await Promise.all([
     getFormattedMemories({ query }),
     getProfileBio(),
     getRecentBodyweightLogs({ limit: 10 }),
@@ -48,7 +48,22 @@ export async function buildRichContext({ query } = {}) {
     // and forgotten: an insight raised last week should be context for a deep
     // thought today and a project plan tomorrow, not something that flashed on
     // a phone once. This is what makes the connections compound.
-    import("../tools/islands.js").then(m => m.recentInsights({ limit: 5 })).catch(() => null)
+    import("../tools/islands.js").then(m => m.recentInsights({ limit: 5 })).catch(() => null),
+    // The graph itself, not just what it noticed.
+    //
+    // `memories` above answers "what else is ABOUT this" by cosine similarity.
+    // This answers "what else is CONNECTED to this", which is a different
+    // question with a different answer: a project's open tasks and what it has
+    // cost do not resemble a question about the project, and semantic
+    // retrieval will never surface them.
+    //
+    // Only fires when the query actually names something on file, and returns
+    // null after one cached roster lookup otherwise — so the calls that pass
+    // no query (the observer, the brief, nudge review, which all scan
+    // everything deliberately) pay nothing for it.
+    query
+      ? import("./links.js").then(m => m.connectionsForText({ text: query })).catch(() => null)
+      : null
   ]);
 
 
@@ -66,7 +81,9 @@ export async function buildRichContext({ query } = {}) {
     // on purpose: this rides in every nudge and deep thought.
     signals,
 
-    insights
+    insights,
+
+    connections
 
   };
 
