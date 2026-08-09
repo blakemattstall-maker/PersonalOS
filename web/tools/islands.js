@@ -593,6 +593,16 @@ export async function deliverInsights() {
     .from("insights")
     .select("id, title, body")
     .is("pushed_at", null)
+    // Only what is still outstanding.
+    //
+    // This filter was not here and did not need to be, because until insights
+    // had a surface there was no way to answer one before it was pushed —
+    // `status` was written once and never changed. Now that the dashboard can
+    // clear an insight, and two of the three on file are sitting with
+    // pushed_at null, without this a finding dismissed at noon would still
+    // buzz the phone at four. Reading something and then being notified about
+    // it is precisely the noise the interruption budget exists to prevent.
+    .eq("status", "new")
     .not("deliver_at", "is", null)
     .lte("deliver_at", new Date().toISOString())
     .order("strength", { ascending: false })

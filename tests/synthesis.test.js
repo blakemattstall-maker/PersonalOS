@@ -253,6 +253,42 @@ test("resolving an insight reports failure instead of throwing", () => {
 });
 
 
+test("an insight already dealt with is never pushed afterwards", () => {
+
+  // Giving insights a dashboard surface created a state that could not exist
+  // before: answered but not yet delivered. Two of the three on file are
+  // sitting with pushed_at null, so without a status filter on the delivery
+  // query, clearing one at noon would still buzz the phone at four — being
+  // notified about something you already read is exactly the noise the
+  // interruption budget exists to prevent.
+  const delivery = islandsSource.slice(
+    islandsSource.indexOf("export async function deliverInsights"),
+    islandsSource.indexOf("export async function recentInsights")
+  );
+
+  assert.match(
+    delivery,
+    /\.eq\("status", "new"\)/,
+    "deliverInsights must skip anything already acted on or dismissed"
+  );
+
+});
+
+
+test("a dismissed insight stops being context for future reasoning", () => {
+
+  // recentInsights() rides into every reasoning call. An insight the user
+  // explicitly waved away should stop shaping what the system says.
+  const recent = islandsSource.slice(
+    islandsSource.indexOf("export async function recentInsights"),
+    islandsSource.indexOf("export async function pendingInsights")
+  );
+
+  assert.match(recent, /\.neq\("status", "dismissed"\)/);
+
+});
+
+
 test("the card checks both shapes a failure can arrive in", () => {
 
   // Trap #15, with a twist that nearly shipped. A failure this code returns
