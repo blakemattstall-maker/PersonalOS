@@ -3,6 +3,18 @@
 **Date:** 2026-08-08
 **Method:** Read the code, then verified every claim against the live Supabase and the live SimpleFIN cache. Nothing here is taken from the handoff docs; where the docs and the code disagree, that is noted.
 
+> ## ✅ Phases 0 and 1 were built on 2026-08-09
+>
+> Commit `4d237e3`. All three live defects (D1–D3) are fixed, the stale doc (D4) is corrected, and the graph has a read side. `npm test` is at 144.
+>
+> **One thing the audit did not predict, found while building:** the merchant classifier could return `transfers`, and was doing so for Tagadapay.com — silently removing $188.44 of real purchases from the 90-day spend total, non-reproducibly. Fixed by withholding the two categories that move a total from the model entirely (`MODEL_CATEGORIES`). This belongs with D2 as a fourth instance of the same root cause.
+>
+> **A fifth defect, in the same family, found by a test written for Phase 1:** PostgREST caps responses at 1000 rows and `.limit()` does not raise it. `visitsInWindow` shipped with it, and `shouldCreatePlace` plus the orphan-adoption pass in `tools/location.js` had it already. See README trap #21.
+>
+> **Still open, deliberately:** Phase 2 (connection-aware context, cross-finding synthesis) and Phase 3 (longitudinal — blocked until ~mid-September 2026, when there are 6–8 weeks of correctly-defined `daily_metrics`).
+>
+> The framework this audit describes is now defined properly in **`PersonalOS-Knowledge-Architecture.md`**, which is the document to read first.
+
 ---
 
 ## 0. What was actually checked
