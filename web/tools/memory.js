@@ -1,6 +1,7 @@
 import supabase from "../lib/supabase.js";
 import { embed } from "../lib/embeddings.js";
 import { checkDuplicate } from "../lib/dedupe.js";
+import { linkText } from "../lib/links.js";
 
 
 function missingColumnOrFunction(error) {
@@ -73,6 +74,11 @@ export async function saveMemory(
 
     if (error) throw new Error(error.message);
 
+    // saveMemory does its own write rather than going through saveDeduped, so
+    // it needs its own call — without it, memories were the one capture path
+    // that stayed invisible to the graph until the nightly rebuild.
+    await linkText({ type: "memory", id: data.id, text: merged });
+
     return {
       success: true,
       updated: true,
@@ -118,6 +124,9 @@ export async function saveMemory(
   if (error) {
     throw new Error(error.message);
   }
+
+
+  await linkText({ type: "memory", id: data.id, text: content });
 
 
   return {

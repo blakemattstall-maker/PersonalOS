@@ -147,9 +147,81 @@ const MIGRATIONS = [
     purpose: "cache SimpleFIN responses instead of a live call per request",
     tables: ["finance_cache"],
     breaksWithout: "Every financial query — and every reasoning call that pulls in signals, which is most of them — hits SimpleFIN live instead of a 12-hour cache. Not broken, just slower and needlessly frequent."
+  },
+
+  // These last two were missing from this list entirely, which meant the check
+  // built to catch silent drift reported "All migrations applied and active"
+  // without ever having looked at the graph — the newest layer in the system
+  // and the one with the least operational history. Both happened to be
+  // applied. That was luck, not verification, and the guard has to cover the
+  // thing it was written to protect. tests/schema-coverage.test.js now fails if
+  // a docs/schema-*.sql file has no entry here.
+  {
+    file: "docs/schema-islands.sql",
+    purpose: "the entity graph — edges, stored transactions, and detected insights",
+    tables: ["entity_links", "transactions", "insights"],
+    breaksWithout:
+      "The whole cross-domain layer. No edges are written, so no finding that " +
+      "depends on connecting two domains can be detected, and recentInsights() " +
+      "returns nothing to every reasoning call. Everything degrades to per-table " +
+      "answers with no error anywhere.",
+
+    // Applied but inert is the real risk here, same as memory retrieval. The
+    // tables can exist and hold nothing because the nightly job has never run
+    // or has been failing quietly — and an empty graph is indistinguishable
+    // from a system that has not noticed anything yet.
+    readiness: async () => {
+
+      const [links, txns] = await Promise.all([
+        probeTable("entity_links"),
+        probeTable("transactions")
+      ]);
+
+      if (links.error || txns.error) return null;
+
+      if ((links.count ?? 0) === 0) {
+        return {
+          ok: false,
+          detail:
+            "Applied, but entity_links is empty — no connection between domains has " +
+            "ever been recorded, so every graph-derived insight is unreachable. Run " +
+            "the connectIslands cron (rebuildLinks) once and check it succeeds."
+        };
+      }
+
+      if ((txns.count ?? 0) === 0) {
+        return {
+          ok: false,
+          detail:
+            `${links.count} edge(s), but no transactions are stored — money cannot be ` +
+            "linked to a project, person or place, so project_cost and contradiction " +
+            "findings can never fire. Check syncTransactions in the connectIslands cron."
+        };
+      }
+
+      return { ok: true, detail: `${links.count} edge(s) across ${txns.count} stored transaction(s).` };
+
+    }
+  },
+
+  {
+    file: "docs/schema-nudge-scheduling.sql",
+    purpose: "generating a nudge and delivering it are two different moments",
+    columns: [["nudges", "deliver_at"], ["nudges", "pushed_at"]],
+    breaksWithout:
+      "Nudges are pushed the instant they are generated rather than when they are " +
+      "actionable, so everything the app has to say arrives in one morning clump — " +
+      "which is the pile-up the delivery windows exist to prevent. createNudge falls " +
+      "back to the immediate insert, so nothing errors."
   }
 
 ];
+
+
+// Exported for the coverage test only, which asserts that every
+// docs/schema-*.sql file appears here. Named so a call site that wanted the
+// live answer reaches for checkMigrations() instead.
+export const MIGRATIONS_FOR_TEST = MIGRATIONS;
 
 
 function missing(error) {

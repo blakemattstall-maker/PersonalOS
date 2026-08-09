@@ -1,8 +1,26 @@
 # PersonalOS — Architecture & Design Source of Truth
 
-**Version:** 2.0
-**Date:** August 4, 2026 (major revision — the system changed enormously since v1.1; treat anything from before this date as historical unless verified against live code)
+**Version:** 2.1
+**Date:** August 9, 2026 (§1, §3, §4 and §5 corrected against the live code — see the correction notice below)
 **Purpose:** The reference document for *why* PersonalOS is built the way it is, what each feature actually requires, and what order things get built in. Read `PersonalOS-Current-State-Handoff.md` first for the practical "what's true right now," then this doc for the reasoning behind it.
+
+> **For what the system actually knows and how the pieces connect, read `PersonalOS-Knowledge-Architecture.md`.** That document is the definition of the product's core; this one is the reasoning behind how it got built.
+
+---
+
+## ⚠️ Correction notice — August 9, 2026
+
+An audit (`PersonalOS-Intelligence-Audit-2026-08-08.md`) checked this document against the code and found **five claims below that had gone stale**, in a document titled "source of truth". They are corrected in place, but they are listed together here because the pattern matters more than any one of them: this file describes intent, drifts silently as the code moves, and is believed because of its name.
+
+| §  | Said | Actually |
+|---|---|---|
+| S3 | "Four daily crons" | Ten schedules in `web/vercel.json` |
+| S5 | "True push notifications explicitly declined" | Web Push is built and live (VAPID, `lib/push.js`, service worker) |
+| S7 | "Entity graph partially emerged, not deliberately built… revisit the generic link-table idea only if…" | Built deliberately, as `entity_links`, with a full read side |
+| §4 | "Financial Intelligence, Relationship Management, Location Intelligence — none started" | All three built |
+| §5 | `gpt-4o-mini` named as the routing tier | The registry in `lib/models.js` is the only authority; a contract test enforces it |
+
+**Rule going forward:** anything in this document that names a number, a model or a file is a claim that can rot. Prefer pointing at the code that owns it. The two places that cannot rot — because they ask the live system — are `lib/schema.js` (which migrations are applied *and doing something*) and `tests/` (what is still true).
 
 ---
 
@@ -55,8 +73,12 @@ Every domain has a query tool. Result budgets are respected (limits on notes/mem
 ### S2. Two-way sync — still not built, and lower priority than v1.1 assumed
 The original reasoning ("Google is written to and never read from, silent divergence") turned out to be less urgent in practice, because the query tools read **live from Google**, not from Supabase's copy. Supabase's task/event rows are mostly used for idempotency (`google_task_id`/`google_event_id` uniqueness) and project linkage (`project_id`, `sequence_order`), not as the thing the user actually queries. Revisit if something starts depending on Supabase's completion-status field specifically.
 
-### S3. Background execution — ✅ done, with one unverified assumption
-Four daily crons on Hobby. **The "~100-job cap" this document previously claimed is an Enterprise figure — Vercel Hobby is documented at 2 cron jobs.** This was never checked against the actual account and may mean two of the four schedules have never fired. See the handoff doc's hard-constraints section; verify before adding a fifth. `waitUntil` (`@vercel/functions`) is also in active use for a different purpose than originally scoped in v1.1 — not just "cron jobs," but **deferred work within a request** (deep-thinking's ack-then-analyze pattern). This is a second background-execution primitive worth knowing about: cron for *scheduled* work, `waitUntil` for *request-triggered-but-slow* work that shouldn't block the response.
+### S3. Background execution — ✅ done
+**Corrected Aug 9: ten schedules, not four** — `web/vercel.json` is the authority and `tests/api-routes.test.js` checks every one against a job the handler actually knows, and against the user's real timezone so a "morning" job cannot land at midnight. All of them are behind a single dynamic route (`/api/cron/[job]`) because Hobby allows 12 serverless functions and the project sat at exactly 12; a dynamic segment counts as one.
+
+The cron *ordering* is load-bearing and documented in that test: completions and deletions reconcile before nudges are decided, metrics roll up before the observer reads them, and the graph is rebuilt before the detectors walk it. A detector can only walk edges that already exist.
+
+`waitUntil` (`@vercel/functions`) is the second background primitive: cron for *scheduled* work, `waitUntil` for *request-triggered-but-slow* work that shouldn't block the response (deep-thinking's ack-then-analyze pattern).
 
 ### S4. Scalable tool routing — ✅ done
 Native OpenAI tool calling, ~13 tools now. The predicted payoff (adding a tool is just a schema entry + router case, no prompt engineering) has held up repeatedly — every tool added since Phase F took minutes, not a prompt-tuning session.
@@ -64,7 +86,9 @@ Native OpenAI tool calling, ~13 tools now. The predicted payoff (adding a tool i
 ### S5. Output surface — ✅ resolved differently than v1.1 predicted
 v1.1 said "no web app yet, cron → Supabase → Shortcuts pull." That held for exactly one feature (the morning brief) before the interactive-threads requirement (a genuine back-and-forth conversation, dictated input, tap-to-play output) made a real web app unavoidable — Shortcuts fundamentally cannot do that interaction. Built as a **separate Vercel project** from the API backend, deliberately, so frontend iteration never risks the working backend. Passphrase-gated at the frontend; the backend API is separately gated by `API_SECRET` (see §6).
 
-**True push notifications were researched (Pushcut, ~$2-4/mo) and explicitly declined.** The fallback — native "Show Notification" + a Home Screen web-app icon — means "proactive" in practice still means "the phone pulls when you next open the dashboard," same core constraint as v1.1 identified, just with a nicer surface to pull into.
+**Corrected Aug 9 — true push is built and live.** Pushcut was researched and declined *on cost*, and the conclusion drawn at the time ("proactive means the phone pulls when you next open the dashboard") was superseded within days: Web Push is free, so it was built directly — VAPID keys, `push_subscriptions`, `lib/push.js`, a service worker, and an interruption budget in `lib/settings.js` deciding what is allowed to reach the phone at each dial setting. The remaining constraint is iOS's, not ours: Web Push requires the PWA be installed to the home screen first.
+
+The deeper point this section got wrong is worth keeping: *declining a paid solution is not the same as declining the capability.* The reasoning stopped at "the vendor costs money" rather than continuing to "is there a free primitive that does this", and the answer was yes.
 
 ### S6. Retrieval-based memory — ✅ built, and it taught the most important lesson in this document
 Semantic retrieval via pgvector + `match_memories()`, with a blanket-top-N fallback at every failure point.
@@ -73,8 +97,14 @@ Semantic retrieval via pgvector + `match_memories()`, with a blanket-top-N fallb
 
 Generalise this: **a migration being applied is not the same as a feature being active, and graceful degradation without a health signal is indistinguishable from working.** Every "falls back safely" branch in this codebase is also a place the system can lie about itself. `lib/schema.js` now exists to ask the database directly rather than trusting a document — and it reports "applied but inert" as its own distinct state, because that is the state that looks healthiest and isn't.
 
-### S7. Entity graph — partially emerged, not deliberately built
-`tasks.project_id`, `calendar_events.project_id`, `tasks.sequence_order`, `deep_thoughts.project_id` — direct FKs, not the generic `entity_links` table v1.1 recommended. This has been sufficient so far because the actual need (linking tasks/events to a project, in sequence) was narrower than the generic case v1.1 anticipated. Revisit the generic link-table idea only if a genuinely many-to-many relationship shows up (e.g., a task relevant to two projects).
+### S7. Entity graph — ✅ built, and it is now the core of the product
+**Corrected Aug 9.** This section said the graph had "partially emerged, not deliberately built" and advised revisiting the generic link-table idea only if a many-to-many relationship showed up. It was superseded almost immediately: `entity_links` was built deliberately (`docs/schema-islands.sql`), and the polymorphic table was the right call for the reason v1.1 originally gave — a foreign key per pair means a migration every time two domains learn to see each other.
+
+The thing worth recording is what took longest to notice. The graph was **written for weeks before anything could read it**: `neighbours()` had exactly two callers, both inside one detector, and no tool, query, page or context assembly could ask the graph anything. It was a real graph and an unreadable one. The read side — `walk()`, `describeNeighbourhood()`, `resolveReference()` — landed Aug 9.
+
+Generalise it: **a data structure with no read path is not built, however correct its writes are.** Ship the reader with the writer, or the writer is a lie the schema tells.
+
+Full definition in `PersonalOS-Knowledge-Architecture.md` §3.
 
 ### S8. Observability — partially done
 Failure logging solid since Phase A. Token/cost-per-call logging still not built — the builder explicitly declined it, preferring to watch the OpenAI dashboard directly. Don't build this unprompted either; it was a real decision, not an oversight.
@@ -88,7 +118,7 @@ Most of v1.1 §4's analysis held up well. Notable deltas:
 - **Adaptive Memory System** — still mostly future work (S6 not built), but the "second LLM pass to decide what's worth remembering" problem got partially sidestepped: `save_intention`'s broad-capture design means intentions get saved liberally at write time, and the *judgment* (is this worth surfacing) happens later, per-item, at read/review time — not at capture time. This pattern (capture liberally, judge later) is worth reusing if memory retrieval gets tackled.
 - **Intelligent Calendar Management** — the "propose, don't execute, for destructive actions" pattern v1.1 flagged as a new interaction type is now real: the interactive-threads flow (propose a plan → user confirms → then it acts) is exactly this pattern, generalized beyond calendar.
 - **Deep Thinking Project Workflows** — built, and it forced exactly what v1.1 predicted (the jobs-table-shaped problem, solved via `waitUntil` instead of a literal jobs table; the "Shortcuts can't present 1000+ words usefully" problem, solved via the web dashboard).
-- **Financial Intelligence, Relationship Management, Location Intelligence** — none started. Location was explicitly evaluated and declined (see handoff doc). The other two remain genuinely blocked on their stated prerequisites (a data source decision for finances; calendar-attendee/notes extraction for relationships).
+- **Financial Intelligence, Relationship Management, Location Intelligence** — ~~none started~~ **all three built** (corrected Aug 9). Finances via SimpleFIN at $15/yr with a 12h cache; relationships as a real `people` table with staggered check-ins and recurring date reminders; location continuously via Overland, with places recognised from repeat visits and the timezone following the user. Each of the "stated prerequisites" this section listed turned out to be answerable in an afternoon once the spine existed — which is the same pattern S1–S4 showed, and is worth trusting next time a capability looks blocked.
 
 ---
 
@@ -96,11 +126,13 @@ Most of v1.1 §4's analysis held up well. Notable deltas:
 
 v1.1 recommended tiered model selection "invoked deliberately." That's now implemented and the builder has granted **standing discretion** to adjust it without asking.
 
-**The tiers now live in `lib/models.js`, not in twenty separate string literals.** Call sites name the tier by what the call *does* (`MODELS.ROUTER`, `MODELS.EXTRACT`, `MODELS.JUDGMENT`, `MODELS.DEEP`, `MODELS.EMBEDDING`), so re-tiering a whole class of work is a one-line edit and a provider deprecation is not a twenty-file sweep. A test in `tests/contract.test.js` fails if anything hardcodes a model string again. The mapping below is the policy that file encodes:
+**The tiers live in `lib/models.js`, not in twenty separate string literals.** Call sites name the tier by what the call *does* (`MODELS.ROUTER`, `MODELS.EXTRACT`, `MODELS.JUDGMENT`, `MODELS.DEEP`, `MODELS.EMBEDDING`), so re-tiering a whole class of work is a one-line edit and a provider deprecation is not a twenty-file sweep. A test in `tests/contract.test.js` fails if anything hardcodes a model string again.
 
-- `gpt-4o-mini` — routing, `query_tasks`/`query_schedule`/`query_notes` (high-frequency, simple extraction/synthesis)
-- `gpt-5.6-terra` — `general_question` (carries full rich context now, needed more than mini could give), nudge evaluation, `query_projects`
-- `gpt-5.6-sol` — `start_deep_thinking`, `respondToThread`, `buildPlan` (occasional, high-stakes, worth the cost)
+**Corrected Aug 9: the specific model ids that used to be listed here are deleted rather than updated.** They had already drifted (`gpt-4o-mini` was named as the routing tier long after it stopped being it), and a list of ids in prose is a second source of truth that can only ever be wrong later. **`lib/models.js` is the policy.** Read it; it explains each tier by what the call does rather than by what it costs.
+
+The one real, unaddressed cost risk is unchanged: `reviewIntentionsForNudges()` calls the model **once per open intention, every day, indefinitely**, until an intention is resolved. Seven intentions today. It scales linearly with however many "someday" items accumulate unpruned.
+
+One cost decision was made Aug 9 and is worth recording because it is the pattern to copy. `lib/money.js` takes a `classifyUnknown` flag that defaults to **off**. The money page opts in — the breakdown is the whole point of that page — while `lib/signals.js`, which rides in every reasoning call, leaves it off. It costs nothing in accuracy, and not by compromise: the only categories that move a total are decided by rule before any model runs, so rules-only and rules-plus-model produce identical `spent`, `earned` and `transferTotal` figures. **Pay for precision where it is read, not where it is carried.**
 
 The one real, unaddressed cost risk: `reviewIntentionsForNudges()` calls the model **once per open intention, every single day, indefinitely**, until an intention is resolved or dismissed. This scales linearly with however many "someday" intentions accumulate unresolved. Not yet a problem at current volume; worth watching if the intentions list grows large and stays unpruned. The builder has chosen to self-monitor via the OpenAI dashboard rather than build in-app cost tracking (S8) — respect that decision, don't build spend-visibility features unprompted.
 
@@ -236,8 +268,12 @@ scenes. The wrapper exists for three reasons:
 ### ✅ Resolved since (Aug 7)
 8. Whether the generic `entity_links` table (S7) is ever actually needed — **yes, and it is built.** Direct FKs stopped being sufficient the moment anything needed to ask "what else touches this", which is every detector in `tools/islands.js`.
 
+### ✅ Resolved since (Aug 9)
+9. Whether an insight may be built from another insight's finding — **no.** Findings may be *grouped* by a shared entity before phrasing, because grouping is arithmetic. One finding may not be *derived from* another's output: a chain of inferences starts sounding more certain than any link in it, and the "compute in code, model only phrases" discipline is exactly what breaks first. Recorded in `PersonalOS-Knowledge-Architecture.md` §8.
+
 ### ⬜ Still open
-9. Sync conflict rule (S2) — moot until two-way sync actually gets built, which is now lower-priority than v1.1 assumed.
+10. Sync conflict rule (S2) — moot until two-way sync actually gets built, which is now lower-priority than v1.1 assumed.
+11. How much of the entity graph should be user-editable. Now more pressing than before, since the graph has a read side and a wrong edge is therefore visible. A UI for editing edges is a second source of truth the automatic extraction has to reconcile with — decide the reconciliation rule before building the UI.
 
 ---
 
@@ -246,6 +282,14 @@ scenes. The wrapper exists for three reasons:
 Everything from v1.1 still holds (boring over clever, infrastructure before features, manual-entry features get abandoned, synthesis quality is a data problem, silence is the default failure mode of background jobs).
 
 **New, learned the hard way this session:** *a client-side timeout does not mean a server-side write failed.* For anything that writes to an external system (Google Tasks/Calendar especially), a timed-out request may have completed anyway — check actual state before retrying, or the retry itself becomes the bug (this exact thing happened: a timed-out `buildPlan` call had actually succeeded, and the retry created a second full project with a second set of real Google tasks/events).
+
+**New, Aug 9 — three anti-patterns, all the same shape.** Each was found by an audit rather than by anything failing, which is the point:
+
+- *A structure with no read path is not built.* The entity graph was written nightly for weeks and could not be queried by anything.
+- *A guard that does not cover what it protects is worse than no guard, because it is believed.* `lib/schema.js` probed 8 of 10 migration files and reported full health.
+- *A function that returns the same value for "nothing to report" and "the query is broken" will eventually be broken and silent.* `projectSignal` was dead for its entire existence.
+
+The common thread is that **none of these produced an error, a failed test, or a wrong-looking screen.** The system reported itself healthy throughout. That is the failure mode this project should be most afraid of — the pre-mortem calls it silent degradation, and it is the reason `lib/schema.js` reports "applied but inert" as a distinct state, and the reason every new guard added since ships with a test that fails when the guard stops covering something.
 
 ---
 

@@ -1,7 +1,55 @@
 # PersonalOS — Current State Handoff
 
-**Date:** August 6, 2026 (rewritten same day, sixth session)
-**Purpose:** Bring a new assistant up to speed on exactly where this project stands. Read alongside `PersonalOS-Architecture-Source-of-Truth.md` (the *why*). **Do not trust anything dated before this without checking it against live code** — this doc has already been wrong twice in one day earlier this week, in both directions, from exactly that mistake.
+**Date:** August 9, 2026 (Aug 9 section added at the top; everything below it is unchanged and still accurate unless noted)
+**Purpose:** Bring a new assistant up to speed on exactly where this project stands. Read alongside `PersonalOS-Knowledge-Architecture.md` (*what it knows*) and `PersonalOS-Architecture-Source-of-Truth.md` (the *why*). **Do not trust anything dated before this without checking it against live code** — this doc has already been wrong twice in one day earlier this week, in both directions, from exactly that mistake.
+
+---
+
+## What shipped Aug 9 — the substrate, and a graph that can be read
+
+An audit (`PersonalOS-Intelligence-Audit-2026-08-08.md`) read the code and then checked every claim against the live database. It found three things that were wrong in production and invisible from every surface, and one large thing that was built but unusable. All four are fixed. **`npm test` is at 144 tests.**
+
+### The three silent defects
+
+None of these produced an error, a failed test, or a wrong-looking screen. That is the whole lesson.
+
+1. **The Projects signal had never worked, not once.** `lib/signals.js`'s `projectSignal` selected `projects.title`; the column is `name`. PostgREST errored on every run and `if (error || !data) return null` swallowed it. Because `buildSignals()` rides inside `buildRichContext()`, the Projects line was missing from the brief, the observer, every nudge evaluation, deep thinking, `general_question`, news ranking, Gmail and Docs — for its entire existence. Live output is now six lines where it was five (seven, with presence added).
+
+2. **The money figure carried into every reasoning call was 3× too high.** `financeSignal` totalled every negative row with no idea the `transfers` category existed, so three Zelle transfers were counted as purchases and named as the biggest spending. It reported **$2,156** for the same 30 days the money page labelled **$711**. `tools/metrics.js` had the identical flaw, so `daily_metrics` — the longitudinal record — had been accumulating history against a definition nothing else used. This is README trap #17 recurring twice more, in the two places with the widest blast radius.
+
+   `web/lib/money.js` is now the only place a money figure comes from; the four summarisers that had drifted all read it. **Verified live: signals and the money page agree to the cent.** The existing `daily_metrics` rows were recomputed over a 14-day window — two days had recorded a Zelle transfer as *income*.
+
+3. **The migration probe didn't cover the graph.** `lib/schema.js` listed 8 of the 10 `docs/schema-*.sql` files and printed "All migrations applied and active" having never checked `entity_links`, `transactions` or `insights`. Both missing files are probed now, `schema-islands.sql` with a readiness check that reports an empty graph as "applied but inert".
+
+### A fourth, found while fixing the third
+
+The merchant classifier could return `transfers`, and on live data it was calling **Tagadapay.com** — a payment processor — a transfer, silently deleting **$188.44** of real purchases from the 90-day total. `MODEL_CATEGORIES` now withholds `transfers` and `income`, both of which are decided by rule. Measured across two cold runs: the totals are now identical every time, where before a model changing its mind about one merchant changed the headline figure.
+
+### The graph became readable
+
+`entity_links` had 36 real edges and **nothing could ask it anything** — `neighbours()` had two callers, both inside one detector. It was a real graph and an unreadable one, which is why it never looked broken.
+
+- **`ENTITIES` registry** in `lib/links.js`: where each type's row lives, what to call it, when it happened. `LINKABLE` is derived from it now — it was maintained separately and had already drifted (`nudge` edges were being written while `nudge` wasn't in the list).
+- **`walk()`** — bounded traversal (depth ≤ 2, capped nodes, one query per *type* rather than per node), ranked by distance → confidence → recency.
+- **`describeNeighbourhood()`** — the same thing as a few dozen tokens, for a prompt.
+- **`resolveReference()`** — "the thing with Priya" → ranked candidates plus an honest ambiguity flag. It returns candidates rather than picking one, deliberately.
+- **Edges are written at capture time**, not only nightly, so a note naming someone connects within the same request. `rebuildLinks()` stays as the healer; `link()` upserts, so the two cannot conflict.
+
+### Location joined the graph
+
+1,287 stored points and not one was visible to anything that reasons: `place` had zero edges and `minutes_at_gym` was hardcoded `null`. Points now become **visits** (a contiguous run at one place, split by the same 3h gap the ingest path already uses), visits become minutes, and a visit overlapping a calendar event becomes a real `located_at` edge. There is now a **presence signal** in every reasoning call: *"Temporary internship home 51h across 4 visits; 14h at 1 place with no label yet."*
+
+**Transactions deliberately get no place edge.** SimpleFIN posts every charge at exactly 12:00 UTC — verified across the whole table — so overlap there would be false precision, and linking a charge to every place visited that day would be wrong more often than right.
+
+### And a trap that had bitten three times
+
+**PostgREST caps a response at 1000 rows, and `.limit()` does not raise it.** `visitsInWindow` shipped asking for 5,000, got 1,000, and reported three visits across a fortnight because it had only ever seen one day. `shouldCreatePlace` and the orphan-adoption pass in `tools/location.js` had the same bug already — so a newly recognised place could be created *already missing the visits that created it*. `selectAll()` in `lib/supabase.js` pages properly; a test rejects any `.limit()` above the cap.
+
+### What was deliberately NOT done
+
+- **No trend or correlation claims.** `daily_metrics` has 14 correct days. The observer's refusal to claim a trend below 14 days stays exactly as it is. Revisit in **mid-September**, not before.
+- **`buildRichContext()` does not call `walk()` yet.** The read side is built and tested; wiring it into every reasoning call is the next phase, and it should be done with the token budget in view.
+- **No new ambient input.** Passive already outweighs active ~3:1 and the passive data that existed was doing nothing. Connect before collecting.
 
 ---
 

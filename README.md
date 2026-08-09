@@ -215,11 +215,67 @@ short version:
     labelled "$714.98". Both were deliberately served by one route so they
     couldn't disagree. Sharing an entry point is not sharing the arithmetic —
     share the function.
+17b. **…and it had already happened twice more, in the two places with the
+    widest blast radius.** `lib/signals.js` and `tools/metrics.js` each totalled
+    every negative row. Signals rides inside `buildRichContext()` into ten
+    reasoning tools, so every judgment this app made about money was made
+    against $2,156 for a month the page called $711; `daily_metrics` is the
+    longitudinal record, so it was writing a row of history a day against a
+    definition nothing else used. `lib/money.js` is now the only place a money
+    figure comes from and `tests/substrate.test.js` fails if anything reaches
+    past it to `getFinancialData`. **The fix for a drift is not fixing the
+    number — it is deleting the second place the number can be computed.**
+18. **A determination that changes a total is never a model's to make.** The
+    merchant classifier could answer `transfers`, and on live data it called
+    Tagadapay.com — a payment processor — a transfer, silently removing $188.44
+    of real purchases from the 90-day spend figure. The classifier is also not
+    reproducible, so the same window could report two different totals on two
+    cold containers with nothing to point at. `MODEL_CATEGORIES` now withholds
+    `transfers` and `income` (both decided by rule), so a model's answer can
+    move a merchant between categories but can never move `spent`. Measured:
+    totals are now identical run to run.
+19. **A function that returns the same value for "nothing to report" and "the
+    query failed" will eventually be broken and silent.** `projectSignal`
+    selected `projects.title`; the column is `name`. It errored on every run
+    from the day it was written, `if (error || !data) return null` swallowed it,
+    and the Projects line never once appeared in a brief, an observation or a
+    nudge evaluation. Nothing said so. Every signal now logs a query failure
+    loudly and distinguishably — the null return stays, because one broken
+    signal must not take down a brief.
+20. **A guard that doesn't cover what it protects is worse than no guard,
+    because it is believed.** `lib/schema.js` exists so nobody has to trust a
+    document about which SQL has been run. It listed 8 of the 10
+    `docs/schema-*.sql` files — the two it missed were the entity graph and
+    nudge scheduling — and truthfully printed "All migrations applied and
+    active" having never looked at the layer the whole cross-domain feature set
+    depends on. `tests/substrate.test.js` now fails if a migration file has no
+    entry.
+21. **PostgREST caps a response at 1000 rows and `.limit()` does not raise it.**
+    It lowers a ceiling that is already lower. So a query asking for 5,000 rows
+    returns 1,000, with no error and no truncation flag. `visitsInWindow`
+    shipped with exactly this and reported three visits across a fortnight
+    because it had only ever seen one day of points; `shouldCreatePlace` and the
+    orphan-adoption pass had it already, so a newly recognised place could be
+    created already missing the visits that created it. Use `selectAll()` in
+    `lib/supabase.js` for anything that scans a table. `tests/graph.test.js`
+    rejects any `.limit()` above the cap.
+22. **A data structure with no read path is not built, however correct its
+    writes are.** `entity_links` was written nightly for weeks while
+    `neighbours()` had exactly two callers, both inside one detector — no tool,
+    query, page or context assembly could ask the graph anything. It was a real
+    graph and an unreadable one, and nothing about it looked broken. Ship the
+    reader with the writer.
 
 ## Where to look next
 
+- `docs/PersonalOS-Knowledge-Architecture.md` — **what the system knows, how it
+  connects, and what it is allowed to conclude.** This is the product; read it
+  before changing anything that touches memory, the graph, signals or insights.
 - `docs/PersonalOS-Current-State-Handoff.md` — what is true right now. **Start here.**
 - `docs/PersonalOS-Architecture-Source-of-Truth.md` — why it is built this way.
+  Carries a correction notice: it is the document most prone to going stale.
+- `docs/PersonalOS-Intelligence-Audit-2026-08-08.md` — the audit that produced
+  traps 17b–22 above, plus the phased plan the graph work came from.
 - `docs/PersonalOS-Premortem.md` — every way this project can fail, what to do
   about each, and a rebuild brief in §3.
 - `docs/PersonalOS-Roadmap-2026-08-08.md` — what to build next, sized small to

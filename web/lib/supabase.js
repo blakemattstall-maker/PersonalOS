@@ -62,6 +62,51 @@ export function resetSupabaseClient() {
 }
 
 
+// PostgREST caps a response at 1000 rows and says nothing about it.
+//
+// `.limit(5000)` does not raise that cap — it lowers a ceiling that is already
+// lower. So a query asking for five thousand rows returns one thousand, with
+// no error, no truncation flag and no way to tell a capped result from a
+// complete one. That is how a scan quietly stops seeing the oldest half of a
+// table while every log line still says success.
+//
+// This pages through with `.range()` until a short page proves the end was
+// reached, and warns rather than truncating silently if a caller's own ceiling
+// is hit. Anything that scans a whole table should use it.
+export async function selectAll(table, columns, { page = 500, max = 10000, modify = null } = {}) {
+
+  const rows = [];
+
+  for (let from = 0; from < max; from += page) {
+
+    let query = getSupabase().from(table).select(columns).range(from, from + page - 1);
+
+    // Filters and ordering are applied by the caller. Ordering matters more
+    // than it looks: `.range()` over an unordered query is not guaranteed to
+    // be a stable window, so a row can be returned twice or skipped between
+    // pages. Callers should order by something unique.
+    if (modify) query = modify(query);
+
+    const { data, error } = await query;
+
+    if (error) return { rows, error };
+
+    rows.push(...(data || []));
+
+    if ((data || []).length < page) return { rows, error: null };
+
+  }
+
+  console.warn(
+    `selectAll(${table}) stopped at its ${max}-row ceiling — older rows were not read. ` +
+    "Raise `max` or make the caller incremental."
+  );
+
+  return { rows, error: null, capped: true };
+
+}
+
+
 // Everything in the codebase does `supabase.from("table")`. This forwards that
 // to the real client, constructing it on the first property access rather than
 // on import.

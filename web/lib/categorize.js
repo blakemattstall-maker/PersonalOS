@@ -28,6 +28,29 @@ export const CATEGORIES = [
 ];
 
 
+// What the model is allowed to choose from — everything except the two
+// categories that are decided by arithmetic rather than by recognising a shop.
+//
+// `income` is settled before any classifier runs: categorizeByRule returns it
+// for every positive amount, so a merchant only reaches the model at all if the
+// amount was negative. Offering it back would let a guess contradict the sign.
+//
+// `transfers` matters more, and in the opposite direction. Whether something is
+// a transfer decides whether it counts as spending, and every money figure in
+// this app is built on that split. Rules decide it — zelle, venmo, cash app,
+// atm, withdrawal — which makes it deterministic, free and identical in all
+// four places that compute a total. A model allowed to answer "transfers" for
+// an unfamiliar merchant would silently delete a real purchase from the spend
+// figure, and the two paths that classify with the model (the money page) would
+// stop agreeing with the two that classify by rule alone (the signals every
+// reasoning call carries, and tools/finances.js). Guessing wrong about a
+// category is a cosmetic error; guessing wrong about this one changes the
+// headline number.
+export const MODEL_CATEGORIES = CATEGORIES.filter(
+  c => c !== "transfers" && c !== "income"
+);
+
+
 // Matched against payee and description together, in order. First hit wins, so
 // the specific patterns come before the general ones.
 const RULES = [
@@ -126,7 +149,10 @@ export async function categorizeTransactions(transactions, { classifyUnknown = n
 
     for (const [merchant, indexes] of unmatched) {
 
-      const category = CATEGORIES.includes(guessed[merchant]) ? guessed[merchant] : "other";
+      // MODEL_CATEGORIES, not CATEGORIES: a guess of "transfers" or "income"
+      // is rejected and falls back to "other", so a classifier that ignores
+      // its instructions still cannot move a row across the spending line.
+      const category = MODEL_CATEGORIES.includes(guessed[merchant]) ? guessed[merchant] : "other";
 
       for (const i of indexes) out[i].category = category;
 
@@ -295,6 +321,22 @@ export async function classifyUnknownMerchants(merchants) {
 
       model: MODELS.EXTRACT,
 
+      // Pinned for the reason stated at the top of this file — a breakdown
+      // that reshuffles between refreshes is worse than no breakdown — and
+      // because lib/dedupe.js pinned its classifier for exactly this and this
+      // one was missed.
+      //
+      // Be honest about what it buys, though: measured across two cold runs on
+      // live data, the TOTALS are now identical every time while a handful of
+      // unfamiliar merchants still move between categories. That is the split
+      // that matters and it is not luck — it is MODEL_CATEGORIES. `spent`,
+      // `earned` and `net` cannot move because the two categories that would
+      // move them are decided by rule and never offered here, so the worst a
+      // varying answer can do is shift a merchant from "shopping" to
+      // "business". Before that constraint existed, a model changing its mind
+      // about one merchant changed the headline figure by $188.
+      temperature: 0,
+
       response_format: { type: "json_object" },
 
       messages: [
@@ -302,7 +344,7 @@ export async function classifyUnknownMerchants(merchants) {
           role: "system",
           content:
             `Classify each merchant into exactly one category from this list:\n` +
-            `${CATEGORIES.join(", ")}\n\n` +
+            `${MODEL_CATEGORIES.join(", ")}\n\n` +
             `These are personal card transactions from a US bank account. ` +
             `Use "other" only when the merchant is genuinely unidentifiable — a guess ` +
             `that is probably right beats "other", because "other" is what makes a ` +
@@ -324,7 +366,7 @@ export async function classifyUnknownMerchants(merchants) {
     }
 
     for (const merchant of unknown) {
-      learned.set(merchant, CATEGORIES.includes(guessed[merchant]) ? guessed[merchant] : "other");
+      learned.set(merchant, MODEL_CATEGORIES.includes(guessed[merchant]) ? guessed[merchant] : "other");
     }
 
   }
