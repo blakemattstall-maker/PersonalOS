@@ -1,11 +1,10 @@
-import supabase from "../lib/supabase.js";
+import supabase, { selectAll } from "../lib/supabase.js";
 import openai from "../lib/openai.js";
 import { MODELS } from "../lib/models.js";
 import { DateTime } from "luxon";
 import { link, findMentions, loadEntities, neighbours, linksReady } from "../lib/links.js";
 import { getUserTimezone } from "../lib/profile.js";
-import { getFinancialData } from "../lib/simplefin.js";
-import { categorizeTransactions, classifyUnknownMerchants } from "../lib/categorize.js";
+import { loadMoney } from "../lib/money.js";
 
 
 // The hivemind layer.
@@ -29,17 +28,12 @@ import { categorizeTransactions, classifyUnknownMerchants } from "../lib/categor
 // every money edge needs.
 export async function syncTransactions({ days = 90 } = {}) {
 
-  const raw = await getFinancialData({ days });
+  // Classified with the model here, unlike the signals path: these rows are
+  // written once and then read by the detectors and the money edges for as
+  // long as they exist, so the finer breakdown is worth one call a night.
+  const { transactions } = await loadMoney({ days, classifyUnknown: true });
 
-  const incoming = (raw.accounts || []).flatMap(a =>
-    (a.transactions || []).map(t => ({ ...t, account: a.name }))
-  );
-
-  if (incoming.length === 0) return { success: true, stored: 0 };
-
-  const { transactions } = await categorizeTransactions(incoming, {
-    classifyUnknown: classifyUnknownMerchants
-  });
+  if (transactions.length === 0) return { success: true, stored: 0 };
 
   const rows = transactions.map(t => ({
     external_id: t.id,
@@ -80,6 +74,28 @@ const TEXT_SOURCES = [
 ];
 
 
+// Every scan below used to be a bare `.limit(500)` with no pagination and no
+// signal, so past 500 rows it stopped seeing the oldest ones — silently, while
+// still reporting success. Old connections would simply disappear from the
+// graph. selectAll() pages and says so if it ever runs out of room.
+const MAX_ROWS_PER_TABLE = 10000;
+
+
+async function scanTable(table, columns) {
+
+  const { rows, error } = await selectAll(table, columns, {
+    max: MAX_ROWS_PER_TABLE,
+    // Ordered so the paging window is stable — see the note in selectAll.
+    modify: q => q.order("id", { ascending: true })
+  });
+
+  if (error) console.error(`LINK SCAN ${table} FAILED:`, error.message);
+
+  return rows;
+
+}
+
+
 export async function rebuildLinks() {
 
   if (!(await linksReady())) {
@@ -93,14 +109,9 @@ export async function rebuildLinks() {
   // Text -> person / project / place, by name.
   for (const source of TEXT_SOURCES) {
 
-    const { data, error } = await supabase
-      .from(source.table)
-      .select(`id, ${source.field}`)
-      .limit(500);
+    const rows = await scanTable(source.table, `id, ${source.field}`);
 
-    if (error) continue;
-
-    for (const row of data || []) {
+    for (const row of rows) {
 
       const text = row[source.field];
 
@@ -139,7 +150,7 @@ export async function rebuildLinks() {
     ["nudges", "nudge", "intention_id", "intention"]
   ]) {
 
-    const { data } = await supabase.from(table).select(`id, ${column}`).not(column, "is", null).limit(500);
+    const { data } = await supabase.from(table).select(`id, ${column}`).not(column, "is", null).limit(MAX_ROWS_PER_TABLE);
 
     for (const row of data || []) {
       const made = await link({
@@ -157,12 +168,9 @@ export async function rebuildLinks() {
   // Money -> project / person, by merchant name. A charge at a merchant whose
   // name matches a project is the closest thing to an itemised business
   // expense this system can get without being told.
-  const { data: txns } = await supabase
-    .from("transactions")
-    .select("id, merchant, description, amount, category")
-    .limit(500);
+  const txns = await scanTable("transactions", "id, merchant, description, amount, category");
 
-  for (const t of txns || []) {
+  for (const t of txns) {
 
     const haystack = `${t.merchant || ""} ${t.description || ""}`;
 

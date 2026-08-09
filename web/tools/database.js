@@ -1,5 +1,6 @@
 import supabase from "../lib/supabase.js";
 import { getUserTimezone } from "../lib/profile.js";
+import { linkText } from "../lib/links.js";
 
 
 function missingColumn(error) {
@@ -65,6 +66,9 @@ export async function createCalendarEventRecord({
   if (error) {
     throw new Error(error.message);
   }
+
+
+  await linkText({ type: "event", id: data.id, text: title });
 
 
   return data;
@@ -159,6 +163,11 @@ export async function createTaskRecord({
   if (error) {
     throw new Error(error.message);
   }
+
+
+  // "Call mom about the lease" names a person and possibly a project, and
+  // until now that connection did not exist until the next morning's rebuild.
+  await linkText({ type: "task", id: data.id, text: title });
 
 
   return data;

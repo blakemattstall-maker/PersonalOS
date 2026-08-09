@@ -1,6 +1,7 @@
 import openai from "./openai.js";
 import supabase from "./supabase.js";
 import { MODELS } from "./models.js";
+import { linkText } from "./links.js";
 
 
 // "I already know that."
@@ -327,6 +328,11 @@ export async function saveDeduped({ table, content, kind, extraFields = {}, onUp
     // starts quietly holding a different version of their life than they do.
     if (onUpdate) await onUpdate(data);
 
+    // The merged wording may name someone the original did not. Re-extracting
+    // costs one upsert per hit and edges are keyed on the pair, so a name that
+    // survived the merge simply re-confirms its existing edge.
+    await linkText({ type: kind, id: data.id, text: merged });
+
     return {
       success: true,
       updated: true,
@@ -347,6 +353,11 @@ export async function saveDeduped({ table, content, kind, extraFields = {}, onUp
     .single();
 
   if (error) throw new Error(error.message);
+
+  // `kind` is already the entity type this row is ("note", "intention",
+  // "memory"), so notes and intentions both get their edges here without
+  // either tool needing to know the graph exists.
+  await linkText({ type: kind, id: data.id, text: content });
 
   return { success: true, data };
 

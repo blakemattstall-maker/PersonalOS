@@ -1,9 +1,10 @@
 import supabase from "../lib/supabase.js";
 import { DateTime } from "luxon";
-import { getFinancialData } from "../lib/simplefin.js";
+import { loadMoney } from "../lib/money.js";
 import { getEvents } from "./googleCalendar.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { taskDueDate } from "./googleTasks.js";
+import { visitsInWindow, looksLikeGym } from "./location.js";
 
 
 // One row per day, across every domain.
@@ -19,7 +20,14 @@ import { taskDueDate } from "./googleTasks.js";
 // no location data must not read as a day spent nowhere.
 //
 // Recomputes a trailing window on every run rather than only yesterday, so a
-// missed cron or a late-posting transaction heals itself.
+// missed cron or a late-posting transaction heals itself. That self-healing is
+// what made the spend_total fix below cheap: this table counted every negative
+// row as spending, including Zelle transfers, so it was accumulating history
+// against a definition no other part of the app used — and history written
+// wrongly cannot be compared against history written correctly. Because the
+// window recomputes, the last seven days repair themselves on the next run;
+// anything older is why this was worth fixing before the correlation work
+// rather than after it.
 
 const DEFAULT_WINDOW_DAYS = 7;
 
@@ -33,7 +41,7 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
   // Pull each source once for the whole window instead of per day.
   const [finance, completions, tasks, events, weights, points] = await Promise.all([
 
-    getFinancialData({ days: days + 2 }).catch(() => ({ accounts: [] })),
+    loadMoney({ days: days + 2 }).catch(() => ({ transactions: [] })),
 
     supabase.from("activity_logs")
       .select("output, created_at")
@@ -60,7 +68,21 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
   ]);
 
 
-  const transactions = (finance.accounts || []).flatMap(a => a.transactions);
+  // Visits, not points. `minutes_at_gym` has been hardcoded null since this
+  // table was created — the column existed as a statement of intent with
+  // nothing behind it. A visit's duration is arithmetic over two timestamps,
+  // so this is a computed fact rather than an inference, and it only fires for
+  // a place the user themselves labelled as a gym (see looksLikeGym).
+  const visits = await visitsInWindow({ days, tz }).catch(error => {
+    console.error("VISIT ROLLUP FAILED:", error.message);
+    return [];
+  });
+
+
+  // Already categorised, so `transfers` can be told apart from spending. Moving
+  // money between your own accounts is not a purchase, and the day a $1,385
+  // Zelle went out was being recorded as the biggest spending day on file.
+  const transactions = (finance.transactions || []).filter(t => t.category !== "transfers");
 
   const rows = [];
 
@@ -105,6 +127,12 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
 
     const hadLocation = dayPoints.length > 0;
 
+    const dayVisits = visits.filter(v => v.day === key);
+
+    const gymMinutes = dayVisits
+      .filter(v => looksLikeGym(v))
+      .reduce((total, v) => total + v.minutes, 0);
+
     // Overdue is a snapshot of now, not of that day — the historical value
     // can't be reconstructed, so only today's row gets it.
     const overdueNow = (tasks.data || []).filter(
@@ -124,7 +152,11 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
       calendar_busy_minutes: Math.round(busyMinutes),
       weight: dayWeights.length ? Number(dayWeights[0].weight) : null,
       places_visited: hadLocation ? new Set(dayPoints.map(p => p.place_id).filter(Boolean)).size : null,
-      minutes_at_gym: null,
+      // Null when there was no location data at all, and null when no place
+      // the user has labelled as a gym was visited — the second is "didn't
+      // go", which is a real zero, but only once there is location for that
+      // day to prove it. A day with no data must not read as a day at home.
+      minutes_at_gym: hadLocation ? gymMinutes : null,
       computed_at: new Date().toISOString()
     });
 

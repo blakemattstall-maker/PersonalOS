@@ -1,4 +1,4 @@
-import supabase from "../lib/supabase.js";
+import supabase, { selectAll } from "../lib/supabase.js";
 import tzLookup from "tz-lookup";
 import { DateTime } from "luxon";
 import { getProfile, clearProfileCache, FALLBACK_TIMEZONE } from "../lib/profile.js";
@@ -81,14 +81,18 @@ async function shouldCreatePlace(lat, lon, recordedAt) {
 
   const since = DateTime.fromJSDate(recordedAt).minus({ days: 21 }).toISO();
 
-  const { data } = await supabase
-    .from("location_points")
-    .select("latitude, longitude, recorded_at")
-    .is("place_id", null)
-    .gte("recorded_at", since)
-    .limit(2000);
+  // Paged. This asked for 2000 and PostgREST silently returned at most 1000,
+  // so on a busy three weeks the oldest unassigned points were invisible to
+  // the "have I been here on two separate days" check — and a place the user
+  // genuinely frequents could fail to be recognised, for no visible reason.
+  const { rows: data, error } = await selectAll("location_points", "latitude, longitude, recorded_at", {
+    modify: q => q
+      .is("place_id", null)
+      .gte("recorded_at", since)
+      .order("recorded_at", { ascending: true })
+  });
 
-  if (!data) return false;
+  if (error) return false;
 
   const nearby = data.filter(
     p => distanceMeters(lat, lon, p.latitude, p.longitude) <= DEFAULT_RADIUS_M
@@ -305,11 +309,14 @@ export async function ingestLocationPoints(rawPoints) {
       // Adopt the earlier unassigned points that formed this cluster, so the
       // place's history doesn't start from the moment it was recognised.
       if (created) {
-        const { data: orphans } = await supabase
-          .from("location_points")
-          .select("id, latitude, longitude")
-          .is("place_id", null)
-          .limit(2000);
+
+        // Also paged, and for the same reason: this is the pass that gives a
+        // newly recognised place its history back. Truncated at 1000, the
+        // oldest points forming the cluster were never adopted, so a place
+        // would be created already missing the visits that created it.
+        const { rows: orphans } = await selectAll("location_points", "id, latitude, longitude", {
+          modify: q => q.is("place_id", null).order("id", { ascending: true })
+        });
 
         const belong = (orphans || [])
           .filter(o => distanceMeters(point.latitude, point.longitude, o.latitude, o.longitude) <= DEFAULT_RADIUS_M)
@@ -374,6 +381,224 @@ export function parseOverlandPayload(body) {
     speed_mps: f.properties?.speed >= 0 ? f.properties.speed : null,
     battery: f.properties?.battery_level ?? null
   })).filter(p => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
+
+}
+
+
+// ── Turning points into presence ─────────────────────────────────────────
+//
+// 1,287 stored points, 1,261 of them assigned to a place, and until now not one
+// of them was visible to anything that reasons. Location was the largest
+// dataset in the system and the only one that fed nothing: the `place` entity
+// type existed in the graph with zero edges, `minutes_at_gym` in daily_metrics
+// was hardcoded null, and no brief, observation or nudge had any idea where
+// this person had been.
+//
+// A raw point is not the useful unit. A VISIT is — a contiguous run of points
+// at one place — and its duration is plain arithmetic over timestamps, which
+// is the only kind of claim this system is allowed to make about someone's
+// life without asking them.
+//
+// The gap that separates two visits is the same REVISIT_GAP_HOURS the ingest
+// path already uses to decide whether returning counts as a new visit, so
+// "visits" means one thing across the whole file.
+
+
+export async function visitsInWindow({ days = 7, tz = FALLBACK_TIMEZONE } = {}) {
+
+  const since = DateTime.now().minus({ days }).toISO();
+
+  // Paged, not `.limit()`. A week of continuous tracking is thousands of
+  // points and PostgREST silently caps a single response at 1000 — the first
+  // version of this function asked for 5000, got 1000, and reported three
+  // visits across a fortnight because it had only ever seen one day.
+  const [pointsResult, placesResult] = await Promise.all([
+    selectAll("location_points", "recorded_at, place_id", {
+      modify: q => q
+        .not("place_id", "is", null)
+        .gte("recorded_at", since)
+        .order("recorded_at", { ascending: true })
+    }),
+    supabase.from("places").select("id, label, category")
+  ]);
+
+  if (pointsResult.error) {
+    console.error("VISITS QUERY FAILED:", pointsResult.error.message);
+    return [];
+  }
+
+  const places = new Map((placesResult.data || []).map(p => [p.id, p]));
+
+  return groupIntoVisits(pointsResult.rows, { places, tz });
+
+}
+
+
+// The grouping itself, kept pure so it can be tested without a database.
+//
+// `points` is [{ recorded_at, place_id }] in any order; `places` is a Map of
+// id -> { label, category }.
+export function groupIntoVisits(points, { places = new Map(), tz = FALLBACK_TIMEZONE } = {}) {
+
+  const byPlace = new Map();
+
+  for (const point of points) {
+    if (!point.place_id) continue;
+    if (!byPlace.has(point.place_id)) byPlace.set(point.place_id, []);
+    byPlace.get(point.place_id).push(DateTime.fromISO(point.recorded_at));
+  }
+
+  const visits = [];
+
+  for (const [placeId, unsorted] of byPlace) {
+
+    // Sorted here rather than trusted from the caller: a visit is defined by
+    // the gap between consecutive points, so out-of-order input would invent
+    // negative durations and split one stay into many.
+    const stamps = unsorted.slice().sort((a, b) => a - b);
+
+    let start = stamps[0];
+    let previous = stamps[0];
+
+    for (let i = 1; i <= stamps.length; i++) {
+
+      const current = stamps[i];
+
+      const broke = !current || current.diff(previous, "hours").hours >= REVISIT_GAP_HOURS;
+
+      if (broke) {
+
+        visits.push({
+          placeId,
+          label: places.get(placeId)?.label || null,
+          category: places.get(placeId)?.category || null,
+          start,
+          end: previous,
+          // A single point is a sighting, not a stay. Reporting it as zero
+          // minutes is honest; inventing a duration for it would not be.
+          minutes: Math.round(previous.diff(start, "minutes").minutes),
+          // The day a visit belongs to is the day it STARTED, in the user's own
+          // zone. An overnight stay is one visit on one day, not two halves —
+          // and these really are overnight: the longest on file runs 19:36 to
+          // 15:37 the next afternoon.
+          day: start.setZone(tz).toFormat("yyyy-MM-dd")
+        });
+
+        if (current) start = current;
+
+      }
+
+      previous = current;
+
+    }
+
+  }
+
+  return visits.sort((a, b) => b.start - a.start);
+
+}
+
+
+// Minutes at each place, per day. The shape daily_metrics wants.
+export async function placeMinutesByDay({ days = 7, tz = FALLBACK_TIMEZONE } = {}) {
+
+  const visits = await visitsInWindow({ days, tz });
+
+  const byDay = {};
+
+  for (const visit of visits) {
+    byDay[visit.day] ||= {};
+    const key = visit.label || `unnamed:${visit.placeId}`;
+    byDay[visit.day][key] = (byDay[visit.day][key] || 0) + visit.minutes;
+  }
+
+  return byDay;
+
+}
+
+
+// A place someone has named as a gym. There is no reliable way to infer this
+// from coordinates, and guessing would be exactly the kind of confident
+// wrongness the rest of this system refuses — so it reads what the user
+// actually said when they labelled it, and reports nothing otherwise.
+export function looksLikeGym(place) {
+
+  return /\b(gym|fitness|crossfit|ymca|lifting|weights|rec cent|athletic)\b/i
+    .test(`${place?.label || ""} ${place?.category || ""}`);
+
+}
+
+
+// ── Where a visit sits among everything else that happened ───────────────
+//
+// The join that makes location worth its storage: a calendar event and a visit
+// that overlap in time were the same hour of the same day, and that is
+// arithmetic rather than inference — both sides carry a real start and end.
+//
+// Transactions deliberately get NO edge here. SimpleFIN returns a posting DATE,
+// not a time: every stored charge sits at exactly 12:00 UTC (verified across
+// the whole table). Overlapping that against a visit window would look precise
+// and mean nothing, and linking a charge to every place visited that day would
+// fill the graph with edges that are wrong more often than right. A wrong edge
+// is worse than a missing one, because everything downstream treats edges as
+// fact — the rule this file's header opens with. If a bank ever supplies real
+// transaction times, this is the place to add it.
+export async function linkVisitsToEvents({ days = 7 } = {}) {
+
+  const { link } = await import("../lib/links.js");
+
+  const tz = (await getProfile())?.timezone || FALLBACK_TIMEZONE;
+
+  const visits = await visitsInWindow({ days, tz });
+
+  if (visits.length === 0) return { success: true, linked: 0, visits: 0 };
+
+  const earliest = visits.reduce((min, v) => (v.start < min ? v.start : min), visits[0].start);
+
+  const { data: events, error } = await supabase
+    .from("calendar_events")
+    .select("id, title, start_time, end_time")
+    .gte("start_time", earliest.minus({ hours: 12 }).toISO())
+    .limit(500);
+
+  if (error) {
+    console.error("VISIT/EVENT LINK QUERY FAILED:", error.message);
+    return { success: false, error: error.message };
+  }
+
+  let linked = 0;
+
+  for (const event of events || []) {
+
+    const start = DateTime.fromISO(event.start_time);
+    const end = DateTime.fromISO(event.end_time || event.start_time);
+
+    if (!start.isValid) continue;
+
+    for (const visit of visits) {
+
+      // Real overlap, not "same day". Two intervals overlap when each starts
+      // before the other ends.
+      if (visit.start >= end || start >= visit.end) continue;
+
+      const made = await link({
+        from: { type: "event", id: event.id },
+        to: { type: "place", id: visit.placeId },
+        relation: "located_at",
+        source: "inferred",
+        // Below 1.0 deliberately: the overlap is exact, but "the phone was
+        // there" is evidence of attendance rather than proof of it.
+        confidence: 0.9,
+        context: `${event.title} overlapped a ${visit.minutes}m visit`
+      });
+
+      if (made) linked++;
+
+    }
+
+  }
+
+  return { success: true, linked, visits: visits.length, events: (events || []).length };
 
 }
 

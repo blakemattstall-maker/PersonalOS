@@ -20,8 +20,8 @@ import { startDebateSession, respondInDebate, endDebateSession } from "../../../
 import { submitPitch, generatePitchTopic, transcribeAudio } from "../../../tools/pitch.js";
 import { getDebateTopics, ensureTopicsFramed, retireDebateTopic } from "../../../tools/debateTopics.js";
 import { savePerson, getAllPeople, deletePerson, recordContact, answerRelationshipCheckin } from "../../../tools/people.js";
-import { getFinancialData } from "../../../lib/simplefin.js";
-import { categorizeTransactions, summarise, findRecurring, classifyUnknownMerchants, FINANCE_RANGES } from "../../../lib/categorize.js";
+import { loadMoney } from "../../../lib/money.js";
+import { summarise, findRecurring, FINANCE_RANGES } from "../../../lib/categorize.js";
 import { queryFinances } from "../../../tools/finances.js";
 
 
@@ -566,18 +566,19 @@ async function finance(req, res) {
   // local state rather than a round trip.
   const WIDEST = Math.max(...FINANCE_RANGES);
 
-  const raw = await getFinancialData({ days: WIDEST });
+  // classifyUnknown: this is the one caller that pays for the model pass. The
+  // breakdown IS the page, and the answer is memoised per merchant for the life
+  // of the container. lib/money.js explains why the cheaper rules-only mode
+  // used everywhere else still produces identical totals.
+  const raw = await loadMoney({ days: WIDEST, classifyUnknown: true });
 
-  const accounts = (raw.accounts || []).map(a => ({
+  const accounts = raw.accounts.map(a => ({
     name: a.name,
-    balance: Number(a.balance) || 0,
-    currency: a.currency || "USD"
+    balance: a.balance,
+    currency: a.currency
   }));
 
-  const { transactions } = await categorizeTransactions(
-    (raw.accounts || []).flatMap(a => a.transactions || []),
-    { classifyUnknown: classifyUnknownMerchants }
-  );
+  const transactions = raw.transactions;
 
   // Dates are compared as yyyy-MM-dd strings rather than instants, the same
   // rule trap #1 established for Google Tasks — a transaction dated today must
@@ -621,7 +622,7 @@ async function finance(req, res) {
     cached: raw.cached,
     fetchedAt: raw.fetchedAt,
     accounts,
-    totalBalance: Math.round(accounts.reduce((t, a) => t + a.balance, 0) * 100) / 100,
+    totalBalance: raw.balance,
     cutoffs,
     views,
     // The whole categorised window, newest first, for the per-category
