@@ -1,4 +1,5 @@
 import { requireAuth } from "../../../../lib/auth.js";
+import { enforceLimit } from "../../../../lib/ratelimit.js";
 import { ingestLocationPoints, parseOverlandPayload } from "../../../../tools/location.js";
 import { saveSubscription, publicKey } from "../../../../lib/push.js";
 import { logActivity } from "../../../../tools/activityLog.js";
@@ -140,6 +141,11 @@ export default async function handler(req, res) {
     req.query.key === scopedKey;
 
   if (!viaScopedKey && !requireAuth(req, res)) return;
+
+  // Sized for reality: Overland flushes a backlog in clumps when the phone
+  // comes back online, so this admits a real backlog while stopping a leaked
+  // scoped key from becoming a firehose of fake GPS points.
+  if (!enforceLimit(req, res, { name: "ingest", limit: 120 })) return;
 
   const run = HANDLERS[kind];
 

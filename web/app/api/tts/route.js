@@ -16,6 +16,53 @@
 
 export const maxDuration = 60;
 
+import { DEMO_SESSION } from "../../../lib/demo.js";
+import { rateLimit } from "../../../lib/ratelimit.js";
+
+
+// Who is asking for speech. This route answered 200 to a request carrying no
+// cookie and no key until 2026-08-10 — anyone on the internet could spend
+// OpenAI tokens on the project's bill. It is a browser-fetched route (the
+// proxy deliberately excludes /api), so it does its own session check rather
+// than inheriting one.
+//
+// The owner's passphrase check is guarded the same way the proxy's is: an
+// unset SITE_PASSPHRASE must not make `undefined === undefined` pass.
+function sessionOf(request) {
+
+  const cookie = request.headers.get("cookie") || "";
+
+  const match = cookie.match(/(?:^|;\s*)pos_session=([^;]*)/);
+
+  const value = match ? decodeURIComponent(match[1]) : null;
+
+  if (process.env.SITE_PASSPHRASE && value === process.env.SITE_PASSPHRASE) return "owner";
+
+  // The Shortcut path: no cookie jar, but it holds the API secret.
+  if (process.env.API_SECRET && request.headers.get("x-pos-key") === process.env.API_SECRET) return "owner";
+
+  if (value === DEMO_SESSION) return "demo";
+
+  return null;
+
+}
+
+
+function callerIp(request) {
+  const forwarded = request.headers.get("x-forwarded-for") || "";
+  return forwarded.split(",")[0].trim() || "local";
+}
+
+
+// Per-minute ceilings, per caller address. The owner's is sized so real use
+// (a brief and a few nudges read aloud) never touches it; the demo's is sized
+// so a curious visitor hears the feature and a script gets bored. Demo text
+// is also capped — the fixture brief is ~600 characters, so 2,600 covers
+// every legitimate demo read while refusing a pasted novel.
+const OWNER_TTS_PER_MINUTE = 30;
+const DEMO_TTS_PER_MINUTE = 8;
+const DEMO_TEXT_LIMIT = 2600;
+
 // The API rejects longer input, and long text is exactly the case this exists
 // for, so it is split rather than truncated.
 const CHUNK_LIMIT = 3800;
@@ -107,6 +154,23 @@ async function synthesize({ input, voice, speed, model }) {
 
 export async function POST(request) {
 
+  const session = sessionOf(request);
+
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const limit = session === "demo" ? DEMO_TTS_PER_MINUTE : OWNER_TTS_PER_MINUTE;
+
+  const allowed = rateLimit(`tts:${session}:${callerIp(request)}`, limit);
+
+  if (!allowed.ok) {
+    return Response.json(
+      { error: "Too many requests — slow down.", retryAfter: allowed.retryAfter },
+      { status: 429, headers: { "Retry-After": String(allowed.retryAfter) } }
+    );
+  }
+
   if (!process.env.OPENAI_API_KEY) {
     return Response.json({ error: "No OPENAI_API_KEY configured on the web project." }, { status: 501 });
   }
@@ -123,6 +187,10 @@ export async function POST(request) {
 
   if (!text) {
     return Response.json({ error: "Nothing to read." }, { status: 400 });
+  }
+
+  if (session === "demo" && text.length > DEMO_TEXT_LIMIT) {
+    return Response.json({ error: "That's longer than the demo will read." }, { status: 413 });
   }
 
   const voice = VOICES.has(payload?.voice) ? payload.voice : "sage";

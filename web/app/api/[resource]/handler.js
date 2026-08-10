@@ -25,6 +25,7 @@ import { summarise, findRecurring, FINANCE_RANGES } from "../../../lib/categoriz
 import { queryFinances } from "../../../tools/finances.js";
 import { pendingInsights, resolveInsight } from "../../../tools/islands.js";
 import { fullGraph } from "../../../lib/links.js";
+import { enforceLimit } from "../../../lib/ratelimit.js";
 
 
 // Every read/write endpoint the dashboard uses, behind ONE serverless function.
@@ -699,6 +700,15 @@ const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settin
 export default async function handler(req, res) {
 
   if (!requireAuth(req, res)) return;
+
+  // The ceiling under the lock — see lib/ratelimit.js. Reads are cheap and
+  // generous; writes can trigger model calls (finance questions, debate
+  // turns, thread replies), so they get the tighter window. Keyed per
+  // resource so a scripted hammer on one endpoint cannot starve the rest of
+  // the dashboard.
+  const limit = req.method === "GET" ? 240 : 60;
+
+  if (!enforceLimit(req, res, { name: `resource:${req.query.resource}`, limit })) return;
 
   const run = RESOURCES[req.query.resource];
 

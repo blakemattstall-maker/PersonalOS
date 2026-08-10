@@ -1,6 +1,7 @@
 import openai from "../../../lib/openai.js";
 import { executeTool } from "../../../lib/router.js";
 import { requireAuth } from "../../../lib/auth.js";
+import { enforceLimit } from "../../../lib/ratelimit.js";
 import { TOOLS } from "../../../lib/toolDefinitions.js";
 import { DateTime } from "luxon";
 import { getUserTimezone } from "../../../lib/profile.js";
@@ -14,6 +15,11 @@ import supabase from "../../../lib/supabase.js";
 export default async function handler(req, res) {
 
   if (!requireAuth(req, res)) return;
+
+  // A capture can carry audio through Whisper and always runs the router
+  // model. Thirty a minute is several times the realistic burst (a walk's
+  // worth of voice notes arriving together) and nothing like a loop.
+  if (!enforceLimit(req, res, { name: "capture", limit: 30 })) return;
 
   if (req.method !== "POST") {
     return res.status(405).json({
