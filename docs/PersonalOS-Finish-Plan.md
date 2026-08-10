@@ -271,9 +271,9 @@ Each line is roughly one Claude Code session. **Steps 1–4 are the whole plan.*
 
 | # | Work | Why here |
 |---|---|---|
-| 1 | ~~**`/graph` page**~~ ✅ done · **demo account** still open | `/graph` shipped 2026-08-10 with the density pass behind it. The demo account is what remains of this step. §6 |
+| 1 | ~~**`/graph` page + demo account**~~ ✅ **DONE** | Both shipped 2026-08-10. `/graph` is the fullscreen force view with the 3D sphere toggle; the demo is the passphrase `demo` — fictional data, read-only, both enforced server-side. §6 |
 | 2 | **Phase 3 engine, gated** | "That's up from last week" — what makes it feel like it is watching. Buildable now; the gate is a runtime check, not a delay |
-| 3 | **Reliability pass** | Runs a week untouched, and tells you when it breaks instead of going quiet. Includes `resolveReference` into capture and the Action Button shortcut — both small, both improve the demo |
+| 3 | **Reliability pass** — *partially done* | Rate limiting + the TTS auth hole shipped 2026-08-10 (`lib/ratelimit.js`). Remaining: `resolveReference` into capture, the Action Button shortcut, and the runs-a-week-untouched check |
 | 4 | **Case study + 90-second video** | The actual career asset. The highest-value item on this list and the one most likely to be skipped |
 | 5 | *Landing page + waitlist* | Optional, an afternoon. The cheap answer to "is this a company" |
 | — | *Multi-user (§3)* | **Only if step 5 produces real signal.** Not before |
@@ -282,10 +282,9 @@ Each line is roughly one Claude Code session. **Steps 1–4 are the whole plan.*
 
 ### If usage or time is tight, in priority order
 
-1. **The video** — recordable against the app as it exists today, with no further code. `/graph` is now in it.
-2. **The demo account** — turns "take my word" into "click this."
+1. **The video** — recordable against the app as it exists today, with no further code. `/graph`, the sphere and the demo are all in it now.
 
-Everything else is improvement rather than proof.
+Everything else is improvement rather than proof. (The demo account shipped — "click this" is live: the passphrase is `demo`.)
 
 ---
 

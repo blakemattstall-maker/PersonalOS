@@ -2,9 +2,12 @@
 
 A personal operating system. You talk to it; it reads and changes your real
 calendar, tasks, notes, money and relationships, and it occasionally decides on
-its own that something is worth telling you.
+its own that something is worth telling you. Everything it stores becomes an
+entity graph you can walk — the `/graph` page renders your whole life as an
+Obsidian-style force view, with an optional spinning 3D sphere.
 
 Single-user by design, running on free tiers, at roughly **$7/month all-in**.
+There is a public read-only demo on fictional data: the passphrase is `demo`.
 
 ---
 
@@ -287,12 +290,12 @@ short version:
 - `docs/PersonalOS-Current-State-Handoff.md` — what is true right now. **Start here.**
 - `docs/PersonalOS-Architecture-Source-of-Truth.md` — why it is built this way.
   Carries a correction notice: it is the document most prone to going stale.
-- `docs/PersonalOS-Intelligence-Audit-2026-08-08.md` — the audit that produced
-  traps 17b–22 above, plus the phased plan the graph work came from.
+- `docs/PersonalOS-Intelligence-Audit-2026-08-08.md` — *historical* — the audit
+  that produced traps 17b–22 above; its plan has since been executed.
 - `docs/PersonalOS-Premortem.md` — every way this project can fail, what to do
   about each, and a rebuild brief in §3.
 - `docs/PersonalOS-Finish-Plan.md` — **the plan to finish**: what "done" means,
   the road to multi-user, which features are worth building, and how to present
   this on a resume. Start here for anything forward-looking.
-- `docs/PersonalOS-Roadmap-2026-08-08.md` — what to build next, sized small to
-  big, for picking up a long session cold.
+- `docs/PersonalOS-Roadmap-2026-08-08.md` — *historical* — superseded by the
+  Finish Plan above.

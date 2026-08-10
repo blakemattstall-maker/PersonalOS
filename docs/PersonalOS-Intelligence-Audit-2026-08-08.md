@@ -1,5 +1,7 @@
 # PersonalOS — Intelligence Architecture Audit
 
+> **Historical document (Aug 8).** The audit's findings were all fixed and its Phase 0–2 roadmap fully executed; Phase 3 remains open. For current state read `PersonalOS-Current-State-Handoff.md`; for the plan, `PersonalOS-Finish-Plan.md`.
+
 **Date:** 2026-08-08
 **Method:** Read the code, then verified every claim against the live Supabase and the live SimpleFIN cache. Nothing here is taken from the handoff docs; where the docs and the code disagree, that is noted.
 

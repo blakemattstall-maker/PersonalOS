@@ -1,5 +1,7 @@
 # PersonalOS — Roadmap, August 8 2026
 
+> **Historical document (Aug 8).** Superseded by `PersonalOS-Finish-Plan.md`, which carries the live execution order and statuses.
+
 **Purpose:** A working list of what to build next, written for a single long coding session rather than as an exhaustive product plan. Grouped by how big a bite each thing is, not by category — pick a size that matches the hours you have left. Cross-reference `PersonalOS-Premortem.md` before starting anything marked ⚠️: that doc explains the risk in more depth than this one will.
 
 Nothing here is committed to. This is a menu, not a backlog.

@@ -1,7 +1,34 @@
 # PersonalOS — Current State Handoff
 
-**Date:** August 9, 2026 (Aug 9 section added at the top; everything below it is unchanged and still accurate unless noted)
+**Date:** August 10, 2026 (sections stack newest-first; everything below a dated header is unchanged from that date and still accurate unless noted)
 **Purpose:** Bring a new assistant up to speed on exactly where this project stands. Read alongside `PersonalOS-Knowledge-Architecture.md` (*what it knows*) and `PersonalOS-Architecture-Source-of-Truth.md` (the *why*). **Do not trust anything dated before this without checking it against live code** — this doc has already been wrong twice in one day earlier this week, in both directions, from exactly that mistake.
+
+---
+
+## What shipped Aug 10 — the graph became the product's face, and the doors got locks
+
+Four bodies of work, all deployed and verified against production. **`npm test` is at 225.**
+
+### The Connections view (`/graph`) — the sell-factor feature
+
+- **Density first, page second.** The graph was 37 edges with one hub holding 65% of them, because the entity roster was twelve names. `docs/schema-merchants.sql` (applied) promotes merchants and spending categories to entities, derived deterministically from stored transactions (`merchantKey()` in `lib/links.js` — a pure function, since it mints primary keys). Graph now ~300 edges; roster ~55 names. `mentionsIn()` owns per-type matching rules — merchants are never matched on their first word ("Quality" ≠ Quality Food Centers).
+- **The page is a fullscreen Obsidian-style force view** (`web/app/graph/GraphCanvas.js`, library `force-graph` — 2D canvas, same author as 3d-force-graph). A deterministic radial view shipped first and was replaced at the user's direction the same week. Node size = distinct-neighbour degree (computed server-side in `fullGraph()`), four family colours (people/iris, work/tide, money/moss, notes/ink-soft — ember never appears), tap-to-traverse with a compact card, family filter chips, deep links from Project/Person/Insight cards land centred.
+- **The physics is leashed and the camera is polite**: weak centring forces keep disconnected islands in one world; the camera re-frames every engine tick until the user's first touch, plus one final fit at engine stop (cooldownTime is wall-clock; background tabs pause frames). Island titles live in the header caption, never on the canvas; labels queue by degree with per-frame collision rects; charges label as amounts, not their merchant's name again.
+- **The sphere is real**: a 3D toggle (asked for twice = decision) dynamically imports `3d-force-graph` + three.js on first tap only. Trackball controls (orbit clamps at poles — a globe has no up), fog for depth, flat ambient-lit dots (default lighting read as clip-art), scene-rotation ambient spin, hemisphere-aware caption. A failed load falls back to flat, loudly (`SPHERE FAILED:` — that catch ate a real bug once).
+- Entry: floating top-right `GraphButton` on every signed-in page (deliberately not a seventh tab).
+
+### The demo — a public door to a fictional house
+
+Passphrase **`demo`** (login box, or the button on `/welcome`) opens the entire dashboard on the fixture data the design preview uses. The contract lives in `web/lib/demo.js` + `tests/demo.test.js`: `backendGet` answers a demo session from `app/fixtures.js` and **never falls through to Supabase** (uncovered paths return absence — falling through would leak the real bank feed one endpoint at a time); `backendPost` refuses outright (read-only enforced at the choke point, not by hiding buttons); login checks the real passphrase first; the cookie holds the canonical constant and expires in a day. Verified on production: the demo cookie's HTML contains zero real names.
+
+### The hole, and the ceilings
+
+`POST /api/tts` answered **200 to a request with no cookie and no key** — found by probing production, not by reading code. Anyone could spend OpenAI tokens on the project's bill. It now demands a session (owner cookie, API secret, or demo — demo capped at 8 reads/min and 2,600 chars). Under every lock there is now a ceiling: `lib/ratelimit.js`, a per-warm-instance fixed window (honest about serverless: it caps realistic abuse — scripts, leaked keys in loops — not distributed attacks; auth is the lock, this is the chain). Resources 240 GET / 60 POST per min, capture 30, ingest 120, cron deliberately unthrottled. Guards sit after auth so a 429 never leaks credential validity. `tests/ratelimit.test.js` pins all of it.
+
+### Also shipped Aug 10
+
+- **PersonCard gained Edit** (never existed — verified against git history). `savePerson` accepts an `id` so a RENAME updates the person instead of forking a duplicate; empty string now means "clear this field" while null still means "not mentioned" (the voice path's semantics, preserved).
+- **PII scrub**: real family names found in test fixtures replaced with fictional ones. Old git history still carries one name — the standing decision is: when going public, fresh repo from the clean tree AND private/delete the old one.
 
 ---
 
