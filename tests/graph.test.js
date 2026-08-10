@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 
 import { ENTITIES, LINKABLE, describeNeighbourhood, findMentions, merchantKey } from "../web/lib/links.js";
 import { groupIntoVisits, looksLikeGym } from "../web/tools/location.js";
-import { nodeToRoot, rootToNode, detail, RELATION_LABEL } from "../web/app/graph/phrasing.js";
+import { nodeToRoot, rootToNode, detail, moneyTotal, RELATION_LABEL } from "../web/app/graph/phrasing.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -700,6 +700,97 @@ test("reduced motion gets a settled graph, not a slow-motion one", () => {
   assert.match(canvasSource, /warmupTicks\(still \? 300 : 60\)/);
   assert.match(canvasSource, /cooldownTicks\(still \? 0 : undefined\)/);
 
+  // And for everyone else the settle is seconds, not the library default —
+  // the fifteen-second drift was most of the first complaint about this page.
+  assert.match(canvasSource, /cooldownTime\(4000\)/);
+
+});
+
+
+test("the camera frames the settle until the user takes over", () => {
+
+  // The physics has nothing anchoring it to the viewport — the first render
+  // settled half the net off a phone's right edge and stayed there until a
+  // single jump-cut fifteen seconds in. So the whole graph is re-framed every
+  // engine tick, and the first pointer on the canvas ends it permanently: a
+  // camera the user is holding must never move itself.
+  assert.match(canvasSource, /onEngineTick\(\(\) => \{\s*if \(!cameraOwnedRef\.current\) fg\.zoomToFit\(0, 60\);/);
+  assert.match(canvasSource, /addEventListener\("pointerdown", takeCamera, \{ capture: true \}\)/);
+
+  // The recentre control is the one way to hand the camera back.
+  assert.match(canvasSource, /cameraOwnedRef\.current = false/);
+
+  // And a final fit at engine stop, because the per-tick refit depends on
+  // ticks happening at all: cooldownTime is wall-clock, and a tab loaded in
+  // the background has its frames paused while that clock runs.
+  assert.match(canvasSource, /if \(!cameraOwnedRef\.current\) fg\.zoomToFit\(400, 60\)/);
+
+});
+
+
+test("disconnected islands share one bounded world", () => {
+
+  // Components with no edge between them repel each other for as long as the
+  // simulation runs — an expanseless plane, and the reason the final frame
+  // was too far out to read. The weak centring forces are the leash: they
+  // gather without crushing, and when future data joins two islands nothing
+  // here changes.
+  assert.match(canvasSource, /forceX\(0\)\.strength/);
+  assert.match(canvasSource, /forceY\(0\)\.strength/);
+
+  // Zoom is clamped in both directions — there is nowhere to get lost.
+  assert.match(canvasSource, /minZoom\(0\.3\)/);
+  assert.match(canvasSource, /maxZoom\(10\)/);
+
+});
+
+
+test("one spread control moves every force that defines scale", () => {
+
+  // Repulsion, link length and personal space tuned separately WILL drift
+  // into disagreement. applySpread is the single place scale exists, the
+  // slider is its only UI, and changing it re-settles the world.
+  const body = canvasSource.slice(
+    canvasSource.indexOf("function applySpread"),
+    canvasSource.indexOf("const SPREAD_MIN")
+  );
+
+  assert.match(body, /d3Force\("charge"\)/);
+  assert.match(body, /d3Force\("link"\)/);
+  assert.match(body, /forceCollide/);
+
+  assert.match(canvasSource, /type="range"/, "the slider must exist");
+  assert.match(canvasSource, /d3ReheatSimulation\(\)/, "and moving it must re-settle the layout");
+
+});
+
+
+test("labels are not allowed to land on each other", () => {
+
+  // At mid-zoom, forty labels arriving at once used to stack into an
+  // unreadable smear. Two rules fix it: the threshold scales with degree
+  // (hubs speak first), and every label this frame checks the rectangles
+  // already drawn and waits its turn if occupied. Priority is draw order,
+  // which is degree order, pinned by the sort.
+  assert.match(canvasSource, /scale \* Math\.sqrt\(node\.val \|\| 1\) > 3\.2/);
+  assert.match(canvasSource, /labelRectsRef\.current = \[\]/, "the ledger must reset every frame");
+  assert.match(canvasSource, /measureText\(node\.label\)/, "widths must be measured, not guessed");
+  assert.match(canvasSource, /\.sort\(\(a, b\) => \(b\.val \|\| 0\) - \(a\.val \|\| 0\)\)/);
+
+});
+
+
+test("the overview names its islands", () => {
+
+  // Zoomed out, node labels are gone and the view used to be anonymous
+  // constellations. Each connected component draws its strongest member's
+  // name at its centroid, fading out as node labels fade in — and when data
+  // eventually joins two islands, the union-find reports one component with
+  // one title, no code change.
+  assert.match(canvasSource, /onRenderFramePost/);
+  assert.match(canvasSource, /const find = \(x\)/, "components must come from a union-find, not a guess");
+  assert.match(canvasSource, /\(b\.val \|\| 0\) > \(a\.val \|\| 0\) \? b : a/, "titled by the most connected member");
+
 });
 
 
@@ -742,11 +833,9 @@ test("a deep link still lands centred on its subject", () => {
   assert.match(canvasSource, /onEngineStop/);
   assert.match(canvasSource, /n\.id === focus/);
 
-  // And without a deep link, the settled net is framed rather than trusted:
-  // the physics has nothing anchoring it to the viewport, and the first render
-  // proved it by settling half the graph off the right edge of a phone.
-  assert.match(canvasSource, /zoomToFit\(0, 70\)/, "an immediate fit after warmup");
-  assert.match(canvasSource, /zoomToFit\(500, 70\)/, "and a final fit when the engine stops");
+  // And the deep-link zoom only fires if the user hasn't already taken the
+  // camera — a camera the user is holding must never move itself.
+  assert.match(canvasSource, /target && !cameraOwnedRef\.current/);
 
   const page = read("web/app/graph/page.js");
   assert.match(page, /params\?\.type && params\?\.id/, "the page must still read the deep-link params");
@@ -813,6 +902,34 @@ test("relation direction survives being turned into a sentence", () => {
   // of the stored edge the selection sits at.
   assert.match(canvasSource, /nodeToRoot\(\{ relation, direction \}\)/);
   assert.match(canvasSource, /l\.source === selected\.id \? "out" : "in"/);
+
+});
+
+
+test("a selection's money is summed in code, absolutely, from charges only", () => {
+
+  // "What did this cost" answered by arithmetic on the amounts the server
+  // attached — never by a model, and never flattered by refunds: absolute
+  // values, because the question is how much money MOVED.
+  const rows = [
+    { type: "transaction", extra: -146.8 },
+    { type: "transaction", extra: 62.4 },
+    { type: "transaction", extra: -0 },
+    { type: "task", extra: 99 },        // not money, ignored
+    { type: "merchant", extra: 21 },    // txn_count, not an amount, ignored
+    { type: "transaction" }             // no amount recorded, ignored
+  ];
+
+  const { total, count } = moneyTotal(rows);
+
+  assert.equal(count, 3);
+  assert.ok(Math.abs(total - 209.2) < 1e-9);
+
+  assert.deepEqual(moneyTotal([]), { count: 0, total: 0 });
+  assert.deepEqual(moneyTotal(null), { count: 0, total: 0 });
+
+  // And the card actually uses it.
+  assert.match(canvasSource, /moneyTotal\(neighbourRows\.map/);
 
 });
 

@@ -86,6 +86,29 @@ export function shorten(text, max = 46) {
 }
 
 
+// What a selection's neighbourhood costs.
+//
+// Summed here, in code, from the amounts the server already attached to each
+// transaction node — never asked of a model, never re-derived from a second
+// source. Absolute values, because this answers "how much money moved through
+// this thing", and a refund making a project look cheaper than it was is the
+// kind of flattering arithmetic this system refuses everywhere else.
+//
+// Only direct transaction neighbours count. A category's total is the charges
+// IN it, a merchant's is the charges AT it, a project's is the charges spent
+// ON it — all of which are exactly the transaction nodes one hop away.
+export function moneyTotal(nodes) {
+
+  const charges = (nodes || []).filter(n => n?.type === "transaction" && n.extra != null);
+
+  return {
+    count: charges.length,
+    total: charges.reduce((sum, n) => sum + Math.abs(Number(n.extra) || 0), 0)
+  };
+
+}
+
+
 // A charge is not worth reading without its amount, and a merchant is not worth
 // reading without how many times it appears. Both arrive in `extra`.
 export function detail(node) {
