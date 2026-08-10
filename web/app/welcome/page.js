@@ -24,7 +24,12 @@ export const metadata = {
     title: "Almanac",
     description:
       "Capture a sentence anywhere. It gets parsed, dated, filed and connected to everything already on record, then read back each morning as a short briefing.",
-    type: "website"
+    type: "website",
+    // Explicit, because defining openGraph here shadows the root layout's — and
+    // the root URL redirects a signed-out visitor (every link scraper) HERE, so
+    // this is the page whose card LinkedIn actually renders. Resolves against
+    // metadataBase to the real domain.
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "Almanac" }]
   }
 };
 

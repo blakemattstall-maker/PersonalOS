@@ -31,11 +31,42 @@ const dmMono = DM_Mono({
 });
 
 
+const DESCRIPTION =
+  "A quiet system of record for your whole life — calendar, tasks, notes, money, people — and a mind that reads across all of it.";
+
 export const metadata = {
+  // The public home. Resolves relative URLs (the Open Graph image below,
+  // canonical links) against the real domain rather than a vercel.app host, so
+  // a link shared to LinkedIn previews as Almanac. The app itself is served on
+  // both — nothing here changes which hosts answer; the *.vercel.app aliases
+  // the Shortcut, Overland and Google OAuth point at keep working untouched.
+  metadataBase: new URL("https://getalmanac.xyz"),
   title: "Almanac",
-  description: "A quiet system of record for your whole life — and a mind that reads across all of it.",
+  description: DESCRIPTION,
   manifest: "/manifest.json",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Almanac" },
+  // Modern browsers prefer the SVG (the new sun-over-horizon mark); the .ico
+  // stays as a fallback for anything that can't render SVG.
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" }
+    ],
+    apple: "/icon.svg"
+  },
+  openGraph: {
+    title: "Almanac",
+    description: DESCRIPTION,
+    url: "https://getalmanac.xyz",
+    siteName: "Almanac",
+    type: "website"
+    // The image is supplied automatically from app/opengraph-image.js.
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Almanac",
+    description: DESCRIPTION
+  }
 };
 
 export const viewport = {

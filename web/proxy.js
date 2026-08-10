@@ -32,11 +32,12 @@ export function proxy(request) {
 }
 
 
-// sw.js, manifest.json and the icon must stay reachable without the cookie.
-// The browser fetches the service worker and manifest outside the page's
-// session, so gating them doesn't protect anything — it just makes the app
-// un-installable and push registration fail with no useful error. None of
-// the three contain anything private.
+// sw.js, manifest.json, the icon and opengraph-image must stay reachable
+// without the cookie. The browser fetches the service worker and manifest
+// outside the page's session, and a LINK SCRAPER (LinkedIn, iMessage, Slack)
+// fetching the Open Graph preview image holds no session at all — gating any of
+// them protects nothing and instead makes the app un-installable or the shared
+// link preview blank. None of them contain anything private.
 //
 // `api` is excluded for a harder reason. The API now lives inside this app, and
 // its callers are not browsers and hold no session cookie: the iOS Shortcut,
@@ -48,5 +49,5 @@ export function proxy(request) {
 // LOCATION_INGEST_KEY, which are the right kind of credential for a caller
 // that cannot log in.
 export const config = {
-  matcher: ["/((?!api|login|welcome|_next/static|_next/image|favicon.ico|sw.js|manifest.json|icon.svg).*)"]
+  matcher: ["/((?!api|login|welcome|_next/static|_next/image|favicon.ico|sw.js|manifest.json|icon.svg|opengraph-image).*)"]
 };
