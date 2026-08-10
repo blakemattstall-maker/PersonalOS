@@ -20,7 +20,7 @@ import { buildRichContext } from "../lib/context.js";
 // action with real consequences, so it stays a deliberate click in Google's
 // own UI rather than something a voice command can trigger by accident.
 
-const FOLDER_NAME = "PersonalOS";
+const FOLDER_NAME = "Almanac";
 
 
 // ---------------------------------------------------------------------------
@@ -345,7 +345,7 @@ export async function exportToDoc({ request, title, research = false, markdown }
   }
 
   const created = await docs.documents.create({
-    requestBody: { title: docTitle || "PersonalOS export" }
+    requestBody: { title: docTitle || "Almanac export" }
   });
 
   const documentId = created.data.documentId;
@@ -370,14 +370,14 @@ export async function exportToDoc({ request, title, research = false, markdown }
     });
 
   } catch (error) {
-    folderNote = `Saved to the root of your Drive rather than the PersonalOS folder (${error.message}).`;
+    folderNote = `Saved to the root of your Drive rather than the Almanac folder (${error.message}).`;
   }
 
   const url = `https://docs.google.com/document/d/${documentId}/edit`;
 
   return {
     success: true,
-    message: `Created the doc "${docTitle}"${folderNote ? "" : " in your PersonalOS folder"}. It's private to you — open it to read or share it.${folderNote ? ` ${folderNote}` : ""}`,
+    message: `Created the doc "${docTitle}"${folderNote ? "" : " in your Almanac folder"}. It's private to you — open it to read or share it.${folderNote ? ` ${folderNote}` : ""}`,
     data: {
       document_id: documentId,
       url,

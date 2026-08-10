@@ -59,7 +59,7 @@ export default async function LoginPage({ searchParams }) {
     <div className="flex flex-1 items-center justify-center bg-paper px-6 py-16">
       <form action={login} className="w-full max-w-sm">
 
-        <h1 className="pos-display text-[2.2rem] text-ink">PersonalOS</h1>
+        <h1 className="pos-display text-[2.2rem] text-ink">Almanac</h1>
 
         <p className="mt-2 text-[0.9rem] text-ink-soft">
           Enter your passphrase to continue.

@@ -73,7 +73,7 @@ export async function queryNotes({
         role: "system",
 
         content: `
-You are PersonalOS answering a question using the user's saved notes.
+You are Almanac answering a question using the user's saved notes.
 
 Who you're talking to:
 ${bio || "(no profile saved yet)"}

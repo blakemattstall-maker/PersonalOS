@@ -41,7 +41,7 @@ export async function respondToThread({
 
 
   const turnHistory = priorTurns
-    .map(t => `${t.role === "user" ? "User" : "PersonalOS"}: ${t.message}`)
+    .map(t => `${t.role === "user" ? "User" : "Almanac"}: ${t.message}`)
     .join("\n") || "(no messages yet)";
 
 

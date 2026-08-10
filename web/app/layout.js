@@ -32,10 +32,10 @@ const dmMono = DM_Mono({
 
 
 export const metadata = {
-  title: "PersonalOS",
-  description: "Your personal operating system.",
+  title: "Almanac",
+  description: "A quiet system of record for your whole life — and a mind that reads across all of it.",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "PersonalOS" },
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Almanac" },
 };
 
 export const viewport = {

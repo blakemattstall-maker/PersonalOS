@@ -251,12 +251,12 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
             type="text"
             value={prefs.displayName || ""}
             onChange={(e) => update({ displayName: e.target.value })}
-            placeholder="PersonalOS"
+            placeholder="Almanac"
             maxLength={24}
             className="mt-2 w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-sm text-ink outline-none placeholder:text-ink-soft focus:border-ink"
           />
           <p className="mt-1.5 text-xs text-ink-soft">
-            Shown in thread replies and on the lock-screen player. Leave blank for PersonalOS.
+            Shown in thread replies and on the lock-screen player. Leave blank for Almanac.
           </p>
         </div>
       </Section>

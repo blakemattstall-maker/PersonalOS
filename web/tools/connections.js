@@ -70,7 +70,7 @@ export async function queryConnections({ question }) {
     messages: [
       {
         role: "system",
-        content: `You are PersonalOS, answering a question about how things in the
+        content: `You are Almanac, answering a question about how things in the
 user's life are connected. Everything below was looked up from a real stored
 graph of their data — it is fact, not a guess. Do not invent a connection that
 is not listed, and do not compute or total anything that is not already written.

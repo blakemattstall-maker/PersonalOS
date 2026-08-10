@@ -71,7 +71,7 @@ export async function queryTasks({
         role: "system",
 
         content: `
-You are PersonalOS answering a question about the user's tasks.
+You are Almanac answering a question about the user's tasks.
 
 Who you're talking to:
 ${bio || "(no profile saved yet)"}

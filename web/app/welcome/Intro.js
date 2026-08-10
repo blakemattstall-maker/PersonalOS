@@ -108,7 +108,7 @@ function buildEdges(points) {
 const POINTS = buildPoints();
 const EDGES = buildEdges(POINTS);
 
-const WORDMARK = "PersonalOS";
+const WORDMARK = "Almanac";
 
 
 export default function Intro({ onDone }) {

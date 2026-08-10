@@ -218,7 +218,7 @@ Return ONLY JSON:
     .from("prompts")
     .insert([{
       kind: "digest",
-      title: verdict.title || "PersonalOS",
+      title: verdict.title || "Almanac",
       body: verdict.body,
       payload: { reason: verdict.reason },
       status: "pending",
@@ -235,7 +235,7 @@ Return ONLY JSON:
 
   const push = allowed
     ? await sendPush({
-        title: verdict.title || "PersonalOS",
+        title: verdict.title || "Almanac",
         body: verdict.body,
         url: "/",
         tag: "daily-digest"

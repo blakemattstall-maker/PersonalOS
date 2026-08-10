@@ -1,5 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0b0d10"/>
-  <circle cx="256" cy="256" r="132" fill="none" stroke="#5b9dff" stroke-width="28"/>
-  <circle cx="256" cy="256" r="42" fill="#5b9dff"/>
+  <!-- Almanac. On-palette: deep-ink tile, a paper disc (the almanac's
+       sun/moon — what an almanac has always tracked) RISING behind a
+       full-width moss horizon. Full-width horizon reads as ground, not
+       shoulders. Ink #2f373d / moss #4a6b62 / paper #efeee9. No ember:
+       the app reserves that colour for "waiting on you". -->
+  <rect width="512" height="512" rx="116" fill="#2f373d"/>
+  <clipPath id="tile"><rect width="512" height="512" rx="116"/></clipPath>
+  <g clip-path="url(#tile)">
+    <circle cx="256" cy="268" r="124" fill="#efeee9"/>
+    <path d="M0 330 Q256 300 512 330 L512 512 L0 512 Z" fill="#4a6b62"/>
+    <path d="M0 330 Q256 300 512 330" fill="none" stroke="#efeee9" stroke-opacity="0.18" stroke-width="6"/>
+  </g>
 </svg>

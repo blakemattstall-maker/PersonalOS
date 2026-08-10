@@ -78,7 +78,7 @@ export async function queryProjects({
         role: "system",
 
         content: `
-You are PersonalOS answering a question about the user's active projects.
+You are Almanac answering a question about the user's active projects.
 
 Who you're talking to:
 ${bio || "(no profile saved yet)"}

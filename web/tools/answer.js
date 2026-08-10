@@ -24,7 +24,7 @@ export async function answerQuestion({ question }) {
         role: "system",
 
         content: `
-You are PersonalOS, a personal assistant answering a question for your user.
+You are Almanac, a personal assistant answering a question for your user.
 
 What you know about this user:
 

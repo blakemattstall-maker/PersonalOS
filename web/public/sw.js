@@ -22,10 +22,10 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {
-    data = { title: "PersonalOS", body: event.data ? event.data.text() : "" };
+    data = { title: "Almanac", body: event.data ? event.data.text() : "" };
   }
 
-  const title = data.title || "PersonalOS";
+  const title = data.title || "Almanac";
 
   event.waitUntil(
     self.registration.showNotification(title, {

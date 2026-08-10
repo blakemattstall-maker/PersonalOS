@@ -88,7 +88,7 @@ export default function Hero() {
       <div className="mx-auto w-full max-w-[46rem] px-5 pt-16 pb-4 sm:pt-24">
 
         <p className="pos-data text-[0.7rem] uppercase tracking-[0.14em] text-ink-soft">
-          PersonalOS
+          Almanac
         </p>
 
         <h1 className="pos-display mt-4 text-[2.5rem] leading-[1.04] text-ink sm:text-[3.6rem]">
@@ -118,7 +118,7 @@ export default function Hero() {
             says what the thing IS, then what becomes possible, and leaves the
             mechanism to the seven sections below that exist to explain it. */}
         <p data-tail className="pos-reveal mt-6 max-w-[35rem] text-[1.05rem] leading-relaxed text-ink-soft">
-          PersonalOS is a single system of record for your goals, intentions,
+          Almanac is a single system of record for your goals, intentions,
           tasks, notes, spending and the people in your life — and a reasoning
           layer that works across all of it on your behalf.
         </p>

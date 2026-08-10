@@ -147,7 +147,7 @@ export async function queryFinances({ question, days = 30 } = {}) {
       {
         role: "system",
 
-        content: `You are PersonalOS answering a question about the user's money.
+        content: `You are Almanac answering a question about the user's money.
 
 Who you're talking to:
 ${bio || "(no profile saved yet)"}

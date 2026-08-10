@@ -269,7 +269,7 @@ function describeToOS(title, onStop) {
 
     navigator.mediaSession.metadata = new window.MediaMetadata({
       title: title || "Brief",
-      artist: readPrefs().displayName || "PersonalOS"
+      artist: readPrefs().displayName || "Almanac"
     });
 
     navigator.mediaSession.setActionHandler("play", () => audio().play().catch(() => {}));

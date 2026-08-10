@@ -18,8 +18,8 @@ import { ItemCard, btn, field } from "./ui.js";
 // These two snapshots stay local because they return a string. A primitive is
 // compared by value, so recomputing it per render is safe without going through
 // that cache.
-const getSelfNameServerSnapshot = () => "PersonalOS";
-const getSelfNameSnapshot = () => readPrefs().displayName || "PersonalOS";
+const getSelfNameServerSnapshot = () => "Almanac";
+const getSelfNameSnapshot = () => readPrefs().displayName || "Almanac";
 
 
 function Dots() {

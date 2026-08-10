@@ -56,7 +56,7 @@ export async function querySchedule({
         role: "system",
 
         content: `
-You are PersonalOS answering a question about the user's schedule.
+You are Almanac answering a question about the user's schedule.
 
 Who you're talking to:
 ${bio || "(no profile saved yet)"}

@@ -390,7 +390,7 @@ async function diag(req, res) {
   if (req.method === "POST" && req.body?.action === "testPush") {
 
     const result = await sendPush({
-      title: "PersonalOS",
+      title: "Almanac",
       body: "Test notification — push is working.",
       url: "/settings",
       tag: "test"

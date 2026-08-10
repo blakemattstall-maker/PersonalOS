@@ -17,11 +17,11 @@ import SceneMoney from "./SceneMoney.js";
 // even by accident. There is no data-fetching call anywhere below; every figure
 // on this page is invented, written into the source, and labelled as a sample.
 export const metadata = {
-  title: "PersonalOS",
+  title: "Almanac",
   description:
     "A personal operating system. Capture a sentence anywhere, and it is parsed, dated, filed and connected to everything already on record, then read back to you each morning as a short briefing.",
   openGraph: {
-    title: "PersonalOS",
+    title: "Almanac",
     description:
       "Capture a sentence anywhere. It gets parsed, dated, filed and connected to everything already on record, then read back each morning as a short briefing.",
     type: "website"
@@ -402,7 +402,7 @@ export default function Welcome() {
         </div>
 
         <p className="pos-data mt-6 text-center text-[0.7rem] text-ink-soft">
-          PersonalOS
+          Almanac
         </p>
       </footer>
 

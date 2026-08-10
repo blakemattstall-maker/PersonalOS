@@ -1,7 +1,7 @@
 {
-  "name": "PersonalOS",
-  "short_name": "PersonalOS",
-  "description": "Your personal operating system.",
+  "name": "Almanac",
+  "short_name": "Almanac",
+  "description": "A quiet system of record for your whole life.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#20272b",

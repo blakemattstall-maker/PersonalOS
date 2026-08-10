@@ -163,7 +163,7 @@ export function describeCapture(results = [], heard = null) {
 
   const title = results.length > 1
     ? `${results.length} things done`
-    : (TITLE_FOR_TOOL[first?.tool] || "PersonalOS");
+    : (TITLE_FOR_TOOL[first?.tool] || "Almanac");
 
   return {
 

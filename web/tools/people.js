@@ -619,7 +619,7 @@ export async function queryPeople({ question } = {}) {
       {
         role: "system",
 
-        content: `You are PersonalOS answering a question about the user's
+        content: `You are Almanac answering a question about the user's
 saved relationships.
 
 Who you're talking to:
