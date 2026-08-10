@@ -596,7 +596,12 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
     try {
 
-      const { default: ForceGraph3D } = await import("3d-force-graph");
+      // three.js rides in with it — imported here, not at module scope, for
+      // the same bundle reason. It is only needed for fog and lighting.
+      const [{ default: ForceGraph3D }, THREE] = await Promise.all([
+        import("3d-force-graph"),
+        import("three")
+      ]);
 
       const el = roundRef.current;
 
@@ -612,7 +617,11 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
         members: c.ids.map(id => liveById.get(id)).filter(Boolean)
       }));
 
-      const fg3 = new ForceGraph3D(el, { controlType: "orbit" })
+      // Trackball, not orbit. Orbit controls clamp at the poles by design —
+      // spin the globe upward far enough and it hits a wall, which on a
+      // sphere reads as broken. Trackball tumbles freely in every direction;
+      // a globe has no up.
+      const fg3 = new ForceGraph3D(el, { controlType: "trackball" })
         .graphData({ nodes: liveNodes, links: links.map(l => ({ ...l })) })
         .width(el.clientWidth)
         .height(el.clientHeight)
@@ -620,13 +629,15 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
         .showNavInfo(false)
 
         .nodeVal(n => n.val || 1)
+        // 8 segments reads as a golf ball once the dots have any size.
+        .nodeResolution(16)
+        .nodeOpacity(1)
         .nodeLabel(() => "")
         .nodeColor(n => {
           const sel = selectedRef.current;
           if (sel && (n.id === sel || neighboursRef.current.has(n.id))) return palette.moss;
           return paletteRef.current.family[FAMILY[n.type] || "notes"];
         })
-        .nodeOpacity(0.9)
 
         .linkColor(l => {
           const sel = selectedRef.current;
@@ -668,24 +679,64 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
         });
 
-      fg3.cameraPosition({ x: 0, y: 0, z: sphereRadius(liveNodes.length, spreadRef.current) * 3.1 });
+      const R = sphereRadius(liveNodes.length, spreadRef.current);
 
-      // Ambient spin until the user takes hold — the same "camera moves only
-      // until touched" contract as the flat view.
-      const controls = fg3.controls();
-      controls.autoRotate = true;
-      controls.autoRotateSpeed = 0.6;
-      el.addEventListener("pointerdown", () => { controls.autoRotate = false; }, { capture: true, once: true });
+      fg3.cameraPosition({ x: 0, y: 0, z: R * 3.1 });
+
+      // A still sphere had no depth: the far side drew exactly like the near
+      // side and the picture read as a flat tangle. Fog is the cue — nodes
+      // and links fade toward the page colour with distance from the camera,
+      // so the back of the globe recedes instead of competing. Distances are
+      // camera-relative, which means zooming IN pulls things out of the haze
+      // for free. Re-tuned whenever the spread slider resizes the world.
+      const setFog = () => {
+        const radius = sphereRadius(liveNodes.length, spreadRef.current);
+        fg3.scene().fog = new THREE.Fog(paletteRef.current.paper, radius * 2.1, radius * 4.9);
+      };
+
+      setFog();
+
+      fg3._setFog = setFog;
+
+      // The default scene lights a sphere like a rendered marble — a hot spot
+      // up-left, a dark limb — which against this design system's flat
+      // colour reads as clip-art. Pure ambient light makes every dot a flat
+      // disc of its family colour, the same vocabulary as the 2D canvas, and
+      // leaves fog as the only depth cue. (Traversal instead of .lights():
+      // resilient to however the library arranges its defaults.)
+      const strays = [];
+      fg3.scene().traverse(o => { if (o.isLight) strays.push(o); });
+      for (const light of strays) light.parent?.remove(light);
+      fg3.scene().add(new THREE.AmbientLight(0xffffff, Math.PI));
+
+      // Ambient spin, by rotating the SCENE rather than driving the camera —
+      // the camera belongs to the trackball controls, and two owners of one
+      // camera is a fight the user loses. Stops at first touch, forever.
+      const spinning = { on: true };
+
+      const spinTimer = setInterval(() => {
+        if (spinning.on && modeRef.current === "round") {
+          fg3.scene().rotation.y += 0.0022;
+        }
+      }, 16);
+
+      el.addEventListener("pointerdown", () => { spinning.on = false; }, { capture: true, once: true });
 
       // Which hemisphere is facing the camera — the caption's 3D answer.
-      // Checked on a timer rather than per frame; the answer changes at the
-      // speed of a slow spin, not at 60fps.
+      // The camera lives in world space but the nodes live in the rotated
+      // scene, so the camera is rotated BACK into graph space before the
+      // dot product, or the caption would drift wrong as the globe spins.
       const captionTimer = setInterval(() => {
 
         if (modeRef.current !== "round") return;
 
         const cam = fg3.cameraPosition();
-        const camLength = Math.hypot(cam.x, cam.y, cam.z) || 1;
+        const spin = fg3.scene().rotation.y;
+
+        const cx = cam.x * Math.cos(-spin) - cam.z * Math.sin(-spin);
+        const cz = cam.x * Math.sin(-spin) + cam.z * Math.cos(-spin);
+
+        const camLength = Math.hypot(cx, cam.y, cz) || 1;
 
         let best = null;
         let bestCount = 0;
@@ -696,7 +747,7 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
           for (const m of component.members) {
             if (hiddenRef.current.has(FAMILY[m.type] || "notes")) continue;
-            const dot = ((m.x || 0) * cam.x + (m.y || 0) * cam.y + (m.z || 0) * cam.z) / camLength;
+            const dot = ((m.x || 0) * cx + (m.y || 0) * cam.y + (m.z || 0) * cz) / camLength;
             if (dot > 0) facing += 1;
           }
 
@@ -711,18 +762,24 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
       }, 600);
 
-      fg3._captionTimer = captionTimer;
-
       const originalDestructor = fg3._destructor.bind(fg3);
-      fg3._destructor = () => { clearInterval(captionTimer); originalDestructor(); };
+      fg3._destructor = () => {
+        clearInterval(captionTimer);
+        clearInterval(spinTimer);
+        originalDestructor();
+      };
 
       fg3Ref.current = fg3;
       fgRef.current?.pauseAnimation();
 
-    } catch {
+    } catch (error) {
 
       // The sphere failing to load must cost nothing but the tap: back to
-      // flat, no error screen over a working graph.
+      // flat, no error screen over a working graph. But the reason goes to
+      // the console — this catch once swallowed a real setup bug and made a
+      // broken sphere indistinguishable from a slow network.
+      console.error("SPHERE FAILED:", error);
+
       modeRef.current = "flat";
       setMode("flat");
 
@@ -766,7 +823,10 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
       fgRef.current.d3ReheatSimulation();
     }
 
-    fg3Ref.current?.d3ReheatSimulation();
+    if (fg3Ref.current) {
+      fg3Ref.current._setFog?.();
+      fg3Ref.current.d3ReheatSimulation();
+    }
 
   };
 

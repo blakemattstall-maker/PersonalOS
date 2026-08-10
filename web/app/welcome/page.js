@@ -375,17 +375,29 @@ export default function Welcome() {
           </h2>
 
           <p className="mt-3 max-w-[34rem] text-[0.92rem] leading-relaxed text-ink-soft">
-            Access is invitation only, so there is no sign-up form here. If you
-            have credentials, they go in through the link below.
+            Access is invitation only, so there is no sign-up form here — but
+            there is a demo: the whole dashboard, running on fictional data,
+            read-only. The passphrase for it is simply <span className="pos-data text-ink">demo</span>.
           </p>
 
-          <Link
-            href="/login"
-            className="mt-6 inline-flex items-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-3 text-[0.88rem] font-medium text-paper transition-opacity hover:opacity-90"
-          >
-            Sign in
-            <span aria-hidden="true">→</span>
-          </Link>
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-3 text-[0.88rem] font-medium text-paper transition-opacity hover:opacity-90"
+            >
+              Sign in
+              <span aria-hidden="true">→</span>
+            </Link>
+
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-2 rounded-[var(--r-pill)] border border-[var(--line)] px-5 py-3 text-[0.88rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
+            >
+              Try the demo
+            </Link>
+
+          </div>
 
         </div>
 

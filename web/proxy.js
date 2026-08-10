@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { DEMO_SESSION } from "./lib/demo.js";
 
 
 export function proxy(request) {
@@ -11,6 +12,13 @@ export function proxy(request) {
   // undefined, which passes — a missing env var would quietly make the whole
   // dashboard public rather than locking it.
   if (passphrase && cookie?.value === passphrase) {
+    return NextResponse.next();
+  }
+
+  // The demo session walks through the same door. What it can SEE is decided
+  // in backend.js — fixtures only, writes refused — so admitting it here
+  // grants the shell of the app, never the contents.
+  if (cookie?.value === DEMO_SESSION) {
     return NextResponse.next();
   }
 

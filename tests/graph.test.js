@@ -869,7 +869,8 @@ test("the sphere is an opt-in that the flat view never pays for", () => {
     "3d-force-graph must never be imported statically"
   );
 
-  assert.match(canvasSource, /await import\("3d-force-graph"\)/, "it arrives inside the toggle handler");
+  assert.match(canvasSource, /import\("3d-force-graph"\)/, "it arrives inside the toggle handler");
+  assert.doesNotMatch(canvasSource, /^import .*"three"/m, "and three.js is dynamic for the same reason");
   assert.match(canvasSource, /useState\("flat"\)/, "and flat is the default");
 
   // A sphere that fails to load costs the tap and nothing else.

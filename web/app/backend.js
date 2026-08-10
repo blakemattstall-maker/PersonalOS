@@ -1,5 +1,20 @@
 import resourceHandler from "./api/[resource]/handler.js";
 import ingestHandler from "./api/ingest/[kind]/handler.js";
+import { DEMO_SESSION } from "../lib/demo.js";
+
+
+// Whether this request belongs to the demo session. cookies() throws outside
+// a request scope (build-time prerender, for one), and "not in a request"
+// can never be a demo.
+async function isDemoRequest() {
+  try {
+    const { cookies } = await import("next/headers");
+    const store = await cookies();
+    return store.get("pos_session")?.value === DEMO_SESSION;
+  } catch {
+    return false;
+  }
+}
 
 
 // The dashboard's data layer. It no longer speaks HTTP.
@@ -150,16 +165,24 @@ async function invoke({ method, path, body = undefined }) {
 
 export async function backendGet(path) {
 
-  // Local design fixtures. POS_FIXTURES is set only by the `web-preview` entry
-  // in .claude/launch.json — never in .env.local and never in Vercel — so this
-  // branch is dead code in every deployed build. See fixtures.js.
-  if (process.env.POS_FIXTURES === "1") {
+  // Two callers get the fictional dashboard instead of the real one: the
+  // local design preview (POS_FIXTURES, set only by .claude/launch.json,
+  // dead in every deployed build) and the demo session (lib/demo.js).
+  const demo = await isDemoRequest();
+
+  if (demo || process.env.POS_FIXTURES === "1") {
 
     const { fixtureFor } = await import("./fixtures.js");
 
     const canned = fixtureFor(path);
 
     if (canned) return canned;
+
+    // The preview may fall through — a local dev server has no credentials
+    // and renders empty states, which is harmless. The demo NEVER falls
+    // through: an uncovered path reaching invoke() would hand a stranger the
+    // real bank feed one endpoint at a time, so absence answers as absence.
+    if (demo) return { success: false, demo: true, error: "Not part of the demo." };
 
   }
 
@@ -169,6 +192,16 @@ export async function backendGet(path) {
 
 
 export async function backendPost(path, body) {
+
+  // Read-only, enforced where the write happens. Every mutation the
+  // dashboard can make comes through here, so this one check is the demo's
+  // whole write policy — hiding buttons in the UI would be decoration, and
+  // decoration is not a guarantee. The shape matches what the pages already
+  // treat as a failed action, so a demo visitor tapping "Save" sees a calm
+  // refusal rather than a broken screen.
+  if (await isDemoRequest()) {
+    return { success: false, demo: true, error: "The demo is read-only." };
+  }
 
   return invoke({ method: "POST", path, body });
 
