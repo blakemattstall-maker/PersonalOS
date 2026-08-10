@@ -253,6 +253,16 @@ const MIGRATIONS = [
       "actionable, so everything the app has to say arrives in one morning clump — " +
       "which is the pile-up the delivery windows exist to prevent. createNudge falls " +
       "back to the immediate insert, so nothing errors."
+  },
+
+  {
+    file: "docs/schema-waitlist.sql",
+    purpose: "public waitlist signups from /welcome",
+    tables: ["waitlist"],
+    breaksWithout:
+      "The waitlist form on the welcome tour degrades to a friendly 'try again' — the " +
+      "insert fails because the table isn't there, so no email is captured, but the " +
+      "page never errors."
   }
 
 ];

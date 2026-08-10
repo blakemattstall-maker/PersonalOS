@@ -20,11 +20,57 @@ export async function createTask({
   person_id = null,
   // Set only by the yearly-reminder job. The unique index on this column is
   // what makes that job idempotent — see docs/schema-accountability.sql.
-  recurrence_key = null
+  recurrence_key = null,
+  // A word like "daily"/"weekly"/"weekdays" when the user asked for something
+  // that repeats, plus an optional count.
+  recurrence = null,
+  recurrenceCount = null
 }) {
 
 
   const tz = timezone || await getUserTimezone();
+
+
+  // Google Tasks has NO recurrence field — the v1 API cannot make a to-do
+  // repeat, so asking for "remind me every day" used to create exactly one
+  // task, silently, which read as a bug. A calendar event CAN repeat (RRULE,
+  // via lib/recurrence.js), so a recurring reminder is created there instead
+  // and we say so plainly rather than pretending a task can recur. The router
+  // is also told to route recurring reminders to create_event; this is the
+  // safety net for when it still calls create_task with a recurrence word.
+  if (recurrence) {
+
+    // Anchor to a real first occurrence — default to today if the user named a
+    // cadence but no start ("take vitamins every morning").
+    let anchor = { year, month, day };
+    if (!(year && month && day)) {
+      const today = DateTime.now().setZone(tz);
+      anchor = { year: today.year, month: today.month, day: today.day };
+    }
+
+    const { createEvent } = await import("./googleCalendar.js");
+
+    const event = await createEvent({
+      title,
+      ...anchor,
+      hour,
+      minute,
+      timezone: tz,
+      durationMinutes: 30,
+      recurrence,
+      recurrenceCount
+    });
+
+    return {
+      success: event.success !== false,
+      recurringReminder: true,
+      message:
+        `A to-do can't repeat in Google, so I set "${title}" up as a recurring reminder on your calendar instead.` +
+        (event.message ? ` ${event.message}` : ""),
+      data: event.data
+    };
+
+  }
 
 
   const { auth, google } = await getGoogleClient();

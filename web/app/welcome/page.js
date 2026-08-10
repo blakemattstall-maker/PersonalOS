@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import Hero from "./Hero.js";
 import { Section, Detail, Mono, Stage } from "./parts.js";
 import SceneCapture from "./SceneCapture.js";
@@ -7,6 +5,8 @@ import SceneGraph from "./SceneGraph.js";
 import SceneBrief from "./SceneBrief.js";
 import SceneNudge from "./SceneNudge.js";
 import SceneMoney from "./SceneMoney.js";
+import WaitlistForm from "./WaitlistForm.js";
+import { enterDemo } from "./demoAction.js";
 
 
 // The signed-out door.
@@ -376,32 +376,34 @@ export default function Welcome() {
         <div className="rounded-card border border-[var(--line)] bg-card p-6 shadow-lift sm:p-8">
 
           <h2 className="pos-display text-[1.6rem] leading-tight text-ink">
-            That is the walkthrough.
+            See it for yourself.
           </h2>
 
           <p className="mt-3 max-w-[34rem] text-[0.92rem] leading-relaxed text-ink-soft">
-            Access is invitation only, so there is no sign-up form here — but
-            there is a demo: the whole dashboard, running on fictional data,
-            read-only. The passphrase for it is simply <span className="pos-data text-ink">demo</span>.
+            Almanac isn’t open to the public yet. Leave your email to get on the
+            waitlist — or open the whole thing right now, on fictional data,
+            read-only. No passphrase, nothing to sign up for.
           </p>
 
-          <div className="mt-6 flex flex-wrap items-center gap-3">
+          {/* The demo is the star: one tap into the live dashboard, no
+              passphrase. The waitlist is the quiet capture beside it. */}
+          <div className="mt-7">
+            <form action={enterDemo}>
+              <button
+                type="submit"
+                className="group inline-flex items-center gap-2.5 rounded-[var(--r-pill)] bg-ink px-7 py-4 text-[0.98rem] font-medium text-paper shadow-lift transition-all hover:opacity-95 hover:gap-3.5"
+              >
+                Open the live demo
+                <span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">→</span>
+              </button>
+            </form>
+          </div>
 
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-3 text-[0.88rem] font-medium text-paper transition-opacity hover:opacity-90"
-            >
-              Sign in
-              <span aria-hidden="true">→</span>
-            </Link>
-
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-2 rounded-[var(--r-pill)] border border-[var(--line)] px-5 py-3 text-[0.88rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
-            >
-              Try the demo
-            </Link>
-
+          <div className="mt-8 border-t border-[var(--line)] pt-6">
+            <p className="mb-3 text-[0.82rem] font-medium uppercase tracking-[0.12em] text-ink-soft">
+              Want your own?
+            </p>
+            <WaitlistForm />
           </div>
 
         </div>

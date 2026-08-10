@@ -58,7 +58,9 @@ export async function executeTool(data, originalText = null) {
           day: data.day,
           hour: data.hour,
           minute: data.minute,
-          timezone: data.timezone
+          timezone: data.timezone,
+          recurrence: data.recurrence ?? null,
+          recurrenceCount: data.recurrenceCount ?? null
         });
 
         break;

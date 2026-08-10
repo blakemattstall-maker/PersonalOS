@@ -47,7 +47,7 @@ export const TOOLS = [
     function: {
 
       name: "create_task",
-      description: "Create a to-do task, optionally with a due date.",
+      description: "Create a single to-do task, optionally with a due date. For anything that REPEATS (every day, every Tuesday, weekly), prefer create_event — a Google to-do cannot recur. If you do set a recurrence here it will be created as a recurring calendar reminder instead.",
 
       parameters: {
         type: "object",
@@ -57,7 +57,16 @@ export const TOOLS = [
           month: { type: "integer" },
           day: { type: "integer" },
           hour: { type: "integer" },
-          minute: { type: "integer" }
+          minute: { type: "integer" },
+          recurrence: {
+            type: "string",
+            enum: ["daily", "weekdays", "weekly", "biweekly", "monthly", "yearly"],
+            description: "Only when the user said it repeats ('every morning', 'every Tuesday'). Omit for a one-off task."
+          },
+          recurrenceCount: {
+            type: "integer",
+            description: "Only if the user said how many times ('for the next 4 weeks'). Omit for an open-ended repeat."
+          }
         },
         required: ["title"]
       }

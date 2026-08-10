@@ -45,13 +45,11 @@ export const metadata = {
   description: DESCRIPTION,
   manifest: "/manifest.json",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Almanac" },
-  // Modern browsers prefer the SVG (the new sun-over-horizon mark); the .ico
-  // stays as a fallback for anything that can't render SVG.
+  // The browser-tab icon is the new sun-over-horizon SVG mark (crisp at every
+  // size, supported by every current browser). The old app/favicon.ico — a
+  // stale raster of the pre-rebrand mark — was deleted so it can't win.
   icons: {
-    icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico", sizes: "any" }
-    ],
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     apple: "/icon.svg"
   },
   openGraph: {

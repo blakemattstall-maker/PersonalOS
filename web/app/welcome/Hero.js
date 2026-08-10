@@ -87,30 +87,18 @@ export default function Hero() {
 
       <div className="mx-auto w-full max-w-[46rem] px-5 pt-16 pb-4 sm:pt-24">
 
-        <p className="pos-data text-[0.7rem] uppercase tracking-[0.14em] text-ink-soft">
-          Almanac
-        </p>
-
-        <h1 className="pos-display mt-4 text-[2.5rem] leading-[1.04] text-ink sm:text-[3.6rem]">
-          {/* The words are separate elements so they can be staggered, but the
-              space between them is a real space rather than a margin. With a
-              margin doing the spacing the headline is a single run-on word to
-              a screen reader, to anyone copying it, and to anything reading
-              the page for a link preview. */}
-          {/* pos-reveal is what keeps these invisible from the very first byte
-              of HTML — the same class app/globals.css already hides
-              `data-reveal` content behind, with the same reduced-motion and
-              no-JS overrides. Without it these render at full opacity for the
-              one paint before this effect runs, then the intro overlay's own
-              effect covers them, then they animate in on top of that: a
-              visible pop-then-vanish-then-animate on every fresh visit. */}
-          {["Everything", "you", "said", "you'd", "do,", "already", "sorted."].map((word, i) => (
-            <span key={i}>
-              <span data-word className="pos-reveal inline-block">{word}</span>
-              {i < 6 ? " " : ""}
-            </span>
-          ))}
+        {/* The wordmark IS the hero. Big enough to remember, and it resolves
+            straight out of the opening sequence's own "Almanac" so the two read
+            as one motion. pos-reveal keeps it invisible from the first byte of
+            HTML (reduced-motion and no-JS overrides live in globals.css), or it
+            flashes at full opacity for the one paint before the effect runs. */}
+        <h1 className="pos-display text-[4rem] leading-[0.9] tracking-[-0.02em] text-ink sm:text-[6.5rem]">
+          <span data-word className="pos-reveal inline-block">Almanac</span>
         </h1>
+
+        <p data-tail className="pos-reveal pos-display mt-5 max-w-[32rem] text-[1.65rem] leading-[1.08] text-ink sm:text-[2.4rem]">
+          An executive assistant for your whole life.
+        </p>
 
         {/* The old version of this opened on the filing mechanism — parsed,
             dated, filed — which is the third thing a reader needs, not the
