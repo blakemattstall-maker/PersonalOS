@@ -878,8 +878,13 @@ test("the sphere is an opt-in that the flat view never pays for", () => {
     canvasSource.indexOf("const enterSphere"),
     canvasSource.indexOf("const enterFlat")
   );
-  assert.match(handler, /catch \{/, "the import failure must be caught");
+  assert.match(handler, /catch \(error\)/, "the import failure must be caught");
   assert.match(handler, /setMode\("flat"\)/, "and fall back to the working view");
+
+  // And caught LOUDLY. This catch once swallowed a real setup bug during the
+  // sphere's own verification, making a broken sphere indistinguishable from
+  // a slow network.
+  assert.match(handler, /console\.error\("SPHERE FAILED:/, "the reason must reach the console");
 
 });
 
