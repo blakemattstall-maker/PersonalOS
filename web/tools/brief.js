@@ -110,18 +110,30 @@ export async function gatherBriefFacts({ tz } = {}) {
 
   const todayISO = now.toFormat("yyyy-MM-dd");
 
-  const settle = (promise, fallback) => promise.then(v => v).catch(() => fallback);
+  // A failed source is named and remembered, not swallowed. The old version
+  // caught every failure into an empty fallback with no log — so a slow Google
+  // token turned into "CALENDAR: nothing scheduled" and "OPEN TASKS: 0", stated
+  // as fact, on a day that actually had three meetings. A wrong brief the model
+  // then writes prose on top of is worse than a brief that admits it couldn't
+  // reach the calendar.
+  const failed = new Set();
+
+  const settle = (name, promise, fallback) => promise.then(v => v).catch(error => {
+    console.error(`BRIEF source "${name}" unavailable — rendering it as unknown, not as a false zero:`, error?.message);
+    failed.add(name);
+    return fallback;
+  });
 
   const [events, tasks, context, people, intentions, projects, inbox] = await Promise.all([
-    settle(getEvents({ startDate: todayISO, endDate: todayISO, maxResults: 50 }), { events: [] }),
-    settle(getTasks({ maxResults: 100 }), { tasks: [] }),
-    settle(buildRichContext(), {}),
-    settle(getAllPeople(), []),
-    settle(getOpenIntentions(), []),
-    settle(getProjectsWithDetails({ status: "active" }), []),
+    settle("calendar", getEvents({ startDate: todayISO, endDate: todayISO, maxResults: 50 }), { events: [] }),
+    settle("tasks", getTasks({ maxResults: 100 }), { tasks: [] }),
+    settle("context", buildRichContext(), {}),
+    settle("people", getAllPeople(), []),
+    settle("intentions", getOpenIntentions(), []),
+    settle("projects", getProjectsWithDetails({ status: "active" }), []),
     // Only reachable once the readonly scope is granted; a brief without it is
     // still a brief.
-    settle(
+    settle("inbox",
       import("./gmail.js").then(m => m.reviewInbox({ days: 3, limit: 25 })),
       { success: false }
     )
@@ -137,6 +149,11 @@ export async function gatherBriefFacts({ tz } = {}) {
 
     events: dayEvents,
     day: analyseDay(dayEvents),
+
+    // "Couldn't fetch" is not "nothing there". renderFacts uses these to say so
+    // rather than asserting an empty day the system never actually saw.
+    calendarUnavailable: failed.has("calendar"),
+    tasksUnavailable: failed.has("tasks"),
 
     overdue: overdueTasks(tasks.tasks, todayISO),
     dueToday: dueToday(tasks.tasks, todayISO),
@@ -168,7 +185,9 @@ function renderFacts(f) {
 
   lines.push(`TODAY: ${f.now.toFormat("cccc, d LLLL yyyy")}`);
 
-  if (f.events.length === 0) {
+  if (f.calendarUnavailable) {
+    lines.push("CALENDAR: unavailable — the calendar could not be reached. Do NOT say the day is free; you do not know what is on it.");
+  } else if (f.events.length === 0) {
     lines.push("CALENDAR: nothing scheduled.");
   } else {
     lines.push(`CALENDAR (${f.day.committedHours}h committed across ${f.events.length}):`);
@@ -182,13 +201,17 @@ function renderFacts(f) {
     }
   }
 
-  if (f.overdue.length) {
-    lines.push(`OVERDUE (${f.overdue.length}): ${f.overdue.map(t => `${t.title} (due ${t.due})`).join("; ")}`);
+  if (f.tasksUnavailable) {
+    lines.push("TASKS: unavailable — could not be reached, so overdue and due-today are unknown. Do NOT say there is nothing due.");
+  } else {
+    if (f.overdue.length) {
+      lines.push(`OVERDUE (${f.overdue.length}): ${f.overdue.map(t => `${t.title} (due ${t.due})`).join("; ")}`);
+    }
+
+    if (f.dueToday.length) lines.push(`DUE TODAY: ${f.dueToday.join("; ")}`);
+
+    lines.push(`OPEN TASKS: ${f.openTaskCount}`);
   }
-
-  if (f.dueToday.length) lines.push(`DUE TODAY: ${f.dueToday.join("; ")}`);
-
-  lines.push(`OPEN TASKS: ${f.openTaskCount}`);
 
   if (f.dates.length) {
     lines.push(`DATES COMING: ${f.dates.map(d => `${d.name}'s ${d.label} in ${d.inDays} day(s)`).join("; ")}`);

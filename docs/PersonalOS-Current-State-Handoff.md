@@ -5,6 +5,62 @@
 
 ---
 
+## What shipped Aug 10 (review session) — the biggest hole was a door nobody knew was open, and the app learned to notice change
+
+An adversarial review — three parallel reviewers plus live production probing and direct database checks, in the spirit of the Aug 8 audit. It found one critical security hole reachable from the public internet, several silent-failure sites of the class the last audit named, and it executed the two remaining pieces of the Finish Plan (Phase 3 trends, and the graph made askable). **`npm test` is at 236.** Everything below is deployed and verified against production.
+
+### The hole: the passphrase gate never protected a single Server Action
+
+`web/proxy.js` gates pages, but **it cannot see a Server Action** — this Next version forwards an action invoked on a gate-excluded path (`/welcome`, `/login`) straight to the worker that owns it, so the matcher never runs. Every dashboard mutation is a `"use server"` action calling `backendPost`/`backendGet`, and `invoke()` there self-injects `API_SECRET`, so the handler's `requireAuth` always passes in-process. The net: **anyone on the internet could invoke any dashboard action with no credential** — delete real memories/notes/people/projects, flip settings, or spend OpenAI on the project's bill — by harvesting an action id from the public demo's JS bundle and POSTing it to `/welcome`. Confirmed live: a fake-id POST to `/welcome` returns `x-nextjs-action-not-found`, proving the request reached Next's action handler unauthenticated.
+
+Fixed at the choke point: `sessionKind()` in `web/app/backend.js` returns `owner`/`demo`/`none`, and `backendGet`/`backendPost` refuse `none` before `invoke()`. The proxy is the lock on the front door; this is the lock on the thing the front door doesn't cover. Pinned by `tests/demo.test.js`. **This is now the dashboard's only authorization — see the `[[personalos-serveraction-auth]]` memory; never add a data path that bypasses it.**
+
+### The second hole: anyone could overwrite the Google token
+
+`/api/auth/google/callback` had no session check and no `state`, and it writes ONE shared `google_integrations` row (`onConflict: provider`). Anyone who could complete this app's consent screen with their own Google account would overwrite the owner's refresh token — after which every event, task, draft and doc the owner captures is created in the attacker's account, and briefs read the attacker's calendar and inbox. Now both `login` and `callback` require the owner cookie (`isOwner()`), fail closed when `SITE_PASSPHRASE` is unset, and the callback returns `error.message` rather than the raw PostgREST object. Verified live: `/api/auth/google/login` now returns **403** without the owner cookie (was a 307 to Google). Pinned by `tests/oauth-callback.test.js`. **Residual:** no `state` param yet, so a login-CSRF against the already-logged-in owner is still theoretically possible; low priority for one user, and blocked by the `_node.js` adapter not carrying a Set-Cookie on a redirect.
+
+The rest of the surface held: every `/api/*` route 401s unauthenticated on production (including the previously-holed `/api/tts`), demo isolation is intact (fixtures only, writes refused, no Supabase fall-through — re-probed live), and the rate-limit ceilings sit after auth. Two lower findings not yet actioned: in-process/action calls share one `"local"` rate-limit bucket (a ceiling, not a hole, now that the choke point refuses `none`), and dormant-when-unset auth is still the posture on `/api` (confirmed `API_SECRET` IS set in prod, so not currently exploitable — but consider making it fail-closed now the Shortcut migration is long done).
+
+### Phase 3 shipped — the app notices change now, and refuses to claim it before the data holds
+
+`web/lib/trends.js` is the engine, wired into `buildSignals()` so a week-over-week line rides into every reasoning call and the observer. It obeys three rules, one of them discovered from the live data: **null is not zero.** `daily_metrics` writes null for "not measured" (a day the bank hadn't posted), and six of sixteen live days have null spend for exactly that reason — a naive average would have invented a spending crash out of bank-feed lag. Every window counts only non-null days, per metric, and refuses to claim a trend until both windows clear `MIN_DAYS_PER_WINDOW` (3) real days. Verified live: it correctly reports `spend_total` as *insufficient* (only 2 real days this week) while surfacing the genuinely-supported task and calendar movements as computed figures. Compute-in-code holds: the model is handed the figure and told never to recompute it; the observer's prompt now says any "up/down from last week" claim must come from the `Trends:` line. `tests/trends.test.js` (7 tests) pins the gating.
+
+**Substrate fix that Phase 3 depended on:** `tools/metrics.js` was writing *false zeros* — a failed calendar or task fetch wrote `calendar_busy_minutes: 0` / `tasks_completed: 0` (not null), corrupting the very history the trend engine reads. Now every source failure is logged by name and lands as null. This was one of the silent-failure findings; it had to be fixed first or the trend engine would compute movement from fabricated zeros.
+
+### The graph became askable — `resolveReference` finally has a caller
+
+New `query_connections` tool (`web/tools/connections.js`): "what have I got going on with Costco", "the thing with my brother — what's tied to it". It composes existing primitives only — `resolveReference()` (which had been built, tested, and callerless since Aug 9) turns oblique words into real entities and reports ambiguity; the connections are computed in `lib/links.js` from stored edges; the model only phrases them. Verified live against the real graph (Costco → its cancel-task + seven charges, phrased bluntly; a nonsense reference → an honest "nothing on file", never a guess). Routing verified: 6/6 representative phrases route correctly, and it steals nothing from `query_projects`/`query_schedule`/`query_tasks`/`query_finances`. Also fixed the `resolveReference` anchor cap the review flagged (it walked every named entity; now capped at 3, strongest-confidence first).
+
+### Reliability — "find out from the app, not from the silence"
+
+Toward the Finish Plan's "runs a week untouched" bar:
+- **The brief no longer states failures as fact.** A failed calendar fetch used to render "CALENDAR: nothing scheduled" — a confident, wrong brief the model then wrote prose on top of. Each source is now named and logged on failure, and the brief renders "CALENDAR: unavailable — do not say the day is free" instead of a false empty. (`tools/brief.js`.)
+- **Diagnostics gained the missing heartbeats.** `/settings` now shows last-run ages for `connectIslands` (newest `entity_links`) and `syncNews` (newest `news_items`) — the two load-bearing crons that could freeze with nothing anywhere saying so.
+- **Insight reads stopped swallowing.** `recentInsights`/`pendingInsights` now log a query failure loudly instead of returning empty — the exact `projectSignal` "dead since birth" pattern, closed.
+
+### The graph's silent-truncation trap, closed on its growth path
+
+Three table scans used `.limit(5000)` / `.limit(MAX_ROWS_PER_TABLE=10000)`, which PostgREST silently caps at 1000 in no defined order — and the guard test only matched numeric literals and didn't scan `lib/links.js`, so both blind spots survived. `fullGraph()` (the flagship page), `pruneDangling()`, the nightly structural scan, and `graphAnchors()` now page via `selectAll()`; the guard test strips comments, catches non-literal bulk constants, and covers `links.js`. At 298 edges this wasn't biting yet — it was on the growth path, which is exactly where a silent cap does its damage unseen. The flagship page also no longer renders a failed fetch as "Nothing is connected yet" (a house-rule violation on the one page whose promise is that it only shows facts).
+
+### Demo honesty
+
+The "nothing here is real" bar was gated on `POS_FIXTURES` (local only), so the **public demo showed invented spending and people with no indication they were invented.** It now fires for the demo session too — "Demo — sample data, nothing here is real." Verified live.
+
+### Live database, as of this session
+
+16 days of `daily_metrics` (contiguous, no gaps; recent spend nulls are bank-feed lag, not a bug), 298 `entity_links` (258 of them money-plumbing: `paid_to` + `categorised_as`; only ~10 cross-domain `mentions` — the graph looks dense but its cross-domain reach is still thin), 129 transactions (latest posted Aug 4), 21 memories, 9 people, 9 intentions, 1 project, 3 insights, 11 migrations all applied and active. Crons confirmed alive by fresh output: a brief, a metrics rollup and new entity_links all written the morning of Aug 10. Money agrees to the dollar across `lib/money.js`, the page, and signals.
+
+### Findings surfaced but deliberately NOT actioned (carried for a future session)
+
+- **The third money summariser.** `tools/finances.js` still keeps its own `summarize()` reading `getFinancialData` directly, outside the `lib/money.js` guard that `tests/substrate.test.js` enforces for signals and metrics. Totals agree today only because transfers/income are rule-decided; any edit to its filter re-opens the 3× drift. Route it through `spendSummary()` and add the file to the substrate test's loop.
+- **~20 small silent-failure sites** the review named (`web/tools/nudges.js` collected-but-unlogged errors; `web/tools/location.js` `visitsInWindow` ignoring `placesResult.error` and then asserting "at places with no label"; `lib/push.js` missing-VAPID muting the app with no log; `lib/dedupe.js` `fetchCandidates` failing silently; the `connectIslands`/`deliverInsights` cron catches with no `console.error`; `pruneDangling` treating "couldn't read" as "doesn't exist" and deleting). Each is ~one line of `console.error` short of the `signals.js` standard. None is currently firing; they are latent. The highest-value one is `pruneDangling` (destructive on a transient read error).
+- **Schema probe gaps.** `schema-practice-split.sql` adds 8 columns; the probe checks 4 (misses `practice_sessions.prompt`, `news_items.relevance`, `news_items.category`). No probe checks an index. Health checks return `null`→"applied" on their own query error. Same two-of-ten class at column granularity.
+- **Graph M1 (client count mismatch):** the selection card builds one row per *link*, not per *neighbour*, under a header that shows distinct-neighbour degree — the "24 vs 23" bug reborn client-side if a pair ever gains a second relation. **M3:** the nightly text/spent_on link writes are per-row `link()` calls (N+1) the file itself bans; batch through `linkMany()`.
+- **Dead code:** `graphAnchors()` (62 lines, no live caller — kept and made honest rather than deleted this pass), `rootToNode`/`shorten` in `phrasing.js`. Candidates for deletion with their tests.
+- **Doc drift in Knowledge-Architecture §3/§9:** §9 lists `app/graph/geometry.js` as "unit-tested" but the file was deleted with the radial view; §3 line ~165 still describes island titles drawn at centroids five lines before saying they never touch the canvas; the "bounded at 5,000 edges" claim is now true (was silently 1,000). Fix on the next docs pass.
+
+---
+
 ## What shipped Aug 10 — the graph became the product's face, and the doors got locks
 
 Four bodies of work, all deployed and verified against production. **`npm test` is at 225.**

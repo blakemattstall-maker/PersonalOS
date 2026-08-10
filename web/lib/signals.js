@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 import supabase from "./supabase.js";
 import { spendSummary } from "./money.js";
+import { trendSignal } from "./trends.js";
 import { FALLBACK_TIMEZONE } from "./profile.js";
 
 
@@ -349,10 +350,16 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     intentionSignal(tz),
     relationshipSignal(tz),
     projectSignal(tz),
-    presenceSignal(tz)
+    presenceSignal(tz),
+    // Phase 3 — the one line that says what CHANGED, not just what is. Returns
+    // null (no line) until there is enough non-null history to compare, so on
+    // today's data it costs a signal slot and adds nothing; the moment two real
+    // weeks exist for a metric, week-over-week movement rides into every
+    // reasoning call for free. Computed in lib/trends.js, never by the model.
+    trendSignal()
   ]);
 
-  const [finance, completions, overdue, intentions, relationships, projects, presence] =
+  const [finance, completions, overdue, intentions, relationships, projects, presence, trends] =
     results.map(r => (r.status === "fulfilled" ? r.value : null));
 
   // A rejected signal is a bug, not a quiet week — allSettled keeps it from
@@ -371,7 +378,8 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     intentions && `Stated intentions: ${intentions}`,
     relationships && `Relationships: ${relationships}`,
     projects && `Projects: ${projects}`,
-    presence && `Where he has been: ${presence}`
+    presence && `Where he has been: ${presence}`,
+    trends && `Trends: ${trends}`
   ].filter(Boolean);
 
   return lines.length ? lines.join("\n") : null;

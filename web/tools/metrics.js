@@ -39,9 +39,21 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
   const today = DateTime.now().setZone(tz).startOf("day");
 
   // Pull each source once for the whole window instead of per day.
+  //
+  // Every source that can fail is tracked, because this table's cardinal rule
+  // is that null means "not measured" and 0 means "measured, and it was zero".
+  // A calendar fetch that throws must write null busy-minutes, not 0 — writing
+  // 0 tells the trend engine downstream that a day with three meetings was
+  // empty, and history written wrongly cannot be compared against history
+  // written right. The old code caught these into empty arrays with no log and
+  // no flag, so an outage silently rewrote a week of the longitudinal record as
+  // false zeros. Now each failure is loud and lands as null.
   const [finance, completions, tasks, events, weights, points] = await Promise.all([
 
-    loadMoney({ days: days + 2 }).catch(() => ({ transactions: [] })),
+    loadMoney({ days: days + 2 }).catch(error => {
+      console.error("METRICS money source FAILED — spend/income written null:", error.message);
+      return { transactions: [], failed: true };
+    }),
 
     supabase.from("activity_logs")
       .select("output, created_at")
@@ -55,7 +67,10 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
       endDate: today.toFormat("yyyy-MM-dd"),
       timezone: tz,
       maxResults: 250
-    }).catch(() => ({ events: [] })),
+    }).catch(error => {
+      console.error("METRICS calendar source FAILED — busy-minutes written null:", error.message);
+      return { events: [], failed: true };
+    }),
 
     supabase.from("bodyweight_logs")
       .select("weight, logged_at")
@@ -66,6 +81,24 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
       .gte("recorded_at", today.minus({ days }).toISO())
 
   ]);
+
+
+  // A failed source must write null for its columns, never a fabricated zero.
+  // The raw Supabase reads carry their error in .error; the two async sources
+  // above carry a `failed` flag. Logged by name so a source dead for a week is
+  // visible, not mistaken for a genuinely quiet week.
+  const moneyFailed = finance.failed === true;
+  const calendarFailed = events.failed === true;
+
+  if (completions.error) console.error("METRICS completions source FAILED — tasks_completed written null:", completions.error.message);
+  if (tasks.error) console.error("METRICS tasks source FAILED — overdue written null:", tasks.error.message);
+  if (weights.error) console.error("METRICS bodyweight source FAILED — weight written null:", weights.error.message);
+  if (points.error) console.error("METRICS location source FAILED — places/gym written null:", points.error.message);
+
+  const completionsFailed = Boolean(completions.error);
+  const tasksFailed = Boolean(tasks.error);
+  const weightsFailed = Boolean(weights.error);
+  const pointsFailed = Boolean(points.error);
 
 
   // Visits, not points. `minutes_at_gym` has been hardcoded null since this
@@ -143,20 +176,28 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
 
     rows.push({
       day: key,
-      spend_total: dayTx.length ? Number(spend.reduce((s, t) => s + Math.abs(t.amount), 0).toFixed(2)) : null,
-      income_total: dayTx.length ? Number(income.reduce((s, t) => s + t.amount, 0).toFixed(2)) : null,
-      transaction_count: dayTx.length || null,
-      tasks_completed: dayCompletions.length,
-      tasks_completed_late: dayCompletions.filter(c => (c.output?.days_late ?? 0) > 0).length,
-      tasks_overdue: i === 1 ? overdueNow : null,
-      calendar_busy_minutes: Math.round(busyMinutes),
-      weight: dayWeights.length ? Number(dayWeights[0].weight) : null,
-      places_visited: hadLocation ? new Set(dayPoints.map(p => p.place_id).filter(Boolean)).size : null,
+      // A failed money fetch leaves dayTx empty, which already lands as null —
+      // but guard on the flag too, so a future refactor can't turn the failure
+      // back into a real-looking zero.
+      spend_total: moneyFailed || !dayTx.length ? null : Number(spend.reduce((s, t) => s + Math.abs(t.amount), 0).toFixed(2)),
+      income_total: moneyFailed || !dayTx.length ? null : Number(income.reduce((s, t) => s + t.amount, 0).toFixed(2)),
+      transaction_count: moneyFailed ? null : (dayTx.length || null),
+      // null, not 0, when the completions query failed — "measured zero done"
+      // and "couldn't measure" are different facts the trend engine must not
+      // confuse.
+      tasks_completed: completionsFailed ? null : dayCompletions.length,
+      tasks_completed_late: completionsFailed ? null : dayCompletions.filter(c => (c.output?.days_late ?? 0) > 0).length,
+      tasks_overdue: tasksFailed ? null : (i === 1 ? overdueNow : null),
+      // null when the calendar fetch threw — 0 would assert an empty day the
+      // system never actually saw.
+      calendar_busy_minutes: calendarFailed ? null : Math.round(busyMinutes),
+      weight: weightsFailed || !dayWeights.length ? null : Number(dayWeights[0].weight),
+      places_visited: pointsFailed || !hadLocation ? null : new Set(dayPoints.map(p => p.place_id).filter(Boolean)).size,
       // Null when there was no location data at all, and null when no place
       // the user has labelled as a gym was visited — the second is "didn't
       // go", which is a real zero, but only once there is location for that
       // day to prove it. A day with no data must not read as a day at home.
-      minutes_at_gym: hadLocation ? gymMinutes : null,
+      minutes_at_gym: pointsFailed || !hadLocation ? null : gymMinutes,
       computed_at: new Date().toISOString()
     });
 

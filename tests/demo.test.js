@@ -89,7 +89,37 @@ test("the demo session is decided by the cookie, not by an env var", () => {
   // never set in a deployed build. The demo has to work per-REQUEST on the
   // same production process that serves the real session, so it must key off
   // the request's cookie.
-  assert.match(backendSource, /get\("pos_session"\)\?\.value === DEMO_SESSION/);
+  assert.match(backendSource, /store\.get\("pos_session"\)\?\.value/);
+  assert.match(backendSource, /value === DEMO_SESSION/);
+
+});
+
+
+test("an unauthenticated request is refused at the choke point, before invoke()", () => {
+
+  // The passphrase gate in proxy.js cannot see a Server Action forwarded to a
+  // gate-excluded path (/welcome, /login) — verified against production. So a
+  // caller with NO session cookie ("none") must be refused HERE, in backend.js,
+  // or it reaches invoke() and the API_SECRET that invoke() injects, with full
+  // read/write on real Supabase. This is the whole reason sessionKind exists.
+  assert.match(backendSource, /function sessionKind/);
+  assert.match(backendSource, /return "owner"/);
+  assert.match(backendSource, /return "none"/);
+
+  const get = backendSource.slice(
+    backendSource.indexOf("export async function backendGet"),
+    backendSource.indexOf("export async function backendPost")
+  );
+  const getRefusal = get.indexOf('kind === "none"');
+  const getInvoke = get.indexOf('invoke({ method: "GET"');
+  assert.ok(getRefusal > 0, "backendGet must refuse a session-less read");
+  assert.ok(getRefusal < getInvoke, "and the refusal must precede invoke()");
+
+  const post = backendSource.slice(backendSource.indexOf("export async function backendPost"));
+  const postRefusal = post.indexOf('kind === "none"');
+  const postInvoke = post.indexOf('invoke({ method: "POST"');
+  assert.ok(postRefusal > 0, "backendPost must refuse a session-less write");
+  assert.ok(postRefusal < postInvoke, "and the refusal must precede invoke()");
 
 });
 

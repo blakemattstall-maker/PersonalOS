@@ -272,19 +272,53 @@ Each line is roughly one Claude Code session. **Steps 1–4 are the whole plan.*
 | # | Work | Why here |
 |---|---|---|
 | 1 | ~~**`/graph` page + demo account**~~ ✅ **DONE** | Both shipped 2026-08-10. `/graph` is the fullscreen force view with the 3D sphere toggle; the demo is the passphrase `demo` — fictional data, read-only, both enforced server-side. §6 |
-| 2 | **Phase 3 engine, gated** | "That's up from last week" — what makes it feel like it is watching. Buildable now; the gate is a runtime check, not a delay |
-| 3 | **Reliability pass** — *partially done* | Rate limiting + the TTS auth hole shipped 2026-08-10 (`lib/ratelimit.js`). Remaining: `resolveReference` into capture, the Action Button shortcut, and the runs-a-week-untouched check |
-| 4 | **Case study + 90-second video** | The actual career asset. The highest-value item on this list and the one most likely to be skipped |
+| 2 | ~~**Phase 3 engine, gated**~~ ✅ **DONE** | Shipped 2026-08-10 (review session). `lib/trends.js` computes week-over-week movement over non-null days only, rides into every reasoning call via `buildSignals()`, and refuses to claim a trend until both windows clear 3 real days. Verified live: correctly refuses the null-heavy spend metric while surfacing supported task/calendar trends. Tune thresholds in September when there's a distribution |
+| 3 | ~~**Reliability pass**~~ ✅ **substantially done** | Rate limiting + TTS hole (Aug 10 morning); then the **Server Action auth hole** and the **Google-token-overwrite hole** closed, `resolveReference` wired into capture as `query_connections`, brief no longer states failures as fact, diagnostics gained `connectIslands`/`syncNews` heartbeats, metrics false-zeros fixed, graph silent-truncation closed. **Remaining: the Action Button shortcut** (phone-side, ~30 min, spec in `PersonalOS-ActionButton-Shortcut.md`) and the residual silent-failure logging (handoff doc lists them; all latent) |
+| 4 | **Case study + 90-second video** | The actual career asset. The highest-value item on this list and the one most likely to be skipped. Case study written (`PersonalOS-Case-Study.md`); video script written (`PersonalOS-Demo-Script.md`) — the recording is the remaining human step |
 | 5 | *Landing page + waitlist* | Optional, an afternoon. The cheap answer to "is this a company" |
 | — | *Multi-user (§3)* | **Only if step 5 produces real signal.** Not before |
 
-**Definition of done for the job search: steps 1–4.** Four sessions. Multi-tenancy stays available and unbuilt until there is evidence it is worth six more.
+**Definition of done for the job search: steps 1–4.** Steps 1–3 are done; step 4 is a case study and a script away from a recording. Multi-tenancy stays available and unbuilt until there is evidence it is worth six more.
 
 ### If usage or time is tight, in priority order
 
-1. **The video** — recordable against the app as it exists today, with no further code. `/graph`, the sphere and the demo are all in it now.
+1. **Record the video** — script is written (`PersonalOS-Demo-Script.md`) and everything it shows is live: `/graph`, the sphere, the demo, a capture, a trend line, an insight. No further code needed.
+2. **Publish the case study** (`PersonalOS-Case-Study.md`) — the thing to send when someone says "tell me about something you built."
 
-Everything else is improvement rather than proof. (The demo account shipped — "click this" is live: the passphrase is `demo`.)
+Everything else is improvement rather than proof.
+
+---
+
+## 10. Features to build next — each composes what already exists
+
+Ranked by demonstrable-intelligence-per-session. Every one reuses the graph, signals, insights, the interruption dial, or the demo — none adds a parallel system. Multi-user is out of scope by decision (§0).
+
+### A. Ambient trend insight — *"that's the third week running"* — **build first**
+- **Composes:** the new `lib/trends.js` engine + the existing `detectFindings()`/insight pipeline + the interruption dial.
+- **What it is:** a fifth detector that fires when a trend is both *sufficient* and *sustained* (same direction two-plus weeks) — "gym time down three weeks straight while eating-out spend climbed." Today the trend line is computed and rides into reasoning, but nothing turns a sustained trend into a first-class insight card. This is the payoff Phase 3 was built for.
+- **Cost:** $0 — the engine and the detector loop both already run. One more detector, gated on the sufficiency flag that already exists.
+- **Proves:** the single most valuable thing this project can show — that it noticed something true about a life *over time* that no single screen could hold. This is the "watches, doesn't just display" claim made concrete.
+
+### B. Merchant recategorisation, one tap — **build second**
+- **Composes:** `lib/categorize.js` (rules-then-model) + the money page + the `entity_links` merchant nodes.
+- **What it is:** a wrong category on the money page becomes a one-tap fix that writes a rule, so it's fixed forever — the model's guess is overridden by a stored fact, and `MODEL_CATEGORIES` already keeps the model out of anything that moves `spent`.
+- **Cost:** $0. One `merchant_overrides` row-type (or a column on the existing merchant identity), read before the model runs.
+- **Proves:** the compute-in-code doctrine as a *feature* — "the machine proposes, you correct, the correction sticks" — which is exactly the product maturity the résumé's third bullet claims.
+
+### C. "What changed while I was gone" — the re-open digest
+- **Composes:** `activity_logs` + `daily_metrics` + trends + the brief renderer.
+- **What it is:** open the app after three days away and the top card is what moved — not a notification (the dial stays sacred), a *pull*-time summary. Uses the same computed facts the brief already assembles, scoped to "since you last opened."
+- **Cost:** near $0 (one `last_opened_at`, one extra brief-style render).
+- **Proves:** the interruption-budget thesis — that restraint on push and richness on pull are the same design, not a compromise.
+
+### D. Graph time-lapse for the demo
+- **Composes:** `entity_links.created_at` + the `/graph` force view + the demo.
+- **What it is:** a "play" control on `/graph` that adds edges in `created_at` order, so the net assembles itself on screen. Pure client animation over data already fetched.
+- **Cost:** $0. No new data, no model.
+- **Proves:** in the demo/video, the one thing a static screenshot can't — that the graph *grew* from lived data rather than being drawn. The highest-leverage 90 seconds of the portfolio, cheaper than it looks.
+
+### Explicitly still not worth it
+Message reading (deferred, §4), a `query_connections` follow-up that *acts* (keep it read-only — the never-guess line), per-metric trend thresholds (tune in September, don't build the machinery now), and everything under §4's "not worth it."
 
 ---
 

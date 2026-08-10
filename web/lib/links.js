@@ -1,4 +1,4 @@
-import supabase from "./supabase.js";
+import supabase, { selectAll } from "./supabase.js";
 
 
 // The edge layer.
@@ -387,10 +387,14 @@ export async function walk({ type, id, depth = 1, relation = null, minConfidence
 // entity type, one delete, nightly.
 export async function pruneDangling() {
 
-  const { data, error } = await supabase
-    .from("entity_links")
-    .select("id, from_type, from_id, to_type, to_id")
-    .limit(5000);
+  // Pages, not a bare .limit(5000): the healer that skipped the oldest edges
+  // past the 1,000-row cap would leave exactly the stale edges it exists to
+  // remove, and report success. Ordered by id for a stable window.
+  const { rows: data, error } = await selectAll(
+    "entity_links",
+    "id, from_type, from_id, to_type, to_id",
+    { max: 5000, modify: q => q.order("id", { ascending: true }) }
+  );
 
   if (error || !data) return 0;
 
@@ -442,15 +446,28 @@ export async function pruneDangling() {
 // edge read is bounded — at 5,000 edges the answer is a slightly stale graph,
 // not a timeout.
 //
+// It pages via selectAll(), NOT a bare .limit(): PostgREST caps any single
+// response at 1,000 rows and .limit(5000) silently returns the first 1,000 in
+// no defined order. The graph crossed 298 edges in one weekend and grows with
+// the bank feed nightly, so a bare limit would quietly draw a partial,
+// unstable graph — wrong dot sizes first, missing hubs next — on the one page
+// whose entire promise is that it only shows facts. Ordered by id so the paged
+// window is stable.
+//
 // `val` is the node's distinct-neighbour count, and it is what the page sizes
 // dots by. Degree is the honest computed proxy for importance: it is derived
 // from facts already in the database, needs no model, and cannot flatter.
 export async function fullGraph({ limit = 5000 } = {}) {
 
-  const { data, error } = await supabase
-    .from("entity_links")
-    .select("from_type, from_id, to_type, to_id, relation")
-    .limit(limit);
+  const { rows: data, error, capped } = await selectAll(
+    "entity_links",
+    "from_type, from_id, to_type, to_id, relation",
+    { max: limit, modify: q => q.order("id", { ascending: true }) }
+  );
+
+  if (capped) {
+    console.warn(`fullGraph hit its ${limit}-edge ceiling — the /graph page is showing a partial graph.`);
+  }
 
   if (error || !data || data.length === 0) return { nodes: [], links: [] };
 
@@ -532,13 +549,16 @@ export async function fullGraph({ limit = 5000 } = {}) {
 // alternative.
 export async function graphAnchors({ limit = 24, minDegree = 2 } = {}) {
 
-  const { data, error } = await supabase
-    .from("entity_links")
-    .select("from_type, from_id, to_type, to_id")
-    // A bound rather than a page, deliberately. This is a ranking, so a partial
-    // read gives a slightly wrong ORDER, not a wrong answer — and the graph
-    // would have to grow by two orders of magnitude before it mattered.
-    .limit(5000);
+  // Paged, not a bare .limit(5000): that silently reads only the first 1,000
+  // edges (PostgREST's cap), so past that the ranking is computed over an
+  // arbitrary unordered slice. selectAll keeps it whole. (This function has no
+  // live caller since the radial view was replaced — kept because resolve/anchor
+  // work may want it; a candidate for deletion, see the handoff.)
+  const { rows: data, error } = await selectAll(
+    "entity_links",
+    "from_type, from_id, to_type, to_id",
+    { max: 5000, modify: q => q.order("id", { ascending: true }) }
+  );
 
   if (error || !data) return [];
 
@@ -640,16 +660,23 @@ export function describeNeighbourhood({ root, nodes }, { limit = 12 } = {}) {
 // ambiguous reference resolved silently to the wrong thing is exactly the sort
 // of confident wrongness that costs trust permanently. The caller decides
 // whether the top candidate is clear enough to act on or whether to ask.
-export async function resolveReference({ text, types = null, limit = 8 } = {}) {
+export async function resolveReference({ text, types = null, limit = 8, maxAnchors = 3 } = {}) {
 
   if (!text) return { anchors: [], candidates: [] };
 
-  const anchors = (await mentionsIn(text)).map(hit => ({
-    type: hit.type,
-    id: hit.id,
-    name: hit.name,
-    confidence: hit.confidence ?? 1
-  }));
+  // Bounded like connectionsForText: one walk per anchor, so a sentence that
+  // names six entities must not issue six walks. Strongest-confidence anchors
+  // first, then cap. Without this a wordy capture is the easy way to make a
+  // graph read expensive.
+  const anchors = (await mentionsIn(text))
+    .map(hit => ({
+      type: hit.type,
+      id: hit.id,
+      name: hit.name,
+      confidence: hit.confidence ?? 1
+    }))
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, maxAnchors);
 
   if (anchors.length === 0) return { anchors: [], candidates: [] };
 

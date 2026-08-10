@@ -3,6 +3,7 @@ import { createEvent } from "../tools/googleCalendar.js";
 import { saveMemory } from "../tools/memory.js";
 import { logActivity } from "../tools/activityLog.js";
 import { answerQuestion } from "../tools/answer.js";
+import { queryConnections } from "../tools/connections.js";
 import { querySchedule } from "../tools/schedule.js";
 import { queryTasks } from "../tools/taskQuery.js";
 import { saveNote, queryNotes } from "../tools/notes.js";
@@ -99,6 +100,16 @@ export async function executeTool(data, originalText = null) {
       case "general_question":
 
         result = await answerQuestion({
+          question: originalText || data.question
+        });
+
+        break;
+
+
+
+      case "query_connections":
+
+        result = await queryConnections({
           question: originalText || data.question
         });
 

@@ -27,6 +27,7 @@ const PAGE_FOR_TOOL = {
   query_schedule: "/",
   query_tasks: "/",
   query_projects: "/",
+  query_connections: "/graph",
   save_note: "/data",
   save_memory: "/data",
   save_intention: "/data",
@@ -69,7 +70,8 @@ const TITLE_FOR_TOOL = {
   query_notes: "Your notes",
   query_projects: "Your projects",
   query_finances: "Your money",
-  query_people: "People"
+  query_people: "People",
+  query_connections: "Connections"
 };
 
 

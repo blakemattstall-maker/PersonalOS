@@ -53,7 +53,7 @@ function ageHours(iso) {
 
 export async function buildDiagnostics() {
 
-  const [counts, lastPoint, lastBrief, lastMetric, lastLog, lastIngest, pushSubs, settings, schema] =
+  const [counts, lastPoint, lastBrief, lastMetric, lastLog, lastLink, lastNews, lastIngest, pushSubs, settings, schema] =
     await Promise.all([
 
       Promise.all(TABLES.map(async t => [t, await countOf(t)])).then(Object.fromEntries),
@@ -62,6 +62,11 @@ export async function buildDiagnostics() {
       latest("briefs", "created_at"),
       latest("daily_metrics", "computed_at"),
       latest("activity_logs", "created_at"),
+      // The nightly graph rebuild and the news sync have no other heartbeat. If
+      // connectIslands starts failing, entity_links simply stops growing and the
+      // graph freezes with no error anywhere — this is the surface that says so.
+      latest("entity_links", "created_at"),
+      latest("news_items", "surfaced_at"),
 
       // Every hit on the location endpoint is logged, successful or not, so
       // "Overland has never contacted us" is distinguishable from "Overland
@@ -132,6 +137,10 @@ export async function buildDiagnostics() {
   const jobs = {
     morningBrief: { lastAt: lastBrief, ageHours: ageHours(lastBrief) },
     reviewIntentions: { lastAt: lastMetric, ageHours: ageHours(lastMetric) },
+    // The graph rebuild and news sync — each was invisible here before, so a
+    // frozen graph or a dead feed looked exactly like a quiet week.
+    connectIslands: { lastAt: lastLink, ageHours: ageHours(lastLink) },
+    syncNews: { lastAt: lastNews, ageHours: ageHours(lastNews) },
     anyActivity: { lastAt: lastLog, ageHours: ageHours(lastLog) }
   };
 

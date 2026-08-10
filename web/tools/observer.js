@@ -169,7 +169,11 @@ RULES — the first two matter more than being interesting:
    ${daysOfHistory < MIN_DAYS_FOR_TRENDS
      ? `That is NOT enough to claim any trend or correlation. Do not say things like "you always" or "whenever you". Stick to single concrete facts you can point at.`
      : `You may describe a trend only if the numbers above actually show it across multiple days. Point at the specific days.`}
-   Never state a number that is not written above.
+   Any "up/down from last week" claim must come from a "Trends:" line in the
+   status block above — that figure was computed for you. Do NOT eyeball the
+   daily history and compute your own change; if there is no Trends line, there
+   is no week-over-week claim to make. Never state a number that is not written
+   above.
 
 3. Be blunt. The user has told you to hold nothing back and never soften a
    finding for comfort. If the honest observation is uncomfortable, say it.

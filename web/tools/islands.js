@@ -292,7 +292,16 @@ export async function rebuildLinks() {
     ["nudges", "nudge", "intention_id", "intention"]
   ]) {
 
-    const { data } = await supabase.from(table).select(`id, ${column}`).not(column, "is", null).limit(MAX_ROWS_PER_TABLE);
+    // selectAll, not .limit(MAX_ROWS_PER_TABLE): a bare .limit above 1,000 is
+    // silently the 1,000-row cap in no defined order (same bug the text scan
+    // was already fixed for), so structural belongs_to edges for the overflow
+    // rows would simply never be written while the rebuild reported success.
+    const { rows: data, error } = await selectAll(table, `id, ${column}`, {
+      max: MAX_ROWS_PER_TABLE,
+      modify: q => q.not(column, "is", null).order("id", { ascending: true })
+    });
+
+    if (error) console.error(`REBUILD structural scan of ${table}.${column} FAILED — those belongs_to edges not written:`, error.message);
 
     for (const row of data || []) {
       const made = await link({
@@ -806,7 +815,15 @@ export async function recentInsights({ limit = 5 } = {}) {
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (error) return null;
+  // Loud, not swallowed. This rides inside buildRichContext() into ten
+  // reasoning tools, so a broken query here silently drops insights from every
+  // one of them — the exact shape of the projectSignal bug that was dead from
+  // birth. The null return stays (one bad query must not take down a brief);
+  // what changes is that it can no longer be mistaken for "no insights yet".
+  if (error) {
+    console.error("recentInsights QUERY FAILED — insights silently absent from every reasoning call until fixed:", error.message);
+    return null;
+  }
 
   if (!data || data.length === 0) return null;
 
@@ -836,7 +853,10 @@ export async function pendingInsights({ limit = 10 } = {}) {
     .order("strength", { ascending: false })
     .limit(limit);
 
-  if (error) return [];
+  if (error) {
+    console.error("pendingInsights QUERY FAILED — the dashboard's insight queue silently shows nothing until fixed:", error.message);
+    return [];
+  }
 
   return data || [];
 

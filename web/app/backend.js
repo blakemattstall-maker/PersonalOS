@@ -3,16 +3,32 @@ import ingestHandler from "./api/ingest/[kind]/handler.js";
 import { DEMO_SESSION } from "../lib/demo.js";
 
 
-// Whether this request belongs to the demo session. cookies() throws outside
-// a request scope (build-time prerender, for one), and "not in a request"
-// can never be a demo.
-async function isDemoRequest() {
+// Who this request belongs to: the owner, the demo, or nobody.
+//
+// This is the dashboard's ONLY authorization check, and it has to be, because a
+// Server Action is a POST endpoint that the passphrase gate in proxy.js cannot
+// see: this Next version forwards an action invoked on a gate-excluded path
+// (/welcome, /login) straight to the worker that owns it, so proxy.js never
+// runs for it. Every action calls backendPost/backendGet, and invoke() below
+// self-injects API_SECRET so the handler's own requireAuth always passes for an
+// in-process call — which means a caller with NO cookie would otherwise reach
+// real Supabase with full credentials. Verified against production: a
+// server-action POST to /welcome with no cookie reaches Next's action handler
+// (x-nextjs-action-not-found), i.e. it is NOT gated by proxy.js. So "none" must
+// be refused here, at the choke point, not trusted to the edge.
+//
+// cookies() throws outside a request scope (build-time prerender, for one);
+// "not in a request" is nobody.
+async function sessionKind() {
   try {
     const { cookies } = await import("next/headers");
     const store = await cookies();
-    return store.get("pos_session")?.value === DEMO_SESSION;
+    const value = store.get("pos_session")?.value;
+    if (process.env.SITE_PASSPHRASE && value === process.env.SITE_PASSPHRASE) return "owner";
+    if (value === DEMO_SESSION) return "demo";
+    return "none";
   } catch {
-    return false;
+    return "none";
   }
 }
 
@@ -165,10 +181,12 @@ async function invoke({ method, path, body = undefined }) {
 
 export async function backendGet(path) {
 
+  const kind = await sessionKind();
+
   // Two callers get the fictional dashboard instead of the real one: the
   // local design preview (POS_FIXTURES, set only by .claude/launch.json,
   // dead in every deployed build) and the demo session (lib/demo.js).
-  const demo = await isDemoRequest();
+  const demo = kind === "demo";
 
   if (demo || process.env.POS_FIXTURES === "1") {
 
@@ -186,6 +204,12 @@ export async function backendGet(path) {
 
   }
 
+  // No valid session and not the local preview: refuse. A dashboard page only
+  // ever reaches here behind the passphrase gate, so this branch is the
+  // unauthenticated caller — a Server Action forwarded past proxy.js (see
+  // sessionKind). It must not reach invoke() and the credentials it injects.
+  if (kind === "none") return { success: false, error: "Unauthorized" };
+
   return invoke({ method: "GET", path });
 
 }
@@ -193,14 +217,24 @@ export async function backendGet(path) {
 
 export async function backendPost(path, body) {
 
+  const kind = await sessionKind();
+
   // Read-only, enforced where the write happens. Every mutation the
   // dashboard can make comes through here, so this one check is the demo's
   // whole write policy — hiding buttons in the UI would be decoration, and
   // decoration is not a guarantee. The shape matches what the pages already
   // treat as a failed action, so a demo visitor tapping "Save" sees a calm
   // refusal rather than a broken screen.
-  if (await isDemoRequest()) {
+  if (kind === "demo") {
     return { success: false, demo: true, error: "The demo is read-only." };
+  }
+
+  // A write with no session is the attack this whole check exists for: an
+  // unauthenticated Server Action reaching the choke point. Refuse before
+  // invoke() injects API_SECRET. The local preview (POS_FIXTURES, never set in
+  // prod) is allowed through so design review can exercise real POST paths.
+  if (kind === "none" && process.env.POS_FIXTURES !== "1") {
+    return { success: false, error: "Unauthorized" };
   }
 
   return invoke({ method: "POST", path, body });

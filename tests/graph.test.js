@@ -314,17 +314,50 @@ test("nothing scans a table with a limit PostgREST will silently ignore", () => 
   // as an intention to fetch everything and returns the first thousand with no
   // error. visitsInWindow shipped with exactly that bug and reported three
   // visits across a fortnight because it had only ever seen one day of points.
-  for (const [name, source] of [
+  //
+  // The old version of this test matched only NUMERIC literals and scanned only
+  // two files — so `.limit(MAX_ROWS_PER_TABLE)` (10,000) in islands.js and every
+  // `.limit(5000)` in links.js sailed straight past it, which is exactly how two
+  // silent-truncation sites survived on the graph's growth path. This matches
+  // ANY argument and covers links.js too.
+  // Strip comments first: this file's own explanations legitimately mention
+  // `.limit(MAX_ROWS_PER_TABLE)` as the anti-pattern they replaced, and a raw
+  // scan would flag the prose describing the fix as the bug.
+  const stripComments = s => s
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+  for (const [name, raw] of [
     ["tools/islands.js", islandsSource],
-    ["tools/location.js", locationSource]
+    ["tools/location.js", locationSource],
+    ["lib/links.js", linksSource]
   ]) {
 
-    for (const match of source.matchAll(/\.limit\((\d+)\)/g)) {
+    const source = stripComments(raw);
 
-      assert.ok(
-        Number(match[1]) <= 1000,
-        `${name} calls .limit(${match[1]}), above PostgREST's 1000-row cap — it will be ` +
-        "silently truncated. Use selectAll() from lib/supabase.js instead."
+    for (const match of source.matchAll(/\.limit\(\s*([^)]+?)\s*\)/g)) {
+
+      const arg = match[1];
+      const asNumber = Number(arg);
+
+      // A numeric literal is safe only if it is at or under the cap.
+      if (Number.isFinite(asNumber)) {
+        assert.ok(
+          asNumber <= 1000,
+          `${name} calls .limit(${arg}), above PostgREST's 1000-row cap — it will be ` +
+          "silently truncated. Use selectAll() from lib/supabase.js instead."
+        );
+        continue;
+      }
+
+      // A non-literal argument is only allowed when it is a genuinely small
+      // bound (a caller-supplied page size like `limit`), never a bulk "read
+      // everything" constant that resolves above the cap.
+      assert.doesNotMatch(
+        arg,
+        /MAX|ALL|ROWS|TOTAL|5000|10000/i,
+        `${name} calls .limit(${arg}) — a bulk constant that can exceed PostgREST's 1000-row ` +
+        "cap and be silently truncated. Use selectAll() from lib/supabase.js instead."
       );
 
     }

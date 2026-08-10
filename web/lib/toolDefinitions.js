@@ -378,6 +378,25 @@ export const TOOLS = [
     type: "function",
     function: {
 
+      name: "query_connections",
+      description: "Answer a question about how things in the user's life are CONNECTED — what is linked to a person, project, place, merchant or spending category, or a vague reference like 'the thing with Priya' or 'whatever I've got going on with the internship'. Use this when the question is about relationships between things ('what's tied to', 'what's going on with', 'what's connected to', 'what do I have with X'), especially when the reference is oblique. Do NOT use it to look up a schedule, a to-do list, or a spending total — those are query_schedule/query_tasks/query_finances. Reads only the stored connection graph.",
+
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string", description: "The user's question, in their own words." }
+        },
+        required: ["question"]
+      }
+
+    }
+  },
+
+
+  {
+    type: "function",
+    function: {
+
       name: "research_query",
       description: "Search the live web for something that needs current, real-world information — not the model's static training data. Use for current prices/rates, real businesses or vendors, a person's public background before meeting or reaching out to them, or anything time-sensitive. Do NOT use for anything general_question or memory could already answer.",
 

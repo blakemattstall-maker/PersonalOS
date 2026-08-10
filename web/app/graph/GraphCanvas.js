@@ -132,7 +132,7 @@ const SPREAD_MAX = 1.8;
 const sphereRadius = (count, factor) => (70 + 9 * Math.sqrt(count)) * factor;
 
 
-export default function GraphCanvas({ nodes, links, focus = null }) {
+export default function GraphCanvas({ nodes, links, focus = null, failed = false }) {
 
   const flatRef = useRef(null);
   const roundRef = useRef(null);
@@ -887,6 +887,17 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
   };
 
+
+  if (failed) {
+    return (
+      <div className="fixed inset-0 grid place-items-center bg-paper px-8">
+        <p className="max-w-[26rem] text-center text-[0.9rem] leading-relaxed text-ink-soft">
+          The graph couldn’t load just now — the connections are there, the page
+          failed to fetch them. Pull to refresh, or try again in a moment.
+        </p>
+      </div>
+    );
+  }
 
   if (nodes.length === 0) {
     return (

@@ -1,7 +1,9 @@
 import { Bricolage_Grotesque, Inter, DM_Mono } from "next/font/google";
+import { cookies } from "next/headers";
 import "./globals.css";
 import TabBar from "./TabBar.js";
 import GraphButton from "./GraphButton.js";
+import { DEMO_SESSION } from "../lib/demo.js";
 
 // Three roles, not three decorations. Bricolage carries headings and the
 // greeting — it has enough character to be recognisable at a glance and is
@@ -108,7 +110,22 @@ const BOOT_SCRIPT = `
 `;
 
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+
+  // The "nothing here is real" bar has to fire for BOTH fake-data audiences:
+  // the local design preview (POS_FIXTURES, never set in prod) and the public
+  // demo session, which serves the same fixtures on production to a stranger
+  // who clicked the link. Without the second case the demo shows invented
+  // spending and people with nothing saying they're invented — the honesty the
+  // bar exists for was missing on the one surface a recruiter actually sees.
+  let isDemo = false;
+  try {
+    const store = await cookies();
+    isDemo = store.get("pos_session")?.value === DEMO_SESSION;
+  } catch { /* not in a request scope — neither audience */ }
+
+  const showFixtureBar = process.env.POS_FIXTURES === "1" || isDemo;
+
   return (
     <html
       lang="en"
@@ -159,10 +176,11 @@ export default function RootLayout({ children }) {
         </div>
 
         {/* Fixture mode makes the dashboard look completely real. Say so, so
-            nobody reads invented spending figures as their own. */}
-        {process.env.POS_FIXTURES === "1" && (
+            nobody reads invented spending figures as their own. Fires for the
+            local preview AND the public demo session. */}
+        {showFixtureBar && (
           <div className="bg-ember px-4 py-1 text-center text-[0.7rem] font-medium text-white">
-            Fixture data — nothing here is real
+            Demo — sample data, nothing here is real
           </div>
         )}
         {children}

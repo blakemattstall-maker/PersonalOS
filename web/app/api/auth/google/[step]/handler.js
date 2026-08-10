@@ -68,7 +68,50 @@ function client() {
 }
 
 
+// This flow reads and writes ONE shared row (google_integrations, keyed on
+// provider) — the single Google account the whole system acts through. Without
+// a check here, anyone who can complete this client's consent screen with their
+// OWN Google account overwrites that row, and from then on every event, task,
+// draft and doc the owner captures is created in the attacker's account while
+// the owner's briefs read the attacker's calendar and inbox. The callback is
+// outside proxy.js's matcher (it has to be — Google is the caller and holds no
+// session), so the gate lives here.
+//
+// The owner drives this from their logged-in browser, so pos_session rides both
+// the login GET and Google's top-level callback redirect (sameSite=lax). An
+// attacker has neither. Fail closed if the passphrase is unset: a token-swap
+// gate that evaporates when an env var is missing is exactly the trap the cron
+// secret already learned (README trap: "Bearer undefined").
+function isOwner(req) {
+
+  const passphrase = process.env.SITE_PASSPHRASE;
+
+  if (!passphrase) {
+    console.error(
+      "OAUTH gate: SITE_PASSPHRASE is unset — refusing the Google flow rather " +
+      "than letting an unauthenticated caller overwrite the shared token."
+    );
+    return false;
+  }
+
+  const raw = req.headers?.cookie || "";
+
+  const session = raw
+    .split(";")
+    .map(c => c.trim())
+    .find(c => c.startsWith("pos_session="))
+    ?.slice("pos_session=".length);
+
+  return session === passphrase;
+
+}
+
+
 function login(req, res) {
+
+  if (!isOwner(req)) {
+    return res.status(403).json({ error: "Sign in first — the Google connection is the owner's only." });
+  }
 
   const url = client().generateAuthUrl({
     access_type: "offline",
@@ -82,6 +125,13 @@ function login(req, res) {
 
 
 async function callback(req, res) {
+
+  // The consent code is valid, but "valid" only means Google issued it to this
+  // client — it says nothing about WHO is holding it. The owner check is what
+  // stops a stranger's freshly-consented token landing in the shared row.
+  if (!isOwner(req)) {
+    return res.status(403).json({ error: "Sign in first — the Google connection is the owner's only." });
+  }
 
   const { code } = req.query;
 
@@ -105,7 +155,9 @@ async function callback(req, res) {
     .select();
 
   if (error) {
-    return res.status(500).json({ step: "supabase upsert", error });
+    // Message only — the raw PostgREST error object leaks column and schema
+    // detail to the browser. Every other handler already returns error.message.
+    return res.status(500).json({ step: "supabase upsert", error: error.message });
   }
 
   // Report what was actually granted rather than just "connected". Google

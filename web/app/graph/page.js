@@ -18,12 +18,19 @@ export default async function GraphPage({ searchParams }) {
 
   const data = await backendGet("/api/graph").catch(() => null);
 
+  // A failed fetch (500, a 429 from the limiter, an unauthorized call) has no
+  // `nodes` and must NOT render as "nothing is connected yet" — that is the
+  // flagship page telling the user their life is empty when really the query
+  // died. House rule: a failed query must never look like a quiet week.
+  const failed = !data || data.success === false || !Array.isArray(data.nodes);
+
   const focus = params?.type && params?.id ? `${params.type}:${params.id}` : null;
 
   return (
     <GraphCanvas
       nodes={data?.nodes || []}
       links={data?.links || []}
+      failed={failed}
       focus={focus}
     />
   );
