@@ -291,5 +291,8 @@ short version:
   traps 17b–22 above, plus the phased plan the graph work came from.
 - `docs/PersonalOS-Premortem.md` — every way this project can fail, what to do
   about each, and a rebuild brief in §3.
+- `docs/PersonalOS-Finish-Plan.md` — **the plan to finish**: what "done" means,
+  the road to multi-user, which features are worth building, and how to present
+  this on a resume. Start here for anything forward-looking.
 - `docs/PersonalOS-Roadmap-2026-08-08.md` — what to build next, sized small to
   big, for picking up a long session cold.
