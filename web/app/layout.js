@@ -1,6 +1,7 @@
 import { Bricolage_Grotesque, Inter, DM_Mono } from "next/font/google";
 import "./globals.css";
 import TabBar from "./TabBar.js";
+import GraphButton from "./GraphButton.js";
 
 // Three roles, not three decorations. Bricolage carries headings and the
 // greeting — it has enough character to be recognisable at a glance and is
@@ -165,6 +166,7 @@ export default function RootLayout({ children }) {
           </div>
         )}
         {children}
+        <GraphButton />
         <TabBar />
       </body>
     </html>

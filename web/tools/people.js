@@ -43,6 +43,26 @@ async function findPersonByName(name) {
 }
 
 
+async function findPersonById(id) {
+
+  if (!id) return null;
+
+  const { data, error } = await supabase
+    .from("people")
+    .select("*")
+    .eq("id", id)
+    .limit(1);
+
+  if (error) {
+    if (missingTable(error)) return null;
+    throw new Error(error.message);
+  }
+
+  return data?.[0] || null;
+
+}
+
+
 // Check-ins must not pile up on one day.
 //
 // This used to be simply now + check_in_days, which means saving five people in
@@ -236,10 +256,29 @@ export async function materialiseUpcomingDateReminders() {
 }
 
 
-// Create-or-update by name — a voice-driven "remember my friend Sarah..."
-// should update Sarah if she already exists, not spawn a duplicate every
-// time something new is learned about her.
+// Create-or-update — by id when the caller has one, by name otherwise.
+//
+// The two lookups exist for two different callers and neither can serve the
+// other. Voice has no id: "remember my friend Sarah..." must update Sarah if
+// she exists rather than spawn a duplicate, so it matches on name. The edit
+// form has the opposite problem: matching on name means a CORRECTED name can
+// never match — fixing "Jon Rider" to "Jon Ryder" used to create a second
+// person and leave the misspelt one holding all the history. An id makes a
+// rename just another field change.
+//
+// ── Two kinds of absence ─────────────────────────────────────────────────
+//
+// `null` means "this call didn't mention the field" and leaves it alone —
+// required by the voice path, where "add Sam's email" must not wipe his
+// phone. `""` means "the user cleared this field" and stores null. A form
+// cannot express deletion without this: blanking the phone box used to send
+// null, which read as not-mentioned, and the number silently survived its
+// own deletion. Same idea for the two numeric fields, where 0 is the clear
+// (0 is not a meaningful cadence or calendar month, so nothing is lost).
+const provided = (value) => value !== null && value !== undefined;
+
 export async function savePerson({
+  id = null,
   name,
   relationship = null,
   notes = null,
@@ -255,19 +294,35 @@ export async function savePerson({
 
   const tz = await getUserTimezone();
 
-  const existing = await findPersonByName(name);
+  const existing = id ? await findPersonById(id) : await findPersonByName(name);
+
+  // An id names one exact row. If that row is gone, falling through to the
+  // insert branch would resurrect a deleted person from whatever the form
+  // still held — report it instead.
+  if (id && !existing) {
+    return { success: false, error: "That person no longer exists — they may have been removed on another device." };
+  }
 
   const patch = {
     name,
-    ...(relationship !== null && { relationship }),
-    ...(notes !== null && { notes }),
-    ...(email !== null && { email }),
-    ...(phone !== null && { phone }),
-    ...(important_date_month !== null && { important_date_month }),
-    ...(important_date_day !== null && { important_date_day }),
-    ...(important_date_label !== null && { important_date_label }),
+    ...(provided(relationship) && { relationship: relationship || null }),
+    ...(provided(notes) && { notes: notes || null }),
+    ...(provided(email) && { email: email || null }),
+    ...(provided(phone) && { phone: phone || null }),
+    ...(provided(important_date_month) && { important_date_month: important_date_month || null }),
+    ...(provided(important_date_day) && { important_date_day: important_date_day || null }),
+    ...(provided(important_date_label) && { important_date_label: important_date_label || null }),
     updated_at: new Date().toISOString()
   };
+
+  // Clearing the cadence also has to clear the scheduled next nudge, or the
+  // one already on the clock still fires and "don't remind me" reads as a
+  // setting that doesn't work.
+  if (check_in_days === 0) {
+    patch.check_in_days = null;
+    patch.next_check_in_at = null;
+    check_in_days = null;
+  }
 
   let staggerOffset = 0;
 

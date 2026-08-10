@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { deletePersonAction, logContactAction } from "./actions.js";
+import AddPersonForm from "./AddPersonForm.js";
 import { formatDate } from "./shared.js";
 
 
@@ -45,9 +47,16 @@ function relativeDays(iso) {
 
 export default function PersonCard({ person }) {
 
+  const router = useRouter();
+
   const [isPending, startTransition] = useTransition();
   const [deleted, setDeleted] = useState(false);
   const [note, setNote] = useState(null);
+
+  // The same form the People page adds with, prefilled and carrying the id —
+  // which is what lets a rename update this person instead of creating a
+  // second one under the corrected spelling.
+  const [editing, setEditing] = useState(false);
 
   const remove = () => {
 
@@ -71,6 +80,23 @@ export default function PersonCard({ person }) {
 
   if (deleted) return null;
 
+  if (editing) {
+    return (
+      <div className="rounded-card bg-card p-5 shadow-lift">
+        <h3 className="mb-3 font-medium text-ink">Editing {person.name}</h3>
+        <AddPersonForm
+          person={person}
+          onDone={() => {
+            setEditing(false);
+            // The card renders server data; without this the old values sit
+            // on screen until the next navigation and the save looks ignored.
+            router.refresh();
+          }}
+        />
+      </div>
+    );
+  }
+
   const checkIn = formatCheckIn(person.check_in_days);
   const isDue = person.next_check_in_at && new Date(person.next_check_in_at) <= new Date();
 
@@ -82,13 +108,24 @@ export default function PersonCard({ person }) {
           <h3 className="font-medium text-ink">{person.name}</h3>
           {person.relationship && <p className="mt-0.5 text-xs text-ink-soft">{person.relationship}</p>}
         </div>
-        <button
-          onClick={remove}
-          disabled={isPending}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ember hover:text-ember disabled:opacity-45"
-        >
-          Remove
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+
+          <button
+            onClick={() => setEditing(true)}
+            className="inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
+          >
+            Edit
+          </button>
+
+          <button
+            onClick={remove}
+            disabled={isPending}
+            className="inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ember hover:text-ember disabled:opacity-45"
+          >
+            Remove
+          </button>
+
+        </div>
       </div>
 
       {person.notes && (

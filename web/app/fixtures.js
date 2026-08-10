@@ -394,8 +394,47 @@ const GRAPH_ANCHORS = {
 };
 
 
+// Entirely fictional people — this repo is public. The two states worth
+// looking at: one person with every field filled and a check-in due (the
+// ember path), one nearly bare (what a voice-created person looks like).
+const PEOPLE = {
+  success: true,
+  people: [
+    {
+      id: "fx-per1",
+      name: "Marisol Vega",
+      relationship: "design school friend",
+      notes: "Prefers Figma comments over email. Ask about the Portland move.",
+      email: "marisol@example.com",
+      phone: "(555) 014-2288",
+      check_in_days: 30,
+      last_contacted_at: hoursAgo(24 * 34),
+      next_check_in_at: hoursAgo(48),
+      important_date_month: 3,
+      important_date_day: 14,
+      important_date_label: "Birthday"
+    },
+    {
+      id: "fx-per2",
+      name: "Dev Okafor",
+      relationship: null,
+      notes: null,
+      email: null,
+      phone: null,
+      check_in_days: null,
+      last_contacted_at: hoursAgo(6),
+      next_check_in_at: null,
+      important_date_month: null,
+      important_date_day: null,
+      important_date_label: null
+    }
+  ]
+};
+
+
 const FIXTURES = {
   "/api/brief/latest?peek=true": BRIEF,
+  "/api/people": PEOPLE,
   "/api/deepThoughts": DEEP_THOUGHTS,
   "/api/data?prompts=1": PROMPTS,
   "/api/nudges": NUDGES,

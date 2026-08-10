@@ -10,10 +10,31 @@ const EMPTY = {
 };
 
 
-export default function AddPersonForm() {
+// One form, two modes. Bare, it is the "Add or update someone" card on the
+// People page. Given a `person`, it becomes that person's edit form: fields
+// prefilled, the save carries the row's id — which is what makes a RENAME an
+// update rather than a second person (savePerson matches by name otherwise,
+// and a corrected name can never match its own typo) — and `onDone` lets the
+// card that opened it close it again.
+const fromPerson = (p) => ({
+  name: p.name || "",
+  relationship: p.relationship || "",
+  notes: p.notes || "",
+  email: p.email || "",
+  phone: p.phone || "",
+  check_in_days: p.check_in_days ? String(p.check_in_days) : "",
+  important_date_month: p.important_date_month ? String(p.important_date_month) : "",
+  important_date_day: p.important_date_day ? String(p.important_date_day) : "",
+  important_date_label: p.important_date_label || ""
+});
 
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY);
+
+export default function AddPersonForm({ person = null, onDone = null }) {
+
+  const editing = Boolean(person);
+
+  const [open, setOpen] = useState(editing);
+  const [form, setForm] = useState(editing ? fromPerson(person) : EMPTY);
   const [isPending, startTransition] = useTransition();
   const [note, setNote] = useState(null);
 
@@ -29,21 +50,36 @@ export default function AddPersonForm() {
 
     startTransition(async () => {
 
+      // Two vocabularies of absence, matching savePerson. Adding: an empty
+      // field is null, "I didn't say" — nothing already stored gets touched.
+      // Editing: an empty field is "" (or 0 for the numbers), "I cleared
+      // this" — because in a form showing every current value, blank IS the
+      // statement, and the old null convention made deletion silently
+      // impossible: blanking a phone number sent null and the number
+      // survived.
+      const cleared = editing ? "" : null;
+      const clearedNumber = editing ? 0 : null;
+
       const result = await savePersonAction({
+        ...(editing && { id: person.id }),
         name: form.name.trim(),
-        relationship: form.relationship.trim() || null,
-        notes: form.notes.trim() || null,
-        email: form.email.trim() || null,
-        phone: form.phone.trim() || null,
-        check_in_days: form.check_in_days ? Number(form.check_in_days) : null,
-        important_date_month: form.important_date_month ? Number(form.important_date_month) : null,
-        important_date_day: form.important_date_day ? Number(form.important_date_day) : null,
-        important_date_label: form.important_date_label.trim() || null
+        relationship: form.relationship.trim() || cleared,
+        notes: form.notes.trim() || cleared,
+        email: form.email.trim() || cleared,
+        phone: form.phone.trim() || cleared,
+        check_in_days: form.check_in_days ? Number(form.check_in_days) : clearedNumber,
+        important_date_month: form.important_date_month ? Number(form.important_date_month) : clearedNumber,
+        important_date_day: form.important_date_day ? Number(form.important_date_day) : clearedNumber,
+        important_date_label: form.important_date_label.trim() || cleared
       });
 
       if (result?.success) {
-        setNote(result.message);
-        setForm(EMPTY);
+        if (editing) {
+          onDone?.();
+        } else {
+          setNote(result.message);
+          setForm(EMPTY);
+        }
       } else {
         setNote(result?.error || "Couldn't save.");
       }
@@ -53,23 +89,27 @@ export default function AddPersonForm() {
   };
 
   return (
-    <div className="rounded-card bg-card p-5 shadow-lift">
+    <div className={editing ? "" : "rounded-card bg-card p-5 shadow-lift"}>
 
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex w-full items-center justify-between pos-display text-[1.05rem] text-ink hover:text-ink"
-      >
-        <span>Add or update someone</span>
-        <span className="text-xs normal-case">{open ? "Hide" : "Open"}</span>
-      </button>
+      {!editing && (
+        <button
+          onClick={() => setOpen(o => !o)}
+          className="flex w-full items-center justify-between pos-display text-[1.05rem] text-ink hover:text-ink"
+        >
+          <span>Add or update someone</span>
+          <span className="text-xs normal-case">{open ? "Hide" : "Open"}</span>
+        </button>
+      )}
 
       {open && (
 
         <form onSubmit={submit} className="mt-4 space-y-3">
 
-          <p className="text-xs text-ink-soft">
-            Saving a name that already exists updates them instead of creating a duplicate.
-          </p>
+          {!editing && (
+            <p className="text-xs text-ink-soft">
+              Saving a name that already exists updates them instead of creating a duplicate.
+            </p>
+          )}
 
           <input
             type="text"
@@ -168,13 +208,27 @@ export default function AddPersonForm() {
             )}
           </div>
 
-          <button
-            type="submit"
-            disabled={isPending || !form.name.trim()}
-            className="inline-flex items-center justify-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-2.5 text-[0.88rem] font-medium text-paper transition-colors hover:opacity-90 disabled:opacity-45 disabled:opacity-50"
-          >
-            {isPending ? "Saving…" : "Save"}
-          </button>
+          <div className="flex items-center gap-2">
+
+            <button
+              type="submit"
+              disabled={isPending || !form.name.trim()}
+              className="inline-flex items-center justify-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-2.5 text-[0.88rem] font-medium text-paper transition-colors hover:opacity-90 disabled:opacity-45"
+            >
+              {isPending ? "Saving…" : "Save"}
+            </button>
+
+            {editing && (
+              <button
+                type="button"
+                onClick={() => onDone?.()}
+                className="inline-flex items-center justify-center rounded-[var(--r-pill)] border border-[var(--line)] px-5 py-2.5 text-[0.88rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
+              >
+                Cancel
+              </button>
+            )}
+
+          </div>
 
           {note && <p className="text-xs text-ink-soft">{note}</p>}
 
