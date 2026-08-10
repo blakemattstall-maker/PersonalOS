@@ -204,7 +204,11 @@ That page is what you send when someone says "tell me about something you built.
 
 ## 6. Demo account, `/graph`, and the cheap company test
 
-### `/graph` — ✅ BUILT (2026-08-10)
+### `/graph` — ✅ BUILT (2026-08-10), then REBUILT the same week as the force view
+
+The radial one-neighbourhood-at-a-time version described below shipped and was replaced days later at the user's direction: the sell-factor feature is the fullscreen Obsidian-style force graph (library: `force-graph`, the 2D sibling of 3d-force-graph — rationale and rules in the Knowledge Architecture doc §3). Node size = degree, four family colours, tap-to-traverse, family filters, deep links still land centred. The radial view and its geometry module are gone; `phrasing.js` survived because sentences over edges are needed wherever edges are rendered.
+
+### The first version, for the record
 
 Shipped. Full design rationale lives in the Knowledge Architecture doc §3 ("Seeing the graph"); this section records what changed about the *plan* while building it.
 

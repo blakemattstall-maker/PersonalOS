@@ -13,6 +13,8 @@
     "@supabase/supabase-js": "^2.111.0",
     "@vercel/functions": "^3.7.7",
     "animejs": "^4.5.0",
+    "d3-force": "^3.0.0",
+    "force-graph": "^1.51.4",
     "googleapis": "^173.0.0",
     "luxon": "^3.7.2",
     "next": "16.3.0",

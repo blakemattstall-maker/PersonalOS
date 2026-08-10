@@ -6,7 +6,6 @@ import { dirname, join } from "node:path";
 
 import { ENTITIES, LINKABLE, describeNeighbourhood, findMentions, merchantKey } from "../web/lib/links.js";
 import { groupIntoVisits, looksLikeGym } from "../web/tools/location.js";
-import { layout, VIEW, CENTRE, LABEL_MARGIN } from "../web/app/graph/geometry.js";
 import { nodeToRoot, rootToNode, detail, RELATION_LABEL } from "../web/app/graph/phrasing.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -18,21 +17,7 @@ const islandsSource = read("web/tools/islands.js");
 const linksSource = read("web/lib/links.js");
 const dedupeSource = read("web/lib/dedupe.js");
 const locationSource = read("web/tools/location.js");
-const viewSource = read("web/app/graph/GraphView.js");
-
-
-// A neighbourhood of the given shape: { task: 12, transaction: 8, ... }.
-function neighbourhood(counts) {
-  return Object.entries(counts).flatMap(([type, n]) =>
-    Array.from({ length: n }, (_, i) => ({
-      type,
-      id: `${type}-${i}`,
-      label: `${type} ${i}`,
-      distance: 1,
-      confidence: 1
-    }))
-  );
-}
+const canvasSource = read("web/app/graph/GraphCanvas.js");
 
 
 // ---------------------------------------------------------------------------
@@ -397,10 +382,6 @@ test("merchant keys are deterministic and need no model", () => {
 });
 
 
-// ---------------------------------------------------------------------------
-// The rule that keeps a bigger roster from producing worse edges.
-// ---------------------------------------------------------------------------
-
 test("a business is not recognised by the first word of its name", () => {
 
   // The fallback exists so "Sam" finds "Sam Smith". Applied to a merchant it
@@ -491,10 +472,6 @@ test("a one-off merchant never enters the text matcher", () => {
 
 });
 
-
-// ---------------------------------------------------------------------------
-// Promotion writes facts, not judgements.
-// ---------------------------------------------------------------------------
 
 test("money entities are rebuilt from transactions, never maintained separately", () => {
 
@@ -629,8 +606,34 @@ test("a batch upsert cannot be killed by one duplicate pair", () => {
 
 
 // ---------------------------------------------------------------------------
-// The page.
+// The full graph read behind the force view.
 // ---------------------------------------------------------------------------
+
+test("the whole-graph read exists, is bounded, and drops half-resolved edges", () => {
+
+  const body = linksSource.slice(
+    linksSource.indexOf("export async function fullGraph"),
+    linksSource.indexOf("// The things actually worth looking at")
+  );
+
+  // Bounded by construction — at 5,000 edges the answer is a slightly stale
+  // graph, not a timeout.
+  assert.match(body, /limit = 5000/);
+
+  // A link either of whose ends fails to resolve is not drawn. Same posture
+  // as walk(), applied to the pair.
+  assert.match(body, /!rows\.get\(from\)\?\.label \|\| !rows\.get\(to\)\?\.label/);
+
+  // val is DISTINCT neighbours, not edge count — the lesson graphAnchors
+  // already paid for when a project advertised 24 and drew 23.
+  assert.match(body, /neighbourSets\.get\(key\)\.size/);
+
+  // Labels are trimmed server-side: an intention is a whole sentence, and 180
+  // of those serialise into the page HTML.
+  assert.match(body, /slice\(0, 69\)/);
+
+});
+
 
 test("the graph endpoint is read-only", () => {
 
@@ -642,6 +645,7 @@ test("the graph endpoint is read-only", () => {
   );
 
   assert.match(body, /req\.method !== "GET"/, "it must reject anything but GET");
+  assert.match(body, /fullGraph\(\)/, "and answer with the whole resolved graph");
 
   for (const write of ["upsert", "insert", "update", "delete", "link("]) {
     assert.ok(!body.includes(write), `the graph endpoint must never ${write} — looking is not recording`);
@@ -650,279 +654,121 @@ test("the graph endpoint is read-only", () => {
 });
 
 
-test("the page never walks two hops by default", () => {
-
-  const handler = read("web/app/api/[resource]/handler.js");
-
-  const body = handler.slice(
-    handler.indexOf("async function graph(req, res)"),
-    handler.indexOf("const RESOURCES =")
-  );
-
-  // Depth 2 off the node holding most of the graph is most of the graph, which
-  // is the hairball the whole focus-and-neighbourhood design exists to avoid.
-  assert.match(body, /req\.query\.depth === "2" \? 2 : 1/);
-
-});
-
-
-test("an unknown entity type is refused rather than walked", () => {
-
-  const handler = read("web/app/api/[resource]/handler.js");
-
-  const body = handler.slice(
-    handler.indexOf("async function graph(req, res)"),
-    handler.indexOf("const RESOURCES =")
-  );
-
-  assert.match(body, /!ENTITIES\[type\]/, "the type must be checked against the registry");
-
-});
-
-
-test("every coordinate is rounded before it becomes an attribute", () => {
-
-  // Trap #12d. Math.cos and Math.sin are not required to be correctly rounded,
-  // so Node and the browser disagree in the last bits and every node in the
-  // diagram hydrates as a mismatch. Both /welcome scenes already guard this.
-  for (const node of layout(neighbourhood({ task: 12, transaction: 8 })).placed) {
-    assert.equal(node.x, Number(node.x.toFixed(2)), `${node.x} carries more precision than the viewBox can express`);
-    assert.equal(node.y, Number(node.y.toFixed(2)));
-  }
-
-});
-
-
 // ---------------------------------------------------------------------------
-// The geometry, checked directly rather than eyeballed.
-//
-// The real neighbourhood this was designed against: the project holding 65% of
-// the graph, with 12 tasks, 8 charges, 3 deep thoughts and 1 intention.
+// The canvas. A deliberate reversal is pinned here: the first version of this
+// page used no layout library and a deterministic radial layout, and the user
+// overruled it — the Obsidian-style force view is the feature. What stays
+// non-negotiable is WHICH library and what the canvas may not do.
 // ---------------------------------------------------------------------------
 
-test("nothing is drawn outside the frame", () => {
+test("the force view uses the 2D engine, and none of the heavier candidates", () => {
 
-  const { placed, sectors } = layout(neighbourhood({ task: 12, transaction: 8, deep_thought: 3, intention: 1 }));
-
-  for (const node of placed) {
-    assert.ok(node.x > 0 && node.x < VIEW, `a dot at x=${node.x} is off the canvas`);
-    assert.ok(node.y > 0 && node.y < VIEW, `a dot at y=${node.y} is off the canvas`);
-  }
-
-  // Labels sit further out than any dot and are the thing most likely to
-  // overflow — and checking only the anchor point is what let the first render
-  // ship "2 deep thoughts" as "eep thoughts". A centred label needs half its
-  // own width of clearance on each side, not zero.
-  for (const shape of [
-    { task: 12, transaction: 8, deep_thought: 3, intention: 1 },
-    { deep_thought: 4, transaction: 3 },
-    { transaction: 20, merchant: 9, category: 4, note: 3, person: 2 }
-  ]) {
-
-    for (const sector of layout(neighbourhood(shape)).sectors) {
-      assert.ok(
-        sector.labelX - LABEL_MARGIN >= 0 && sector.labelX + LABEL_MARGIN <= VIEW,
-        `the ${sector.type} label at x=${sector.labelX} will be cut off by the frame`
-      );
-      assert.ok(sector.labelY > 0 && sector.labelY < VIEW);
-    }
-
-  }
-
-});
-
-
-test("two dots never land on top of each other", () => {
-
-  // The failure this design is most exposed to: a crowded sector packing twelve
-  // dots into a narrow arc. The two-ring alternation exists for exactly this,
-  // and "it looked fine" is not a measurement.
-  const { placed } = layout(neighbourhood({ task: 12, transaction: 8, deep_thought: 3, intention: 1 }));
-
-  for (let i = 0; i < placed.length; i++) {
-    for (let j = i + 1; j < placed.length; j++) {
-      const gap = Math.hypot(placed[i].x - placed[j].x, placed[i].y - placed[j].y);
-      // Dots are drawn at r=4.6, so anything under ~10 units reads as one blob.
-      assert.ok(gap > 10, `two dots are ${gap.toFixed(1)} units apart — they will read as one`);
-    }
-  }
-
-});
-
-
-test("a node two hops out is always drawn further than any node one hop out", () => {
-
-  // Otherwise "further away" and "there were a lot of these" look identical on
-  // screen, and only one of them is a fact about the data.
-  const { placed } = layout([
-    ...Array.from({ length: 12 }, (_, i) => ({ type: "task", id: `t${i}`, label: `T${i}`, distance: 1 })),
-    { type: "note", id: "n1", label: "N", distance: 2 }
-  ]);
-
-  const near = placed.filter(n => n.distance === 1);
-  const far = placed.find(n => n.distance === 2);
-
-  const radius = (n) => Math.hypot(n.x - CENTRE, n.y - CENTRE);
-
-  for (const node of near) {
-    assert.ok(
-      radius(far) > radius(node) - 0.01,
-      "a second-hop node is drawn closer in than a first-hop one"
-    );
-  }
-
-});
-
-
-test("one type fills the circle instead of leaving it three-quarters empty", () => {
-
-  const { sectors, placed } = layout(neighbourhood({ transaction: 6 }));
-
-  assert.equal(sectors.length, 1);
-  assert.equal(placed.length, 6);
-
-  // A single group should span nearly the whole circle, not a token wedge.
-  const angles = placed.map(n => Math.atan2(n.y - CENTRE, n.x - CENTRE));
-  const spread = Math.max(...angles) - Math.min(...angles);
-
-  assert.ok(spread > Math.PI, `six charges spanned only ${spread.toFixed(2)} radians`);
-
-});
-
-
-test("a lone neighbour is centred in its own sector rather than at its edge", () => {
-
-  const { placed } = layout([{ type: "person", id: "p1", label: "P", distance: 1 }]);
-
-  assert.equal(placed.length, 1);
-
-  // Not asserting where, only that it was placed and rounded — a divide by
-  // (members.length - 1) with one member is the classic NaN here.
-  assert.ok(Number.isFinite(placed[0].x) && Number.isFinite(placed[0].y));
-
-});
-
-
-test("an empty neighbourhood lays out as nothing rather than throwing", () => {
-
-  assert.deepEqual(layout([]), { placed: [], sectors: [] });
-  assert.deepEqual(layout(null), { placed: [], sectors: [] });
-
-});
-
-
-test("the space between groups is always wider than the space within one", () => {
-
-  // The property the whole diagram rests on, and the one the first version got
-  // backwards. With 23 nodes and a fixed 0.16 rad separator, the gap BETWEEN
-  // groups was smaller than the 0.27 rad spacing inside the task group — so the
-  // ring rendered as one unbroken circle and the diagram's only claim, that
-  // these came from different tables, was silently not being made.
-  for (const shape of [
-    { task: 12, transaction: 8, deep_thought: 2, intention: 1 },
-    { task: 3, person: 2 },
-    { transaction: 30, merchant: 12, category: 5, note: 2 }
-  ]) {
-
-    const { placed } = layout(neighbourhood(shape));
-
-    const angle = (n) => Math.atan2(n.y - CENTRE, n.x - CENTRE);
-
-    let within = 0;
-    let between = Infinity;
-
-    for (let i = 1; i < placed.length; i++) {
-      // Angular difference, wrapped — a group boundary can straddle ±π.
-      let d = Math.abs(angle(placed[i]) - angle(placed[i - 1]));
-      if (d > Math.PI) d = Math.PI * 2 - d;
-
-      if (placed[i].type === placed[i - 1].type) within = Math.max(within, d);
-      else between = Math.min(between, d);
-    }
-
-    assert.ok(
-      between > within * 1.5,
-      `${JSON.stringify(shape)}: gap ${between.toFixed(3)} is not clearly wider than the ` +
-      `within-group step ${within.toFixed(3)} — the groups will read as one ring`
-    );
-
-  }
-
-});
-
-
-test("a lone group still gets a visible arc rather than a zero-length path", () => {
-
-  const { sectors } = layout(neighbourhood({ task: 4, intention: 1 }));
-
-  const lone = sectors.find(s => s.count === 1);
-
-  assert.ok(lone, "the single-member group must exist");
-
-  // A path whose start and end are the same point draws nothing at all.
-  const points = lone.path.match(/-?\d+(\.\d+)?/g).map(Number);
-
-  assert.ok(
-    Math.hypot(points[0] - points[points.length - 2], points[1] - points[points.length - 1]) > 4,
-    "the arc's endpoints are the same place — it will render as nothing"
-  );
-
-});
-
-
-test("groups stay contiguous — a type is never split across the circle", () => {
-
-  // The whole informational claim of this diagram is "these came from the same
-  // table". Interleaved sectors would make that claim false.
-  const { placed } = layout(neighbourhood({ task: 5, transaction: 4, person: 3 }));
-
-  const order = placed.map(n => n.type);
-
-  const seen = new Set();
-
-  for (let i = 0; i < order.length; i++) {
-    if (i > 0 && order[i] !== order[i - 1]) {
-      assert.ok(!seen.has(order[i]), `${order[i]} appears in two separate runs`);
-      seen.add(order[i - 1]);
-    }
-  }
-
-});
-
-
-test("the walk uses no layout library", () => {
-
-  // Not a stylistic preference. A force simulation would scatter the type
-  // groups into a lumpy ring and destroy the one informative thing on screen —
-  // that a project reaches into four different tables — while being unable to
-  // server-render or to read the CSS variables the design system runs on.
   const pkg = JSON.parse(read("web/package.json"));
 
   const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
 
-  for (const banned of ["d3", "d3-force", "cytoscape", "sigma", "vis-network", "react-force-graph"]) {
-    assert.ok(!deps.includes(banned), `${banned} was added — the layout here is deterministic on purpose`);
+  assert.ok(deps.includes("force-graph"), "the 2D force engine is the decision of record");
+
+  // Obsidian's own graph is 2D. Three.js is ~600KB against ~80, phones pay
+  // for WebGL scenes in battery, and 3D labels are unreadable at most camera
+  // angles. Sigma earns its keep at tens of thousands of nodes; cytoscape
+  // settles into diagrams. Adding any of these is a decision, not a bugfix.
+  for (const heavy of ["3d-force-graph", "three", "sigma", "cytoscape", "react-force-graph"]) {
+    assert.ok(!deps.includes(heavy), `${heavy} was added — the 2D choice was deliberate, see GraphCanvas.js`);
   }
 
 });
 
 
-test("a failed walk is reported, not rendered as an empty neighbourhood", () => {
+test("the engine is imported dynamically, never at module scope", () => {
 
-  // Both failure shapes, same as InsightCard. A handler that threw arrives from
-  // app/backend.js as { error } with no `success` key, so testing only
-  // `success === false` would draw a 500 as "connected to nothing" — a
-  // confident, wrong claim about someone's life.
-  assert.match(
-    viewSource,
-    /result\?\.success === false \|\| result\?\.error/,
-    "both failure shapes must be checked"
-  );
-
-  assert.match(viewSource, /setFailed/, "and the failure has to reach the screen");
+  // force-graph touches window at import time. A static import puts it in the
+  // server bundle and the page dies at build — the failure arrives as a build
+  // error about `window`, far from this file.
+  assert.doesNotMatch(canvasSource, /^import .*force-graph/m);
+  assert.match(canvasSource, /import\("force-graph"\)/);
 
 });
 
+
+test("reduced motion gets a settled graph, not a slow-motion one", () => {
+
+  // The OS setting means no animation — so the simulation runs its ticks
+  // BEFORE first paint and renders already settled, rather than animating
+  // slowly at the user anyway.
+  assert.match(canvasSource, /reducedMotion\(\)/);
+  assert.match(canvasSource, /warmupTicks\(still \? 300 : 60\)/);
+  assert.match(canvasSource, /cooldownTicks\(still \? 0 : undefined\)/);
+
+});
+
+
+test("every entity type the registry knows has a family on the canvas", () => {
+
+  // A type missing from FAMILY silently falls into "notes" — survivable — but
+  // a map drifting from the registry is exactly how nudge edges once became
+  // unreadable. Compare the canvas's literal against the registry itself.
+  const familyBlock = canvasSource.slice(
+    canvasSource.indexOf("const FAMILY = {"),
+    canvasSource.indexOf("const FAMILIES =")
+  );
+
+  for (const type of Object.keys(ENTITIES)) {
+    assert.match(
+      familyBlock,
+      new RegExp(`\\b${type}:`),
+      `ENTITIES knows "${type}" but the canvas assigns it no family`
+    );
+  }
+
+});
+
+
+test("ember is not spent on the graph", () => {
+
+  // Orange means one thing in this app: waiting on you. A graph has nothing
+  // waiting on anybody, so the canvas draws with the identity colours and the
+  // reserved accent appears nowhere in this file.
+  assert.ok(!canvasSource.includes("--ember"), "the canvas must not use the reserved accent");
+
+});
+
+
+test("a deep link still lands centred on its subject", () => {
+
+  // The Connections links on project, person and insight cards carry ?type&id
+  // and have promised arrival-in-context since the first version of this
+  // page. The force view honours it after layout settles, once.
+  assert.match(canvasSource, /onEngineStop/);
+  assert.match(canvasSource, /n\.id === focus/);
+
+  // And without a deep link, the settled net is framed rather than trusted:
+  // the physics has nothing anchoring it to the viewport, and the first render
+  // proved it by settling half the graph off the right edge of a phone.
+  assert.match(canvasSource, /zoomToFit\(0, 70\)/, "an immediate fit after warmup");
+  assert.match(canvasSource, /zoomToFit\(500, 70\)/, "and a final fit when the engine stops");
+
+  const page = read("web/app/graph/page.js");
+  assert.match(page, /params\?\.type && params\?\.id/, "the page must still read the deep-link params");
+
+});
+
+
+test("hiding a family never rebuilds the layout", () => {
+
+  // Filters act through refs and visibility callbacks. Rebuilding the engine
+  // on toggle would reshuffle every node under the user's thumb — the layout
+  // is a place, and places do not rearrange because you squinted.
+  assert.match(canvasSource, /nodeVisibility/);
+  assert.match(canvasSource, /hiddenRef\.current/);
+
+});
+
+
+// ---------------------------------------------------------------------------
+// Phrasing — the sentences over the edges. Unchanged from the radial view,
+// because a claim about someone's life is checked wherever it is rendered.
+// ---------------------------------------------------------------------------
 
 test("relation direction survives being turned into a sentence", () => {
 
@@ -962,9 +808,11 @@ test("relation direction survives being turned into a sentence", () => {
   // inverse — mechanical in one direction, but never a fabricated claim.
   assert.equal(rootToNode({ relation: "funds", direction: "in" }), "funds");
 
-  // Each function has exactly one caller, and they must not be swapped.
-  assert.match(viewSource, /\{rootToNode\(chosen\)\}/, "the caption reads root → node");
-  assert.match(viewSource, /\{nodeToRoot\(node\)\}/, "the list rows read node → root");
+  // The selection card's neighbour rows are neighbour-first sentences, so
+  // they must use the node→root reading, with direction taken from which end
+  // of the stored edge the selection sits at.
+  assert.match(canvasSource, /nodeToRoot\(\{ relation, direction \}\)/);
+  assert.match(canvasSource, /l\.source === selected\.id \? "out" : "in"/);
 
 });
 
@@ -978,21 +826,5 @@ test("a charge and a merchant both say the number that makes them worth reading"
 
   // A merchant with no count must not render "null charges".
   assert.equal(detail({ type: "merchant" }), null);
-
-});
-
-
-test("ember is not spent on the graph", () => {
-
-  // Orange means one thing in this app: waiting on you. A diagram of what is
-  // connected to what has nothing waiting on anybody, and fourteen entity types
-  // would need fourteen hues that mean nothing — which is why grouping is
-  // carried by position and an arc instead.
-  const drawing = viewSource.slice(0, viewSource.indexOf("function AnchorList"));
-
-  assert.ok(
-    !/var\(--ember\)/.test(drawing),
-    "the diagram must not use the reserved accent"
-  );
 
 });

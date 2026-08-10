@@ -310,88 +310,88 @@ const SETTINGS = {
 };
 
 
-// The graph, as it looks once merchants and categories are entities.
-//
-// Shaped from the real thing rather than invented freely: one project holding
-// most of the edges, with tasks and charges as its two big groups, plus the
-// mid-sized hubs money adds. Every name here is fictional (this repo is public
-// and carries no real personal data) but the SHAPE is measured — 12 tasks and
-// 8 charges around one project is the live distribution, and it is the case the
-// layout has to survive.
-const graphNode = (type, id, label, relation, direction, extra) => ({
-  type, id, label, relation, direction,
-  confidence: 1, distance: 1, source: "explicit",
-  when: hoursAgo(40), ...(extra !== undefined ? { extra } : {})
-});
+// The graph, whole, as the force view eats it. Shaped like the measured real
+// one — one project hub holding tasks and charges, merchant and category hubs
+// from the money promotion, a few people, notes reaching across — but every
+// name is fictional: this repo is public.
+const GRAPH = (() => {
 
-const GRAPH_NEIGHBOURHOODS = {
+  const nodes = [];
+  const links = [];
 
-  "project:fx-p1": {
-    root: { type: "project", id: "fx-p1", label: "Coastal Rebrand", when: hoursAgo(20) },
-    nodes: [
-      ...[
-        "Rewrite the positioning page", "Book the photographer", "Send the brief to Marisol",
-        "Collect logo feedback", "Pick the final typeface", "Order sample prints",
-        "Draft the launch email", "Schedule the reveal", "Update the deck template",
-        "Sort out the domain", "Write the press one-pager", "Chase the invoice"
-      ].map((t, i) => graphNode("task", `fx-t${i}`, t, "belongs_to", "in")),
-      ...[
-        ["Northline Supply", 146.8], ["Northline Supply", 62.4], ["Framewright", 240],
-        ["Northline Supply", 88.15], ["Paper & Press", 31.9], ["Framewright", 120],
-        ["Bellhouse Studio", 410], ["Paper & Press", 18.6]
-      ].map(([m, a], i) => graphNode("transaction", `fx-x${i}`, m, "spent_on", "in", a)),
-      graphNode("deep_thought", "fx-d1", "Is the rebrand worth finishing before the launch?", "belongs_to", "in"),
-      graphNode("deep_thought", "fx-d2", "What would I cut if the budget halved?", "mentions", "in"),
-      graphNode("intention", "fx-i1", "Ship the new site before the end of the quarter", "mentions", "in")
-    ]
-  },
+  const put = (id, type, label, extra) => {
+    if (!nodes.some(n => n.id === id)) {
+      nodes.push({ id, type, label, when: hoursAgo(40), ...(extra !== undefined && { extra }), val: 1 });
+    }
+    return id;
+  };
 
-  // The hub money adds, and the reason merchants became entities: a NOTE
-  // reaches a merchant reaches every charge there. None of that was possible
-  // when a merchant was only a string on a row.
-  "merchant:northline supply": {
-    root: { type: "merchant", id: "northline supply", label: "Northline Supply", when: hoursAgo(30) },
-    nodes: [
-      ...[146.8, 62.4, 88.15, 34.2, 19.99, 205.5, 77.4].map((a, i) =>
-        graphNode("transaction", `fx-nx${i}`, "Northline Supply", "paid_to", "in", a)),
-      graphNode("note", "fx-n1", "Need to return the extra roll to Northline Supply", "mentions", "in"),
-      graphNode("project", "fx-p1", "Coastal Rebrand", "mentions", "in"),
-      graphNode("category", "supplies", "Supplies", "categorised_as", "out", 14)
-    ]
-  },
+  const join = (source, target, relation) => links.push({ source, target, relation });
 
-  "category:groceries": {
-    root: { type: "category", id: "groceries", label: "Groceries", when: hoursAgo(12) },
-    nodes: [
-      ...[["Fenwick Market", 84.2], ["Fenwick Market", 61.05], ["Harbour Foods", 122.4],
-          ["Fenwick Market", 39.9], ["Harbour Foods", 55.15]].map(([m, a], i) =>
-        graphNode("transaction", `fx-gx${i}`, m, "categorised_as", "in", a)),
-      graphNode("intention", "fx-i2", "Cook at home four nights a week", "mentions", "in")
-    ]
-  },
+  const project = put("project:fx-p1", "project", "Coastal Rebrand");
+  const marisol = put("person:fx-per1", "person", "Marisol Vega");
+  const dev = put("person:fx-per2", "person", "Dev Okafor");
 
-  "person:fx-per1": {
-    root: { type: "person", id: "fx-per1", label: "Marisol Vega", when: hoursAgo(60) },
-    nodes: [
-      graphNode("task", "fx-t2", "Send the brief to Marisol", "mentions", "in"),
-      graphNode("project", "fx-p1", "Coastal Rebrand", "mentions", "in"),
-      graphNode("event", "fx-e1", "Review call, Thursday 2pm", "mentions", "in"),
-      graphNode("note", "fx-n2", "Marisol prefers Figma comments over email", "mentions", "in")
-    ]
+  [
+    "Rewrite the positioning page", "Book the photographer", "Send the brief to Marisol",
+    "Collect logo feedback", "Pick the final typeface", "Order sample prints",
+    "Draft the launch email", "Schedule the reveal", "Update the deck template",
+    "Sort out the domain", "Write the press one-pager", "Chase the invoice"
+  ].forEach((title, i) => join(put(`task:fx-t${i}`, "task", title), project, "belongs_to"));
+
+  join("task:fx-t2", marisol, "mentions");
+  join("task:fx-t3", dev, "mentions");
+
+  const groceries = put("category:groceries", "category", "Groceries", 9);
+  const supplies = put("category:supplies", "category", "Supplies", 9);
+  const eatingOut = put("category:eating out", "category", "Eating Out", 4);
+
+  const MERCHANTS = {
+    northline: put("merchant:northline supply", "merchant", "Northline Supply", 7),
+    fenwick: put("merchant:fenwick market", "merchant", "Fenwick Market", 6),
+    harbour: put("merchant:harbour foods", "merchant", "Harbour Foods", 3),
+    framewright: put("merchant:framewright", "merchant", "Framewright", 2)
+  };
+
+  let x = 0;
+
+  const charge = (merchantKey, amount, category, onProject) => {
+    const merchant = MERCHANTS[merchantKey];
+    const id = put(`transaction:fx-x${x++}`, "transaction",
+      nodes.find(n => n.id === merchant).label, amount);
+    join(id, merchant, "paid_to");
+    join(id, category, "categorised_as");
+    if (onProject) join(id, project, "spent_on");
+  };
+
+  [146.8, 62.4, 88.15, 34.2, 19.99, 205.5, 77.4].forEach(a => charge("northline", a, supplies, a > 60));
+  [84.2, 61.05, 39.9, 27.6, 93.3, 55.15].forEach(a => charge("fenwick", a, groceries, false));
+  [122.4, 55.15, 61.8].forEach(a => charge("harbour", a, groceries, false));
+  [31.5, 12.8, 47.2, 22.9].forEach(a => charge("fenwick", a, eatingOut, false));
+  [240, 120].forEach(a => charge("framewright", a, supplies, true));
+
+  join(put("note:fx-n1", "note", "Need to return the extra roll to Northline Supply"), MERCHANTS.northline, "mentions");
+  join(put("note:fx-n2", "note", "Marisol prefers Figma comments over email"), marisol, "mentions");
+  join(put("intention:fx-i1", "intention", "Ship the new site before the end of the quarter"), project, "mentions");
+  join(put("intention:fx-i2", "intention", "Cook at home four nights a week"), eatingOut, "mentions");
+  join(put("deep_thought:fx-d1", "deep_thought", "Is the rebrand worth finishing before the launch?"), project, "belongs_to");
+  const review = put("event:fx-e1", "event", "Review call, Thursday 2pm");
+  join(review, marisol, "mentions");
+  join(review, project, "belongs_to");
+
+  // val = distinct neighbours, the same figure fullGraph() computes.
+  const seen = new Map();
+  for (const l of links) {
+    if (!seen.has(l.source)) seen.set(l.source, new Set());
+    if (!seen.has(l.target)) seen.set(l.target, new Set());
+    seen.get(l.source).add(l.target);
+    seen.get(l.target).add(l.source);
   }
+  for (const n of nodes) n.val = (seen.get(n.id) || new Set()).size || 1;
 
-};
+  return { success: true, nodes, links };
 
-const GRAPH_ANCHORS = {
-  success: true,
-  anchors: [
-    { type: "project", id: "fx-p1", degree: 23, label: "Coastal Rebrand", when: hoursAgo(20) },
-    { type: "merchant", id: "northline supply", degree: 10, label: "Northline Supply", when: hoursAgo(30), extra: 7 },
-    { type: "category", id: "groceries", degree: 6, label: "Groceries", when: hoursAgo(12), extra: 43 },
-    { type: "person", id: "fx-per1", degree: 4, label: "Marisol Vega", when: hoursAgo(60) },
-    { type: "intention", id: "fx-i1", degree: 3, label: "Ship the new site before the end of the quarter", when: hoursAgo(90) }
-  ]
-};
+})();
 
 
 // Entirely fictional people — this repo is public. The two states worth
@@ -448,26 +448,7 @@ export function fixtureFor(path) {
 
   if (path.startsWith("/api/finance")) return financeFixture();
 
-  if (path.startsWith("/api/graph")) {
-
-    const query = new URLSearchParams(path.slice(path.indexOf("?") + 1));
-
-    const type = query.get("type");
-    const id = query.get("id");
-
-    if (!type || !id) return GRAPH_ANCHORS;
-
-    const found = GRAPH_NEIGHBOURHOODS[`${type}:${id}`];
-
-    // A fixture neighbourhood that does not exist answers the way the real
-    // endpoint does — an error, not an empty walk. A preview that renders
-    // "connected to nothing" for a missing fixture would look like a bug in the
-    // page rather than a gap in the fixtures.
-    return found
-      ? { success: true, depth: 1, ...found }
-      : { error: "That entity no longer exists" };
-
-  }
+  if (path.startsWith("/api/graph")) return GRAPH;
 
   return FIXTURES[path] || null;
 

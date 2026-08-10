@@ -428,6 +428,94 @@ export async function pruneDangling() {
 }
 
 
+// The whole graph, resolved and ready to draw.
+//
+// This exists for exactly one caller — the /graph page — and it is the one
+// place in the system allowed to want everything at once. Every other reader
+// stays bounded (walk, connectionsForText) because they ride inside reasoning
+// calls; a page the user deliberately opened is the right place to spend one
+// full read.
+//
+// The same postures as everywhere else in this file, applied at scale:
+// dangling refs are dropped (a link both of whose ends resolve is a fact, a
+// link to a deleted row is noise), hydration is one query per type, and the
+// edge read is bounded — at 5,000 edges the answer is a slightly stale graph,
+// not a timeout.
+//
+// `val` is the node's distinct-neighbour count, and it is what the page sizes
+// dots by. Degree is the honest computed proxy for importance: it is derived
+// from facts already in the database, needs no model, and cannot flatter.
+export async function fullGraph({ limit = 5000 } = {}) {
+
+  const { data, error } = await supabase
+    .from("entity_links")
+    .select("from_type, from_id, to_type, to_id, relation")
+    .limit(limit);
+
+  if (error || !data || data.length === 0) return { nodes: [], links: [] };
+
+  const refs = [];
+
+  for (const edge of data) {
+    refs.push({ type: edge.from_type, id: edge.from_id });
+    refs.push({ type: edge.to_type, id: edge.to_id });
+  }
+
+  const rows = await hydrate(refs);
+
+  // Labels are trimmed HERE, not in the client. An intention's label is a
+  // whole sentence, and 180 of those in a payload that gets serialised into
+  // the page HTML is real weight for information the canvas will never show.
+  const short = (text) => {
+    const clean = String(text || "").replace(/\s+/g, " ").trim();
+    return clean.length > 70 ? `${clean.slice(0, 69)}…` : clean;
+  };
+
+  const neighbourSets = new Map();
+
+  const links = [];
+
+  for (const edge of data) {
+
+    const from = `${edge.from_type}:${edge.from_id}`;
+    const to = `${edge.to_type}:${edge.to_id}`;
+
+    // Both ends must resolve or the edge is not drawn — same dangling-edge
+    // posture as walk(), applied to the pair.
+    if (!rows.get(from)?.label || !rows.get(to)?.label) continue;
+
+    links.push({ source: from, target: to, relation: edge.relation });
+
+    if (!neighbourSets.has(from)) neighbourSets.set(from, new Set());
+    if (!neighbourSets.has(to)) neighbourSets.set(to, new Set());
+
+    neighbourSets.get(from).add(to);
+    neighbourSets.get(to).add(from);
+
+  }
+
+  const nodes = [...neighbourSets.keys()].map(key => {
+
+    const row = rows.get(key);
+
+    return {
+      id: key,
+      type: row.type,
+      label: short(row.label),
+      when: row.when,
+      ...(row.extra !== undefined && { extra: row.extra }),
+      // Distinct neighbours, not edge count — two relations between the same
+      // pair are one connection. The same lesson graphAnchors already learned.
+      val: neighbourSets.get(key).size
+    };
+
+  });
+
+  return { nodes, links };
+
+}
+
+
 // The things actually worth looking at, ranked by how connected they are.
 //
 // What a graph page opens on. Rendering "everything" was never an option here
