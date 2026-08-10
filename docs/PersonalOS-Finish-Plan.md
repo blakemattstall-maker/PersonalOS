@@ -7,15 +7,28 @@
 
 ---
 
-## 0. Decisions already made (2026-08-09)
+## 0. Decisions made (2026-08-09)
 
 | Question | Answer |
 |---|---|
-| Where does this end up? | **Shareable with a few people** — 5–20 real accounts, not a public product |
+| Where does this end up? | **Single-user, made demonstrable.** Not multi-user — see the reversal below |
 | Resume framing? | **Broad net.** Media/producing now, slightly-technical product later |
 | Always-on computer? | **No** — a laptop that gets carried. Intermittent only |
+| Is it a company? | **Untested, and to be tested with a landing page rather than with code** |
 
-Everything below follows from those three.
+### The reversal, and why
+
+The first version of this plan was written against "shareable with a few people." Blake reconsidered, and the reconsideration was correct. Recorded here so it isn't re-litigated:
+
+**The middle option is the worst of the three.** It costs the full multi-tenancy price — real auth, `user_id` and RLS on 26 tables, per-user Google and bank connections, every cron rewritten to loop — and buys users who realistically log in twice. Personal-assistant apps have brutal retention even when polished and free. In exchange you take custody of other people's bank transactions and email.
+
+**"Just me feels short" is a real feeling with the wrong remedy.** What makes it feel short is that nobody can see it. The cure is a demo account, a 90-second video and a case study — not a signup form. Three people watching a good demo is worth more than five friends with dormant accounts.
+
+**The competitor fear is the least of the blockers.** Well-funded companies are building AI assistants and this will not out-feature them — but that is not what would kill it. What would kill it is structural and boring: Gmail is a *restricted* OAuth scope requiring a paid third-party security assessment for any public app; bank data means holding strangers' financial records; every user costs LLM spend against no revenue; and the builder is a final-year student in a job search.
+
+That is oddly good news: **"is this a company" is a demand question, not an engineering one** — and demand can be tested for the price of an afternoon (§6), with zero multi-tenancy code. Build the evidence first. The door stays open; it just isn't paid for in advance.
+
+Everything below follows from these four.
 
 ---
 
@@ -60,7 +73,11 @@ Numbers 1, 3 and 5 are nearly true today. Number 4 is a small piece of work. Num
 
 ---
 
-## 3. The road to "a few people can use it"
+## 3. The road to multi-user — **deferred, kept for reference**
+
+> ⚠️ **Not the current plan.** See §0. This section is retained because it is accurate and because it is what to execute *if* §6's demand test produces real signal. Do not start any of it before then.
+>
+> The two things worth carrying forward regardless of route: the **per-user cost cap** (§4C) is needed the moment a second person exists, and the **onboarding / cold-start** work (§4D) is valuable even for a single user, because a demo account has exactly the same empty-app problem.
 
 **Be honest about what this costs.** This is weeks of work, and it is the only option that puts other people's bank transactions and email in your database. That is a liability shift, not just an engineering task. Everything before Phase 4C is reversible and useful regardless; Phase 4C is the point of no return.
 
@@ -185,34 +202,64 @@ That page is what you send when someone says "tell me about something you built.
 
 ---
 
-## 6. The checkpoint I'd actually stop at
+## 6. Demo account, `/graph`, and the cheap company test
 
-Before committing to §3, consider stopping here — it is roughly two sessions instead of six, and for a recruiter-facing goal it is nearly indistinguishable:
+### What `/graph` is, and why it is first
 
-**Demo mode.** A seeded, read-only account with realistic fake data (`web/app/fixtures.js` already has most of it), reachable at a public URL with no signup. Anyone can click it and see the whole thing working.
+`entity_links` holds 37 real connections and, as of this week, the code can read them (`walk()`, `resolveReference()`). There is nowhere to **see** them. `/graph` is that: pick a project or a person, get everything attached to it, click through to any of them.
 
-It gets you: a live link on your resume, a thing recruiters can poke at, zero liability, zero per-user cost, and no Google verification problem. It does not get you: real users, which matters only if the goal is a product rather than a portfolio piece.
+It is first on the list for two reasons. It is the only screen in the app that does not look like something already seen — the brief, money and people pages are all recognisable shapes, and this one is not. And it is the hardest thing in the project to build, so it is the screen that carries the demo.
 
-**Recommendation:** build demo mode first regardless. It's a prerequisite for a good demo video, and if it turns out to be enough, you've saved four sessions.
+Note the existing `web/app/welcome/SceneGraph.js` already animates a *fictional* version of this for the tour. `/graph` is the real one. Reuse the visual language deliberately — the tour promises this screen, and it should be recognisable when it arrives.
+
+### Demo account ≠ the tour that already exists
+
+These are two different things and conflating them cost a round of confusion:
+
+| | What it is | Status |
+|---|---|---|
+| **`/welcome`** | The signed-out marketing tour. Animated, prerendered, reads no data by design | ✅ Built and good |
+| **Demo account** | The actual dashboard, seeded, that a stranger can click — dismiss a card, switch a money range, open the graph | ❌ Does not exist |
+
+Today a recruiter can read *about* it or take Blake's word. They cannot touch it. **It must be interactive** — a static screenshot adds nothing the tour doesn't already do.
+
+Implementation notes:
+- `web/app/fixtures.js` already holds ~80% of the seed data, including the insight cards added this session. The work is a public read-only session, not new content.
+- Reuse the `POS_FIXTURES` path rather than inventing a second fake-data mechanism.
+- **Read-only must be enforced server-side, not by hiding buttons.** A demo session that can write is an open door to the real database.
+- Keep the orange "not real data" bar. It is honest and it costs nothing.
+- Cold start applies here too — a demo account with no memories renders an empty, useless app. Seed a bio and memories, or the demo demonstrates nothing.
+
+### The company test, for the price of an afternoon
+
+**Do not build multi-tenancy to find out whether people want this.** Build a landing page with the demo video and a waitlist. 200 signups is a real signal and *then* the §3 work is justified. Six signups saves six sessions and a compliance headache.
+
+This is the whole reason §3 is deferred rather than cancelled: the evidence that would justify it is cheap to gather, and gathering it first is strictly better than guessing.
 
 ---
 
 ## 7. Execution order
 
-Each line is one Claude Code session.
+Each line is roughly one Claude Code session. **Steps 1–4 are the whole plan.** Everything after is conditional.
 
 | # | Work | Why here |
 |---|---|---|
-| 1 | **Demo mode + `/graph` page** | Fastest path to a demo-able artifact; §6 |
-| 2 | **Phase 3 engine, gated** | Buildable now; the gate is a runtime check |
-| 3 | **Per-user cost caps + `resolveReference` into capture + Action Button shortcut** | Small, high-value, prerequisites for anyone else using it |
-| 4 | **4A — real auth** | ⚠️ Point of no return begins |
-| 5 | **4B — `user_id` + RLS + the test** | The leak risk lives here |
-| 6 | **4C — per-user Google/banking** | External friction, not code |
-| 7 | **4D — onboarding** | Solves cold start |
-| 8 | **Case study + demo video** | Can happen any time after 1 |
+| 1 | **`/graph` page + demo account** | The two things that make it showable. `/graph` is also the best screen in the video. §6 |
+| 2 | **Phase 3 engine, gated** | "That's up from last week" — what makes it feel like it is watching. Buildable now; the gate is a runtime check, not a delay |
+| 3 | **Reliability pass** | Runs a week untouched, and tells you when it breaks instead of going quiet. Includes `resolveReference` into capture and the Action Button shortcut — both small, both improve the demo |
+| 4 | **Case study + 90-second video** | The actual career asset. The highest-value item on this list and the one most likely to be skipped |
+| 5 | *Landing page + waitlist* | Optional, an afternoon. The cheap answer to "is this a company" |
+| — | *Multi-user (§3)* | **Only if step 5 produces real signal.** Not before |
 
-**Stop-and-reassess after 3.** By then you'll have a demo-able, trend-aware, cost-capped app and will know whether real users are worth four more sessions.
+**Definition of done for the job search: steps 1–4.** Four sessions. Multi-tenancy stays available and unbuilt until there is evidence it is worth six more.
+
+### If usage or time is tight, in priority order
+
+1. **The video** — it can be recorded against the app as it exists today, with no further code.
+2. **`/graph`** — the single most differentiating screen.
+3. **The demo account** — turns "take my word" into "click this."
+
+Everything else is improvement rather than proof.
 
 ---
 
