@@ -6,38 +6,38 @@ import { typeName, detail, nodeToRoot, moneyTotal } from "./phrasing.js";
 import { reducedMotion } from "../motion.js";
 
 
-// The whole graph, alive, fullscreen.
+// The whole graph, alive, fullscreen — flat by default, spherical on request.
 //
 // This replaced a deterministic radial view that drew one neighbourhood at a
 // time — the user's call, and right: the thing a linked personal graph is FOR
-// is watching your whole life settle into clusters you didn't draw. The
-// density work is what made that defensible; at 37 edges a force layout is a
-// dandelion, at ~300 with real hubs it is a net.
+// is watching your whole life settle into clusters you didn't draw.
 //
 // ── Why force-graph, of the candidates offered ───────────────────────────
 //
 // The 2D sibling of 3d-force-graph — same author, same API. Obsidian's own
-// graph is 2D: three.js is ~600KB against this library's ~80, phones pay for
-// WebGL scenes in battery, and labels in a 3D scene are unreadable at most
-// camera angles. Sigma earns its keep at tens of thousands of nodes and this
-// graph is bounded at 5,000 edges by construction. Cytoscape settles into
-// analysis diagrams, and this page is meant to feel like a place.
+// graph is 2D, and 2D stays the default here: it is ~80KB against three.js's
+// ~600, phones pay for WebGL in battery, and canvas labels are legible at
+// every zoom. The sphere exists as an opt-in experiment (the user asked for
+// it twice, which is a decision): 3d-force-graph loads ONLY when the toggle
+// is first tapped, so the everyday page never carries it.
 //
-// A literal 3D sphere was considered and declined for the same reasons — but
-// the three problems it was reached for are solved here in 2D: the world is
-// BOUNDED (weak centring forces mean disconnected islands share one compact
-// space instead of repelling each other into an expanseless plane), the
-// camera AUTO-FRAMES until the user takes it, and one SPREAD control grows or
-// shrinks the whole world. If the sphere is still wanted after living with
-// this, it is the same author's 3D API one import away.
+// ── Naming what you're looking at ────────────────────────────────────────
+//
+// Island titles were first drawn on the canvas at each component's centroid,
+// and that failed twice at once: a title could be a 20-word intention
+// sentence, and at overview zoom several of them landed on the graph and on
+// each other. The fix came from the user's sphere idea — the CHROME names
+// the view, the canvas never does. A caption under the header tracks
+// whichever island dominates the viewport (in 3D: the hemisphere facing the
+// camera), and island titles prefer a nameable member — project, person,
+// merchant, category, place — over prose, hard-truncated either way.
 //
 // ── What the canvas may not do ───────────────────────────────────────────
 //
 // Colour carries meaning in this app and the canvas gets no exemption: four
-// families map to the identity colours and ember appears nowhere — a graph
-// has nothing waiting on anybody. Node size is distinct-neighbour degree,
-// computed server-side: the honest proxy for importance. Money totals shown
-// on selection are summed in code from amounts the server attached — never a
+// families map to the identity colours and ember appears nowhere. Node size
+// is distinct-neighbour degree, computed server-side. Money totals on
+// selection are summed in code from amounts the server attached — never a
 // model's arithmetic.
 
 
@@ -55,6 +55,26 @@ const FAMILIES = [
   { key: "money", label: "Money", cssVar: "--moss" },
   { key: "notes", label: "Notes", cssVar: "--ink-soft" }
 ];
+
+
+// The types whose labels are NAMES. An island titled by its strongest member
+// used to surface a whole intention sentence; a title is a handle, not a
+// paragraph, so nameable types win even over a higher-degree prose node.
+const NAMEABLE = new Set(["project", "person", "merchant", "category", "place"]);
+
+function islandTitle(members) {
+
+  const nameable = members.filter(m => NAMEABLE.has(m.type));
+
+  const pool = nameable.length > 0 ? nameable : members;
+
+  const strongest = pool.reduce((a, b) => ((b.val || 0) > (a.val || 0) ? b : a));
+
+  const title = strongest.label || "";
+
+  return title.length > 26 ? `${title.slice(0, 25)}…` : title;
+
+}
 
 
 function readPalette() {
@@ -86,8 +106,8 @@ function radiusOf(node) {
 // One number that means "how big is the world". It drives the three forces
 // that define scale together — repulsion, link length, personal space — so
 // they can never be tuned into disagreement, and it is what the spread slider
-// moves. As the graph grows, nudging this one value is how the world grows
-// with it instead of the camera zooming ever further out.
+// moves. In 3D the same slider scales the sphere's radius instead: one
+// control, whatever the shape of the world.
 function applySpread(fg, factor) {
 
   fg.d3Force("charge").strength(-26 * factor * factor);
@@ -96,10 +116,7 @@ function applySpread(fg, factor) {
 
   // The leash that makes disconnected islands share one world. Without it,
   // components with no edge between them repel each other for as long as the
-  // simulation runs — which on this data meant two islands drifting apart for
-  // fifteen seconds and a final frame too far out to read. Weak, deliberately:
-  // it must gather, not crush. Slightly stronger when the world is spread, so
-  // growing the spread grows the layout rather than the drift.
+  // simulation runs. Weak, deliberately: it must gather, not crush.
   fg.d3Force("x", forceX(0).strength(0.05 + 0.02 * factor));
   fg.d3Force("y", forceY(0).strength(0.05 + 0.02 * factor));
 
@@ -109,15 +126,31 @@ function applySpread(fg, factor) {
 const SPREAD_MIN = 0.6;
 const SPREAD_MAX = 1.8;
 
+// Sphere radius at spread 1, scaled by node count so a graph that doubles
+// grows its world instead of crowding it — the "grow with more info" the
+// sphere was asked for.
+const sphereRadius = (count, factor) => (70 + 9 * Math.sqrt(count)) * factor;
+
 
 export default function GraphCanvas({ nodes, links, focus = null }) {
 
-  const containerRef = useRef(null);
-  const fgRef = useRef(null);
+  const flatRef = useRef(null);
+  const roundRef = useRef(null);
+
+  const fgRef = useRef(null);       // the 2D engine
+  const fg3Ref = useRef(null);      // the 3D engine, null until first toggle
+
+  const [mode, setMode] = useState("flat");
+  const [loading3d, setLoading3d] = useState(false);
 
   const [selected, setSelected] = useState(null);
   const [hiddenFamilies, setHiddenFamilies] = useState(() => new Set());
   const [spread, setSpread] = useState(1);
+
+  // What the viewport is looking at — the island holding the most on-screen
+  // nodes (2D) or the most camera-facing nodes (3D). Lives in the header,
+  // never on the canvas.
+  const [caption, setCaption] = useState(null);
 
   // Canvas callbacks fire every frame and close over their creation scope, so
   // everything they need lives in refs the React handlers keep current.
@@ -125,9 +158,13 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
   const neighboursRef = useRef(new Set());
   const hiddenRef = useRef(hiddenFamilies);
   const paletteRef = useRef(null);
+  const modeRef = useRef("flat");
+  const spreadRef = useRef(1);
+  const captionRef = useRef(null);
+  const frameRef = useRef(0);
 
   // Whether the user has taken the camera. Until they touch the canvas, the
-  // view re-frames the whole graph every engine tick — so the settle plays
+  // 2D view re-frames the whole graph every engine tick — so the settle plays
   // out ON SCREEN, framed, instead of half off the edge until a final jump.
   // The first touch ends it: a camera the user is holding must never move
   // itself.
@@ -135,9 +172,8 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
   // Labels drawn this frame, in graph coordinates. Reset before each frame,
   // checked before every label — the overlap rule that keeps a zoomed-mid
-  // view readable instead of forty labels landing at once on top of each
-  // other. Draw order is by degree (see the sort below), so when two labels
-  // want one spot, the more connected thing wins.
+  // view readable. Draw order is by degree (see the sort below), so when two
+  // labels want one spot, the more connected thing wins.
   const labelRectsRef = useRef([]);
 
 
@@ -157,12 +193,8 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
   }, [links]);
 
 
-  // Connected components — the islands. Each is titled by its most connected
-  // member, which is the name a person would give it: the Trifilm island, the
-  // Groceries island. Drawn as overview captions when zoomed out, they are
-  // what makes the wide view legible instead of anonymous constellations —
-  // and when future data joins two islands, the union-find simply reports one
-  // component with one title, no code change.
+  // Connected components — the islands. Union-find, so when future data joins
+  // two of them, one component with one title simply appears, no code change.
   const components = useMemo(() => {
 
     const parent = new Map(nodes.map(n => [n.id, n.id]));
@@ -191,10 +223,7 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
     return [...byRoot.values()]
       .filter(members => members.length >= 3)
-      .map(members => {
-        const strongest = members.reduce((a, b) => ((b.val || 0) > (a.val || 0) ? b : a));
-        return { title: strongest.label, ids: members.map(m => m.id) };
-      });
+      .map(members => ({ title: islandTitle(members), ids: members.map(m => m.id) }));
 
   }, [nodes, links]);
 
@@ -217,9 +246,45 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
   };
 
 
+  // Shared by both engines: the gentle landing. No zoom jump — the first
+  // version leapt to 2.2× on every tap and the user lost the shape of the
+  // graph each time. Zoom only ever nudges IN, never past 1.5, and the node
+  // is centred ABOVE the card's space rather than underneath it.
+  const settleOn = (fg, node) => {
+
+    const zoom = fg.zoom();
+    const target = Math.max(zoom, 1.5);
+
+    if (zoom < 1.5) fg.zoom(1.5, 400);
+
+    const el = flatRef.current;
+    const offset = el ? (el.clientHeight * 0.14) / target : 0;
+
+    fg.centerAt(node.x, node.y + offset, 400);
+
+  };
+
+
+  const clickNode = (node) => {
+    cameraOwnedRef.current = true;
+    select(node);
+    if (modeRef.current === "flat" && fgRef.current) settleOn(fgRef.current, node);
+  };
+
+
+  const updateCaption = (title) => {
+    if (title !== captionRef.current) {
+      captionRef.current = title;
+      setCaption(title);
+    }
+  };
+
+
+  // ── The flat engine ──────────────────────────────────────────────────────
+
   useEffect(() => {
 
-    const el = containerRef.current;
+    const el = flatRef.current;
 
     if (!el || nodes.length === 0) return;
 
@@ -233,20 +298,14 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
     const onScheme = () => { paletteRef.current = readPalette(); };
     scheme.addEventListener("change", onScheme);
 
-    // Any pointer on the canvas hands the camera to the user, permanently
-    // (the recentre button hands it back). Capture phase, so this wins the
-    // race against the zoom handler the library installs.
     const takeCamera = () => { cameraOwnedRef.current = true; };
     el.addEventListener("pointerdown", takeCamera, { capture: true });
 
     // Sorted by degree, descending, ONCE — this is draw order, and draw order
-    // is label priority: when two labels collide, the hub keeps its name and
-    // the leaf waits for a closer zoom.
+    // is label priority.
     const liveNodes = nodes.map(n => ({ ...n })).sort((a, b) => (b.val || 0) - (a.val || 0));
     const liveById = new Map(liveNodes.map(n => [n.id, n]));
 
-    // Component members as references into the live array, so centroids track
-    // the physics without a per-frame lookup.
     const liveComponents = components.map(c => ({
       title: c.title,
       members: c.ids.map(id => liveById.get(id)).filter(Boolean)
@@ -260,6 +319,40 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
       const still = reducedMotion();
 
+      // Which island dominates the viewport right now. Called from the
+      // render loop (throttled) AND once after the engine stops — rendering
+      // pauses when the physics does, so a caption computed only per-frame
+      // would freeze stale, or never appear at all on a page that settled in
+      // a background tab.
+      const computeCaption = () => {
+
+        const topLeft = fg.screen2GraphCoords(0, 0);
+        const bottomRight = fg.screen2GraphCoords(el.clientWidth, el.clientHeight);
+
+        let best = null;
+        let bestCount = 0;
+
+        for (const component of liveComponents) {
+
+          let visible = 0;
+
+          for (const m of component.members) {
+            if (hiddenRef.current.has(FAMILY[m.type] || "notes")) continue;
+            if (m.x >= topLeft.x && m.x <= bottomRight.x &&
+                m.y >= topLeft.y && m.y <= bottomRight.y) visible += 1;
+          }
+
+          if (visible > bestCount) {
+            bestCount = visible;
+            best = component;
+          }
+
+        }
+
+        updateCaption(bestCount >= 3 ? best.title : null);
+
+      };
+
       const isDim = (node) =>
         (selectedRef.current &&
           node.id !== selectedRef.current &&
@@ -271,14 +364,9 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
         .height(el.clientHeight)
         .backgroundColor("rgba(0,0,0,0)")
 
-        // You can always find your way back: zoom is clamped, and the world
-        // itself is leashed by applySpread(), so there is no expanseless
-        // plane to get lost in.
         .minZoom(0.3)
         .maxZoom(10)
 
-        // A settle measured in a few seconds, not fifteen — the long default
-        // cooldown was most of the "two islands half off screen" wait.
         .d3AlphaDecay(0.028)
         .d3VelocityDecay(0.35)
         .warmupTicks(still ? 300 : 60)
@@ -313,12 +401,23 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
             ctx.stroke();
           }
 
+          // A charge's label is its merchant's name — which the merchant node
+          // next to it already says. Eight dots all captioned "Fenwick
+          // Market" is noise wearing a label, so a charge speaks its AMOUNT,
+          // the one thing that distinguishes it, and only at a much closer
+          // zoom than named things.
+          const isCharge = node.type === "transaction";
+
+          const text = isCharge && node.extra != null
+            ? `$${Math.abs(Number(node.extra)).toFixed(0)}`
+            : node.label;
+
           // Labels arrive with zoom, biggest first — scale × √degree crosses
-          // the threshold earlier for a hub than a leaf, so names appear a few
-          // at a time instead of forty at once...
+          // the threshold earlier for a hub than a leaf, so names appear a
+          // few at a time instead of forty at once...
           const wants =
             isSelected || isNeighbour ||
-            scale * Math.sqrt(node.val || 1) > 3.2;
+            scale * Math.sqrt(node.val || 1) > (isCharge ? 6 : 3.2);
 
           if (wants && !dimmed) {
 
@@ -328,9 +427,8 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
             // ...and the ones that do arrive are not allowed to land on each
             // other. A label that would overlap one already drawn this frame
-            // is skipped (the selection always speaks). Priority is draw
-            // order, which is degree order.
-            const width = ctx.measureText(node.label).width;
+            // is skipped (the selection always speaks).
+            const width = ctx.measureText(text).width;
             const rect = { x: node.x - width / 2, y: node.y + r + 2 / scale, w: width, h: size };
 
             const collides = labelRectsRef.current.some(other =>
@@ -346,9 +444,9 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
               ctx.textBaseline = "top";
               ctx.lineWidth = 3 / scale;
               ctx.strokeStyle = palette.paper;
-              ctx.strokeText(node.label, node.x, rect.y);
+              ctx.strokeText(text, node.x, rect.y);
               ctx.fillStyle = isSelected ? palette.ink : palette.inkSoft;
-              ctx.fillText(node.label, node.x, rect.y);
+              ctx.fillText(text, node.x, rect.y);
 
             }
 
@@ -358,45 +456,14 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
         })
 
-        // The island captions. When the view is wide enough that node labels
-        // have gone, each component says its name at its centroid — the
-        // overview stops being anonymous constellations. They fade out as the
-        // node labels fade in, so the two layers never shout over each other.
-        .onRenderFramePost((ctx, scale) => {
-
-          if (scale >= 1.1) return;
-
-          const palette = paletteRef.current;
-          const alpha = Math.min(1, (1.1 - scale) / 0.25);
-
-          for (const component of liveComponents) {
-
-            const visible = component.members.filter(
-              m => !hiddenRef.current.has(FAMILY[m.type] || "notes")
-            );
-
-            if (visible.length < 3) continue;
-
-            let cx = 0, cy = 0;
-            for (const m of visible) { cx += m.x || 0; cy += m.y || 0; }
-            cx /= visible.length;
-            cy /= visible.length;
-
-            const size = 13 / scale;
-
-            ctx.globalAlpha = alpha;
-            ctx.font = `${size}px "DM Mono", ui-monospace, monospace`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.lineWidth = 4 / scale;
-            ctx.strokeStyle = palette.paper;
-            ctx.strokeText(component.title, cx, cy);
-            ctx.fillStyle = palette.ink;
-            ctx.fillText(component.title, cx, cy);
-            ctx.globalAlpha = 1;
-
-          }
-
+        // Nothing is DRAWN after the frame any more — island titles moved off
+        // the canvas entirely after they clogged the overview (a title could
+        // be a whole intention sentence, and several landed on the graph at
+        // once). This hook now only works out which island dominates the
+        // viewport, and the header caption says it.
+        .onRenderFramePost(() => {
+          frameRef.current += 1;
+          if (frameRef.current % 15 === 0) computeCaption();
         })
 
         .nodePointerAreaPaint((node, colour, ctx) => {
@@ -430,17 +497,12 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
             && !hiddenRef.current.has(FAMILY[type(b)] || "notes");
         })
 
-        .onNodeClick(node => {
-          cameraOwnedRef.current = true;
-          select(node);
-          fg.centerAt(node.x, node.y, 500);
-          if (fg.zoom() < 2) fg.zoom(2.2, 500);
-        })
+        .onNodeClick(clickNode)
         .onBackgroundClick(() => select(null))
 
         // The camera never trusts the physics. Until the user takes over, the
         // whole graph is re-framed every tick — the settle happens on screen,
-        // framed, instead of drifting half off a phone edge and then jumping.
+        // framed, instead of drifting half off a phone edge.
         .onEngineTick(() => {
           if (!cameraOwnedRef.current) fg.zoomToFit(0, 60);
         })
@@ -448,28 +510,28 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
         .onEngineStop(() => {
 
           // A deep link from a project, person or insight card lands centred
-          // and selected on that thing — the contract those links have
-          // carried since the first version of this page.
+          // and selected on that thing.
           const target = focus && fg.graphData().nodes.find(n => n.id === focus);
 
           if (target && !cameraOwnedRef.current) {
             cameraOwnedRef.current = true;
             select(target);
-            fg.centerAt(target.x, target.y, 700);
-            fg.zoom(2.4, 700);
+            settleOn(fg, target);
             return;
           }
 
-          // One last authoritative fit. The per-tick refit above depends on
-          // ticks actually happening, and cooldownTime is wall-clock — a tab
-          // that loads in the background has its animation frames paused
-          // while the clock runs, so the engine can stop having barely
-          // ticked. Whatever the route here, the settled graph ends framed.
+          // One last authoritative fit. The per-tick refit depends on ticks
+          // actually happening, and cooldownTime is wall-clock — a tab that
+          // loads in the background has its animation frames paused while
+          // the clock runs, so the engine can stop having barely ticked.
           if (!cameraOwnedRef.current) fg.zoomToFit(400, 60);
+
+          // After the fit transition lands, say what we're looking at.
+          setTimeout(computeCaption, 500);
 
         });
 
-      applySpread(fg, 1);
+      applySpread(fg, spreadRef.current);
 
       fg.zoomToFit(0, 60);
 
@@ -478,6 +540,8 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
       observer = new ResizeObserver(() => {
         fg.width(el.clientWidth);
         fg.height(el.clientHeight);
+        fg3Ref.current?.width(el.clientWidth);
+        fg3Ref.current?.height(el.clientHeight);
       });
 
       observer.observe(el);
@@ -491,12 +555,190 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
       observer?.disconnect();
       fg?._destructor();
       fgRef.current = null;
+      fg3Ref.current?._destructor();
+      fg3Ref.current = null;
     };
 
-    // The graph itself is load-time data; selection, filters and spread act
-    // through refs so the engine (and its settled layout) is never rebuilt.
+    // The graph itself is load-time data; selection, filters, spread and mode
+    // act through refs so the engine (and its settled layout) is never
+    // rebuilt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, links, focus]);
+
+
+  // ── The sphere ───────────────────────────────────────────────────────────
+  //
+  // Asked for twice, which is a decision. Built as an experiment with the
+  // cost fenced: three.js and 3d-force-graph load on the FIRST toggle only —
+  // the everyday 2D page never ships them — and everything shared (selection,
+  // filters, the card, the caption) runs through the same refs, so the two
+  // views cannot disagree about state.
+  //
+  // The layout is a real force simulation projected onto a sphere's surface
+  // every tick: clusters still form and hubs still gather their neighbours,
+  // but the world is a closed surface — there is no expanseless plane to get
+  // lost in, which was the original argument for it. It spins slowly on its
+  // own until first touch (orbit controls take over), and the header caption
+  // names the hemisphere facing the camera.
+
+  const enterSphere = async () => {
+
+    modeRef.current = "round";
+    setMode("round");
+
+    if (fg3Ref.current) {
+      fgRef.current?.pauseAnimation();
+      fg3Ref.current.resumeAnimation();
+      return;
+    }
+
+    setLoading3d(true);
+
+    try {
+
+      const { default: ForceGraph3D } = await import("3d-force-graph");
+
+      const el = roundRef.current;
+
+      if (!el || modeRef.current !== "round") { setLoading3d(false); return; }
+
+      const palette = paletteRef.current || readPalette();
+
+      const liveNodes = nodes.map(n => ({ ...n }));
+      const liveById = new Map(liveNodes.map(n => [n.id, n]));
+
+      const liveComponents = components.map(c => ({
+        title: c.title,
+        members: c.ids.map(id => liveById.get(id)).filter(Boolean)
+      }));
+
+      const fg3 = new ForceGraph3D(el, { controlType: "orbit" })
+        .graphData({ nodes: liveNodes, links: links.map(l => ({ ...l })) })
+        .width(el.clientWidth)
+        .height(el.clientHeight)
+        .backgroundColor("rgba(0,0,0,0)")
+        .showNavInfo(false)
+
+        .nodeVal(n => n.val || 1)
+        .nodeLabel(() => "")
+        .nodeColor(n => {
+          const sel = selectedRef.current;
+          if (sel && (n.id === sel || neighboursRef.current.has(n.id))) return palette.moss;
+          return paletteRef.current.family[FAMILY[n.type] || "notes"];
+        })
+        .nodeOpacity(0.9)
+
+        .linkColor(l => {
+          const sel = selectedRef.current;
+          const a = l.source.id ?? l.source;
+          const b = l.target.id ?? l.target;
+          return sel && (a === sel || b === sel) ? palette.moss : palette.line;
+        })
+        .linkOpacity(0.35)
+
+        .nodeVisibility(n => !hiddenRef.current.has(FAMILY[n.type] || "notes"))
+        .linkVisibility(l => {
+          const a = l.source.id ?? l.source;
+          const b = l.target.id ?? l.target;
+          const type = (id) => id.slice(0, id.indexOf(":"));
+          return !hiddenRef.current.has(FAMILY[type(a)] || "notes")
+            && !hiddenRef.current.has(FAMILY[type(b)] || "notes");
+        })
+
+        .onNodeClick(node => {
+          cameraOwnedRef.current = true;
+          select(node);
+        })
+        .onBackgroundClick(() => select(null))
+
+        // The projection that makes it a sphere: after the forces move the
+        // nodes, each is pulled onto the surface of radius R. Clusters keep
+        // clustering — they just do it on a globe.
+        .onEngineTick(() => {
+
+          const R = sphereRadius(liveNodes.length, spreadRef.current);
+
+          for (const node of liveNodes) {
+            const length = Math.hypot(node.x || 0, node.y || 0, node.z || 0) || 1;
+            const scale = R / length;
+            node.x *= scale;
+            node.y *= scale;
+            node.z *= scale;
+          }
+
+        });
+
+      fg3.cameraPosition({ x: 0, y: 0, z: sphereRadius(liveNodes.length, spreadRef.current) * 3.1 });
+
+      // Ambient spin until the user takes hold — the same "camera moves only
+      // until touched" contract as the flat view.
+      const controls = fg3.controls();
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.6;
+      el.addEventListener("pointerdown", () => { controls.autoRotate = false; }, { capture: true, once: true });
+
+      // Which hemisphere is facing the camera — the caption's 3D answer.
+      // Checked on a timer rather than per frame; the answer changes at the
+      // speed of a slow spin, not at 60fps.
+      const captionTimer = setInterval(() => {
+
+        if (modeRef.current !== "round") return;
+
+        const cam = fg3.cameraPosition();
+        const camLength = Math.hypot(cam.x, cam.y, cam.z) || 1;
+
+        let best = null;
+        let bestCount = 0;
+
+        for (const component of liveComponents) {
+
+          let facing = 0;
+
+          for (const m of component.members) {
+            if (hiddenRef.current.has(FAMILY[m.type] || "notes")) continue;
+            const dot = ((m.x || 0) * cam.x + (m.y || 0) * cam.y + (m.z || 0) * cam.z) / camLength;
+            if (dot > 0) facing += 1;
+          }
+
+          if (facing > bestCount) {
+            bestCount = facing;
+            best = component;
+          }
+
+        }
+
+        updateCaption(bestCount >= 3 ? best.title : null);
+
+      }, 600);
+
+      fg3._captionTimer = captionTimer;
+
+      const originalDestructor = fg3._destructor.bind(fg3);
+      fg3._destructor = () => { clearInterval(captionTimer); originalDestructor(); };
+
+      fg3Ref.current = fg3;
+      fgRef.current?.pauseAnimation();
+
+    } catch {
+
+      // The sphere failing to load must cost nothing but the tap: back to
+      // flat, no error screen over a working graph.
+      modeRef.current = "flat";
+      setMode("flat");
+
+    } finally {
+      setLoading3d(false);
+    }
+
+  };
+
+
+  const enterFlat = () => {
+    modeRef.current = "flat";
+    setMode("flat");
+    fg3Ref.current?.pauseAnimation();
+    fgRef.current?.resumeAnimation();
+  };
 
 
   const toggleFamily = (key) => {
@@ -514,21 +756,27 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
   const changeSpread = (value) => {
 
     setSpread(value);
+    spreadRef.current = value;
 
-    const fg = fgRef.current;
+    // Flat: the forces re-settle at the new scale. Round: the projection
+    // radius changes and the next ticks carry every node to the new surface.
+    // Same slider, same meaning — how big is the world.
+    if (fgRef.current) {
+      applySpread(fgRef.current, value);
+      fgRef.current.d3ReheatSimulation();
+    }
 
-    if (!fg) return;
-
-    applySpread(fg, value);
-
-    // Reheat so the world actually re-settles at the new scale — and let the
-    // camera follow it if the user hasn't claimed it.
-    fg.d3ReheatSimulation();
+    fg3Ref.current?.d3ReheatSimulation();
 
   };
 
 
   const recentre = () => {
+    if (modeRef.current === "round" && fg3Ref.current) {
+      const R = sphereRadius(nodes.length, spreadRef.current);
+      fg3Ref.current.cameraPosition({ x: 0, y: 0, z: R * 3.1 }, { x: 0, y: 0, z: 0 }, 600);
+      return;
+    }
     cameraOwnedRef.current = false;
     fgRef.current?.zoomToFit(500, 60);
   };
@@ -558,9 +806,7 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
 
   // What this selection's neighbourhood costs — summed in code from the
-  // amounts already on the transaction nodes. A merchant's total is its
-  // charges, a category's is the charges in it, a project's is the charges
-  // spent on it.
+  // amounts already on the transaction nodes.
   const money = useMemo(
     () => moneyTotal(neighbourRows.map(row => row.node)),
     [neighbourRows]
@@ -568,13 +814,17 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
 
 
   const walkTo = (node) => {
-    const fg = fgRef.current;
-    const live = fg?.graphData().nodes.find(n => n.id === node.id);
+
+    const engine = modeRef.current === "round" ? fg3Ref.current : fgRef.current;
+    const live = engine?.graphData().nodes.find(n => n.id === node.id);
+
     if (!live) return;
+
     cameraOwnedRef.current = true;
     select(live);
-    fg.centerAt(live.x, live.y, 500);
-    if (fg.zoom() < 2) fg.zoom(2.2, 500);
+
+    if (modeRef.current === "flat") settleOn(fgRef.current, live);
+
   };
 
 
@@ -594,16 +844,25 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
   return (
     <div className="fixed inset-0 bg-paper">
 
-      <div ref={containerRef} className="absolute inset-0" />
+      <div ref={flatRef} className={`absolute inset-0 ${mode === "flat" ? "" : "invisible"}`} />
+      <div ref={roundRef} className={`absolute inset-0 ${mode === "round" ? "" : "invisible"}`} />
 
       <header className="pointer-events-none absolute left-5 top-[max(1rem,env(safe-area-inset-top))]">
         <h1 className="pos-display text-[1.35rem] text-ink">Connections</h1>
         <p className="pos-data mt-0.5 text-[0.7rem] text-ink-soft">
           {nodes.length} things · {links.length} links
         </p>
+        {/* What the viewport is looking at. This line is the island title's
+            whole UI — the canvas never says it, so it can never collide with
+            the graph. */}
+        {caption && (
+          <p className="pos-data mt-0.5 text-[0.72rem] text-moss" aria-live="polite">
+            ◉ {caption}
+          </p>
+        )}
       </header>
 
-      <div className="absolute inset-x-0 top-[max(4.5rem,calc(env(safe-area-inset-top)+3.5rem))] flex flex-wrap justify-center gap-1.5 px-4">
+      <div className="absolute inset-x-0 top-[max(5.25rem,calc(env(safe-area-inset-top)+4.25rem))] flex flex-wrap justify-center gap-1.5 px-4">
         {FAMILIES.map(family => {
           const off = hiddenFamilies.has(family.key);
           return (
@@ -633,6 +892,15 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
         <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+6rem)] right-3 flex flex-col items-end gap-2">
 
           <button
+            onClick={mode === "flat" ? enterSphere : enterFlat}
+            disabled={loading3d}
+            aria-label={mode === "flat" ? "View as a sphere" : "View flat"}
+            className="pos-data grid h-10 w-10 place-items-center rounded-[var(--r-pill)] border border-[var(--line)] bg-card/85 text-[0.68rem] text-ink-soft shadow-lift backdrop-blur-xl hover:text-ink disabled:opacity-45"
+          >
+            {loading3d ? "…" : mode === "flat" ? "3D" : "2D"}
+          </button>
+
+          <button
             onClick={recentre}
             aria-label="Fit the whole graph on screen"
             className="grid h-10 w-10 place-items-center rounded-[var(--r-pill)] border border-[var(--line)] bg-card/85 text-ink-soft shadow-lift backdrop-blur-xl hover:text-ink"
@@ -646,10 +914,9 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
             </svg>
           </button>
 
-          {/* The "grow the world" control: one slider moving repulsion, link
-              length and personal space together, then re-settling. This is
-              how the graph accommodates growth — spread the world, not the
-              camera. */}
+          {/* The "grow the world" control: one slider, one meaning — how big
+              is the world. Flat, it re-settles the forces; round, it grows
+              the sphere. */}
           <label className="flex items-center gap-2 rounded-[var(--r-pill)] border border-[var(--line)] bg-card/85 px-3 py-2 shadow-lift backdrop-blur-xl">
             <span className="pos-data text-[0.65rem] text-ink-soft">Spread</span>
             <input
@@ -667,23 +934,22 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
         </div>
       )}
 
+      {/* Compact on purpose — the first version took 42% of the screen and
+          hid the graph it was describing. A quarter, scrollable inside. */}
       {selected && (
         <div className="absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] mx-auto max-w-[26rem]">
-          <div className="max-h-[42vh] overflow-y-auto rounded-card bg-card/95 p-4 shadow-lift backdrop-blur-xl">
+          <div className="max-h-[26vh] overflow-y-auto rounded-card bg-card/95 p-3 shadow-lift backdrop-blur-xl">
 
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="pos-data text-[0.65rem] uppercase tracking-[0.12em] text-ink-soft">
+                <p className="pos-data text-[0.62rem] uppercase tracking-[0.12em] text-ink-soft">
                   {typeName(selected.type)}
                   {detail(selected) && ` · ${detail(selected)}`}
                   {` · ${selected.val || 0} connection${(selected.val || 0) === 1 ? "" : "s"}`}
+                  {money.count > 0 &&
+                    ` · $${money.total.toFixed(2)} in ${money.count} charge${money.count === 1 ? "" : "s"}`}
                 </p>
-                <h2 className="mt-1 text-[0.95rem] leading-snug text-ink">{selected.label}</h2>
-                {money.count > 0 && (
-                  <p className="pos-data mt-1 text-[0.72rem] text-moss">
-                    ${money.total.toFixed(2)} across {money.count} charge{money.count === 1 ? "" : "s"}
-                  </p>
-                )}
+                <h2 className="mt-0.5 truncate text-[0.9rem] leading-snug text-ink">{selected.label}</h2>
               </div>
               <button
                 onClick={() => select(null)}
@@ -695,15 +961,15 @@ export default function GraphCanvas({ nodes, links, focus = null }) {
             </div>
 
             {neighbourRows.length > 0 && (
-              <ul className="mt-3 space-y-0.5 border-t border-[var(--line)] pt-2">
+              <ul className="mt-2 space-y-0 border-t border-[var(--line)] pt-1.5">
                 {neighbourRows.map(({ node, relation, direction }) => (
                   <li key={node.id}>
                     <button
                       onClick={() => walkTo(node)}
-                      className="w-full rounded-item px-2 py-1.5 text-left transition-colors hover:bg-[var(--sunken)]"
+                      className="flex w-full items-baseline justify-between gap-2 rounded-item px-2 py-1 text-left transition-colors hover:bg-[var(--sunken)]"
                     >
-                      <span className="block truncate text-[0.85rem] text-ink">{node.label}</span>
-                      <span className="pos-data text-[0.65rem] text-ink-soft">
+                      <span className="min-w-0 truncate text-[0.82rem] text-ink">{node.label}</span>
+                      <span className="pos-data shrink-0 text-[0.62rem] text-ink-soft">
                         {nodeToRoot({ relation, direction })}
                         {detail(node) && ` · ${detail(node)}`}
                       </span>

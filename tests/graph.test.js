@@ -661,20 +661,22 @@ test("the graph endpoint is read-only", () => {
 // non-negotiable is WHICH library and what the canvas may not do.
 // ---------------------------------------------------------------------------
 
-test("the force view uses the 2D engine, and none of the heavier candidates", () => {
+test("flat is the default engine; the sphere is its one sanctioned sibling", () => {
 
+  // The layout choice is deliberate and pinned: force-graph (2D canvas) is
+  // the default, and 3d-force-graph — same author, same API — is allowed
+  // because the user chose the sphere experiment, loaded only on demand.
+  // The analysis-grade candidates stay out: they solve dataset sizes this
+  // graph is bounded away from ever reaching, at real bundle cost.
   const pkg = JSON.parse(read("web/package.json"));
 
   const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
 
-  assert.ok(deps.includes("force-graph"), "the 2D force engine is the decision of record");
+  assert.ok(deps.includes("force-graph"), "the 2D engine must be the one installed");
+  assert.ok(deps.includes("3d-force-graph"), "the sphere experiment ships behind its toggle");
 
-  // Obsidian's own graph is 2D. Three.js is ~600KB against ~80, phones pay
-  // for WebGL scenes in battery, and 3D labels are unreadable at most camera
-  // angles. Sigma earns its keep at tens of thousands of nodes; cytoscape
-  // settles into diagrams. Adding any of these is a decision, not a bugfix.
-  for (const heavy of ["3d-force-graph", "three", "sigma", "cytoscape", "react-force-graph"]) {
-    assert.ok(!deps.includes(heavy), `${heavy} was added — the 2D choice was deliberate, see GraphCanvas.js`);
+  for (const banned of ["d3", "cytoscape", "sigma", "react-force-graph", "vis-network", "three-spritetext"]) {
+    assert.ok(!deps.includes(banned), `${banned} was added — see the library rationale in GraphCanvas.js`);
   }
 
 });
@@ -772,24 +774,120 @@ test("labels are not allowed to land on each other", () => {
   // (hubs speak first), and every label this frame checks the rectangles
   // already drawn and waits its turn if occupied. Priority is draw order,
   // which is degree order, pinned by the sort.
-  assert.match(canvasSource, /scale \* Math\.sqrt\(node\.val \|\| 1\) > 3\.2/);
+  assert.match(canvasSource, /scale \* Math\.sqrt\(node\.val \|\| 1\) > \(isCharge \? 6 : 3\.2\)/);
   assert.match(canvasSource, /labelRectsRef\.current = \[\]/, "the ledger must reset every frame");
-  assert.match(canvasSource, /measureText\(node\.label\)/, "widths must be measured, not guessed");
+  assert.match(canvasSource, /measureText\(text\)/, "widths must be measured, not guessed");
+
+  // And a charge does not repeat its merchant's name — eight dots all saying
+  // "Fenwick Market" is noise wearing a label. A charge speaks its amount,
+  // and only at a much closer zoom than named things.
+  assert.match(canvasSource, /isCharge \? 6 : 3\.2/);
+  assert.match(canvasSource, /toFixed\(0\)/, "the charge label is its rounded amount");
   assert.match(canvasSource, /\.sort\(\(a, b\) => \(b\.val \|\| 0\) - \(a\.val \|\| 0\)\)/);
 
 });
 
 
-test("the overview names its islands", () => {
+test("the overview names its islands — in the chrome, never on the canvas", () => {
 
-  // Zoomed out, node labels are gone and the view used to be anonymous
-  // constellations. Each connected component draws its strongest member's
-  // name at its centroid, fading out as node labels fade in — and when data
-  // eventually joins two islands, the union-find reports one component with
-  // one title, no code change.
-  assert.match(canvasSource, /onRenderFramePost/);
+  // Titles were first drawn at each component's centroid and failed twice at
+  // once: a title could be a 20-word intention sentence, and several landed
+  // on the graph and each other at overview zoom. Now the header caption
+  // names whichever island dominates the viewport, and the post-frame hook
+  // only MEASURES — it draws nothing.
+  const post = canvasSource.slice(
+    canvasSource.indexOf(".onRenderFramePost"),
+    canvasSource.indexOf(".nodePointerAreaPaint")
+  );
+
+  assert.ok(post.length > 0, "the viewport measurement hook must exist");
+  assert.doesNotMatch(post, /strokeText|fillText/, "the canvas must not draw island titles");
+
+  const measure = canvasSource.slice(
+    canvasSource.indexOf("const computeCaption"),
+    canvasSource.indexOf(".onRenderFramePre")
+  );
+
+  assert.match(measure, /screen2GraphCoords/, "dominance is measured against the real viewport");
+
+  // Rendering pauses when the physics does, so a caption computed only
+  // per-frame would never appear on a page that settled in a background tab.
+  assert.match(canvasSource, /setTimeout\(computeCaption, 500\)/, "the caption must also compute at engine stop");
+
   assert.match(canvasSource, /const find = \(x\)/, "components must come from a union-find, not a guess");
-  assert.match(canvasSource, /\(b\.val \|\| 0\) > \(a\.val \|\| 0\) \? b : a/, "titled by the most connected member");
+  assert.match(canvasSource, /aria-live="polite"/, "the caption is chrome, announced politely");
+
+});
+
+
+test("an island's title is a name, not a paragraph", () => {
+
+  // The strongest member of an island can be an intention — a whole sentence.
+  // A title is a handle: nameable types (project, person, merchant, category,
+  // place) win even over a higher-degree prose node, and whatever wins is
+  // hard-truncated.
+  assert.match(canvasSource, /const NAMEABLE = new Set\(\["project", "person", "merchant", "category", "place"\]\)/);
+  assert.match(canvasSource, /nameable\.length > 0 \? nameable : members/, "prose is the fallback, never the preference");
+  assert.match(canvasSource, /title\.length > 26/, "and even a name gets truncated");
+
+});
+
+
+test("selecting a node never yanks the camera", () => {
+
+  // The first version zoomed to 2.2× on every tap and the shape of the graph
+  // was lost each time. Zoom may only nudge IN, never past 1.5 — and never
+  // OUT — and the node is centred above the card's space, not underneath it.
+  const settle = canvasSource.slice(
+    canvasSource.indexOf("const settleOn"),
+    canvasSource.indexOf("const clickNode")
+  );
+
+  assert.match(settle, /Math\.max\(zoom, 1\.5\)/);
+  assert.match(settle, /if \(zoom < 1\.5\) fg\.zoom\(1\.5, 400\)/);
+  assert.match(settle, /clientHeight \* 0\.14/, "the landing point clears the card");
+  assert.doesNotMatch(canvasSource, /zoom\(2\.2/, "the old jump must not survive anywhere");
+
+});
+
+
+test("the card takes a quarter of the screen, not half", () => {
+
+  assert.match(canvasSource, /max-h-\[26vh\]/);
+  assert.doesNotMatch(canvasSource, /max-h-\[42vh\]/);
+
+});
+
+
+test("the sphere is an opt-in that the flat view never pays for", () => {
+
+  // three.js is ~600KB. It loads on the FIRST toggle only — a static import
+  // would ship it to every visitor of a page whose default never uses it.
+  assert.doesNotMatch(
+    canvasSource,
+    /^import .*3d-force-graph/m,
+    "3d-force-graph must never be imported statically"
+  );
+
+  assert.match(canvasSource, /await import\("3d-force-graph"\)/, "it arrives inside the toggle handler");
+  assert.match(canvasSource, /useState\("flat"\)/, "and flat is the default");
+
+  // A sphere that fails to load costs the tap and nothing else.
+  const handler = canvasSource.slice(
+    canvasSource.indexOf("const enterSphere"),
+    canvasSource.indexOf("const enterFlat")
+  );
+  assert.match(handler, /catch \{/, "the import failure must be caught");
+  assert.match(handler, /setMode\("flat"\)/, "and fall back to the working view");
+
+});
+
+
+test("the sphere cleans up its own timer", () => {
+
+  // The hemisphere caption runs on an interval. An unmount that only killed
+  // the renderer would leave it polling a dead scene forever.
+  assert.match(canvasSource, /clearInterval\(captionTimer\)/);
 
 });
 

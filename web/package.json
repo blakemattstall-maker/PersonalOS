@@ -12,6 +12,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
     "@vercel/functions": "^3.7.7",
+    "3d-force-graph": "^1.80.0",
     "animejs": "^4.5.0",
     "d3-force": "^3.0.0",
     "force-graph": "^1.51.4",
