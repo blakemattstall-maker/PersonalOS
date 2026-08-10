@@ -1,7 +1,8 @@
+import Link from "next/link";
 import { formatDate } from "./shared.js";
 import ProjectDeleteButton from "./ProjectDeleteButton.js";
 import ProjectArchiveButton from "./ProjectArchiveButton.js";
-import { Meta } from "./ui.js";
+import { Meta, btn } from "./ui.js";
 
 
 // Shared between Today (active projects) and Settings → Archived. `archived`
@@ -102,6 +103,16 @@ export default function ProjectCard({ project, archived = false }) {
           ))}
         </div>
       )}
+
+      {/* The way into /graph, rather than a seventh tab. A project is the most
+          connected kind of thing this system holds, so this is where the
+          question "what else does this touch" actually gets asked. */}
+      <div className="mt-4 border-t border-[var(--line)] pt-3">
+        <Link href={`/graph?type=project&id=${project.id}`} className={btn("ghost")}>
+          Connections
+          <span aria-hidden="true">→</span>
+        </Link>
+      </div>
 
     </div>
   );

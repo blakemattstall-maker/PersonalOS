@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { deletePersonAction, logContactAction } from "./actions.js";
 import { formatDate } from "./shared.js";
 
@@ -133,13 +134,28 @@ export default function PersonCard({ person }) {
 
         </div>
 
-        <button
-          onClick={logContact}
-          disabled={isPending}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-45"
-        >
-          {isPending ? "…" : "Log contact"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+
+          {/* Everything this person turns up in — the notes that named them,
+              the tasks owed to them, the evenings they were at. Scattered
+              across five tables and reachable nowhere else in the app. */}
+          <Link
+            href={`/graph?type=person&id=${person.id}`}
+            className="inline-flex items-center gap-1.5 rounded-[var(--r-pill)] px-2.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:text-ink"
+          >
+            Connections
+            <span aria-hidden="true">→</span>
+          </Link>
+
+          <button
+            onClick={logContact}
+            disabled={isPending}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-[var(--r-pill)] border border-[var(--line)] px-3.5 py-1.5 text-[0.78rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-45"
+          >
+            {isPending ? "…" : "Log contact"}
+          </button>
+
+        </div>
 
       </div>
 

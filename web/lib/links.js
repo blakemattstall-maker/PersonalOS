@@ -53,7 +53,14 @@ export const ENTITIES = {
   transaction:  { table: "transactions",    label: "merchant", time: "posted_at", extra: "amount" },
   deep_thought: { table: "deep_thoughts",   label: "topic",    time: "created_at" },
   news_item:    { table: "news_items",      label: "headline", time: "surfaced_at" },
-  nudge:        { table: "nudges",          label: "message",  time: "created_at" }
+  nudge:        { table: "nudges",          label: "message",  time: "created_at" },
+
+  // Keyed by their normalised name rather than a uuid — see
+  // docs/schema-merchants.sql. `extra` is the transaction count, which is what
+  // makes a merchant node worth looking at: "Costco, 21 charges" is a fact,
+  // "Costco" alone is a string that was already on the money page.
+  merchant:     { table: "merchants",        label: "name",    time: "last_seen_at", extra: "txn_count" },
+  category:     { table: "spend_categories", label: "name",    time: "updated_at",   extra: "txn_count" }
 
 };
 
@@ -106,6 +113,71 @@ export async function link({ from, to, relation = "mentions", confidence = 1, so
   }
 
   return data;
+
+}
+
+
+// The same write, in bulk.
+//
+// link() is one round trip per edge, which was fine while the whole graph was
+// 37 edges built from a few dozen name matches. Attaching every transaction to
+// its merchant and its category is 258 edges on a database this size and grows
+// with the bank feed — as individual upserts that is 258 sequential round trips
+// inside a cron that also syncs transactions, rebuilds every text link and runs
+// four detectors.
+//
+// Same natural key, same idempotence, so a batch and a single write are
+// interchangeable and rebuildLinks can keep using whichever fits.
+export async function linkMany(edges, { chunk = 500 } = {}) {
+
+  const rows = (edges || [])
+    .filter(e => e?.from?.type && e?.from?.id && e?.to?.type && e?.to?.id)
+    // Self-edges, same rule as link().
+    .filter(e => !(e.from.type === e.to.type && String(e.from.id) === String(e.to.id)))
+    .map(e => ({
+      from_type: e.from.type,
+      from_id: String(e.from.id),
+      to_type: e.to.type,
+      to_id: String(e.to.id),
+      relation: e.relation || "mentions",
+      confidence: e.confidence ?? 1,
+      source: e.source || "extracted",
+      context: e.context ? String(e.context).slice(0, 280) : null
+    }));
+
+  if (rows.length === 0) return 0;
+
+  // Postgres rejects an ON CONFLICT batch that contains the same key twice
+  // ("cannot affect row a second time"), and a person can genuinely be charged
+  // twice by one merchant in one import. Deduplicating here rather than relying
+  // on the caller keeps that failure out of every future call site.
+  const unique = new Map();
+
+  for (const row of rows) {
+    unique.set(`${row.from_type}|${row.from_id}|${row.to_type}|${row.to_id}|${row.relation}`, row);
+  }
+
+  const deduped = [...unique.values()];
+
+  let written = 0;
+
+  for (let i = 0; i < deduped.length; i += chunk) {
+
+    const { error } = await supabase
+      .from("entity_links")
+      .upsert(deduped.slice(i, i + chunk), { onConflict: "from_type,from_id,to_type,to_id,relation" });
+
+    if (error) {
+      if (missing(error)) return written;
+      console.error("LINK BATCH FAILED:", error.message);
+      continue;
+    }
+
+    written += Math.min(chunk, deduped.length - i);
+
+  }
+
+  return written;
 
 }
 
@@ -298,6 +370,142 @@ export async function walk({ type, id, depth = 1, relation = null, minConfidence
 }
 
 
+// Edges pointing at things that no longer exist.
+//
+// The polymorphic design traded referential integrity for the ability to link
+// anything to anything (see docs/schema-islands.sql), and the accepted cost was
+// that a deleted row leaves its edges behind. Every reader already tolerates
+// that — walk() and graphAnchors() both drop a node whose row will not resolve.
+//
+// Tolerating is not the same as being correct. The live graph had a project
+// whose anchor said 24 connections and whose page could only draw 23, because
+// one deep thought had been deleted and its edge had not. Two different numbers
+// for one thing, on a page whose entire claim is that it only states facts.
+//
+// So rebuildLinks — already the healer for edges that failed to be written —
+// also becomes the healer for edges that should no longer exist. One query per
+// entity type, one delete, nightly.
+export async function pruneDangling() {
+
+  const { data, error } = await supabase
+    .from("entity_links")
+    .select("id, from_type, from_id, to_type, to_id")
+    .limit(5000);
+
+  if (error || !data) return 0;
+
+  const refs = [];
+
+  for (const edge of data) {
+    refs.push({ type: edge.from_type, id: edge.from_id });
+    refs.push({ type: edge.to_type, id: edge.to_id });
+  }
+
+  const alive = await hydrate(refs);
+
+  const dead = data
+    .filter(edge =>
+      // An unknown TYPE is left alone deliberately. hydrate() skips types that
+      // are not in the registry, so they would every one of them look dead —
+      // and deleting the entire history of a type because it has not been
+      // registered YET is a far worse failure than a stale edge.
+      (ENTITIES[edge.from_type] && !alive.has(`${edge.from_type}:${edge.from_id}`)) ||
+      (ENTITIES[edge.to_type] && !alive.has(`${edge.to_type}:${edge.to_id}`))
+    )
+    .map(edge => edge.id);
+
+  if (dead.length === 0) return 0;
+
+  const { error: deleteError } = await supabase.from("entity_links").delete().in("id", dead);
+
+  if (deleteError) {
+    console.error("PRUNE FAILED:", deleteError.message);
+    return 0;
+  }
+
+  return dead.length;
+
+}
+
+
+// The things actually worth looking at, ranked by how connected they are.
+//
+// What a graph page opens on. Rendering "everything" was never an option here
+// and would not have been useful if it were: the real shape is one project
+// holding most of the edges, a handful of mid-sized hubs, and a long tail of
+// leaves with exactly one connection each. A leaf has nothing to show — its
+// neighbourhood is the single thing it is attached to — so the picker lists
+// only nodes with more than one edge, and says so rather than rendering a page
+// of dead ends.
+//
+// Degree is counted in code from one query rather than asked of the database
+// per node. That is the same "compute in code" discipline the rest of the
+// system runs on, and at this size it is also simply faster than the
+// alternative.
+export async function graphAnchors({ limit = 24, minDegree = 2 } = {}) {
+
+  const { data, error } = await supabase
+    .from("entity_links")
+    .select("from_type, from_id, to_type, to_id")
+    // A bound rather than a page, deliberately. This is a ranking, so a partial
+    // read gives a slightly wrong ORDER, not a wrong answer — and the graph
+    // would have to grow by two orders of magnitude before it mattered.
+    .limit(5000);
+
+  if (error || !data) return [];
+
+  // Distinct NEIGHBOURS, not edges.
+  //
+  // Counting edges is the obvious version and it disagrees with the page. Two
+  // things can be joined by more than one relation — a deep thought both
+  // `mentions` a project and `belongs_to` it, which is two true edges about one
+  // connection — and walk() collapses those into a single node because a
+  // neighbourhood is a set of things, not a set of edges. Left as an edge count
+  // the live project advertised 24 connections and then drew 23, which is one
+  // number too many on a page whose whole claim is that it only states facts.
+  const neighbourSets = new Map();
+
+  const join = (key, other) => {
+    if (!neighbourSets.has(key)) neighbourSets.set(key, new Set());
+    neighbourSets.get(key).add(other);
+  };
+
+  for (const edge of data) {
+
+    const from = `${edge.from_type}:${edge.from_id}`;
+    const to = `${edge.to_type}:${edge.to_id}`;
+
+    if (ENTITIES[edge.from_type]) join(from, to);
+    if (ENTITIES[edge.to_type]) join(to, from);
+
+  }
+
+  const ranked = [...neighbourSets.entries()]
+    .map(([key, set]) => [key, set.size])
+    .filter(([, n]) => n >= minDegree)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([key, n]) => {
+      const split = key.indexOf(":");
+      return { type: key.slice(0, split), id: key.slice(split + 1), degree: n };
+    });
+
+  if (ranked.length === 0) return [];
+
+  const rows = await hydrate(ranked);
+
+  // Same dangling-edge posture as walk(): an anchor whose row has been deleted
+  // is dropped rather than offered as a link to nothing.
+  return ranked
+    .map(anchor => {
+      const row = rows.get(`${anchor.type}:${anchor.id}`);
+      return row?.label ? { ...anchor, label: row.label, when: row.when, extra: row.extra } : null;
+    })
+    .filter(Boolean);
+
+}
+
+
 // A neighbourhood as prose, for a prompt.
 //
 // Kept terse on purpose. This is destined for buildRichContext(), which rides
@@ -348,15 +556,12 @@ export async function resolveReference({ text, types = null, limit = 8 } = {}) {
 
   if (!text) return { anchors: [], candidates: [] };
 
-  const entities = await loadEntities();
-
-  const anchors = [];
-
-  for (const [entityType, roster] of Object.entries(entities)) {
-    for (const hit of findMentions(text, roster)) {
-      anchors.push({ type: entityType, id: String(hit.id), name: hit.name, confidence: hit.confidence ?? 1 });
-    }
-  }
+  const anchors = (await mentionsIn(text)).map(hit => ({
+    type: hit.type,
+    id: hit.id,
+    name: hit.name,
+    confidence: hit.confidence ?? 1
+  }));
 
   if (anchors.length === 0) return { anchors: [], candidates: [] };
 
@@ -441,15 +646,7 @@ export async function connectionsForText({ text, maxAnchors = 2, perAnchor = 8 }
 
   if (!text) return null;
 
-  const entities = await loadEntities();
-
-  const anchors = [];
-
-  for (const [entityType, roster] of Object.entries(entities)) {
-    for (const hit of findMentions(text, roster)) {
-      anchors.push({ type: entityType, id: String(hit.id), name: hit.name });
-    }
-  }
+  const anchors = await mentionsIn(text);
 
   // The common case. No database work has happened.
   if (anchors.length === 0) return null;
@@ -483,7 +680,72 @@ function escape(text) {
 }
 
 
-export function findMentions(text, entities) {
+// The identity of a merchant, from whatever the bank called it.
+//
+// Deterministic and pure, deliberately — no model call. A merchant key that
+// depended on a model would drift between runs, and since this key is a PRIMARY
+// KEY, drift means the same shop silently becoming two rows with the charges
+// split between them. The bank's strings turned out to be clean enough that
+// four rules cover every real collision in the data:
+//
+//   Anthropic.com / Anthropic          → a bare TLD is not part of a name
+//   Salt & Straw  / Salt and Straw     → ampersand and "and" are one word
+//   Uber Pending Transaction / Uber    → the bank's own status, not the payee
+//   COSTCO / Costco                    → case is not identity
+//
+// What it deliberately does NOT collapse is "Costco" and "Costco Gas". Those
+// are a supermarket and a filling station that happen to share an owner, they
+// land in different categories, and merging them would make the grocery total
+// wrong. Under-merging leaves two honest rows; over-merging invents a fact.
+export function merchantKey(raw) {
+
+  if (!raw) return null;
+
+  const key = String(raw)
+    .toLowerCase()
+    .replace(/\s+pending transaction\b/g, "")
+    .replace(/\.(com|net|org|io|co|inc)\b/g, "")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return key || null;
+
+}
+
+
+// A merchant seen once is a node; a merchant seen twice is a name.
+//
+// Only repeat merchants are matched against free text. The one-off list in the
+// real data includes "Link.com", and putting the word "link" into the matcher
+// would attach a payment to every note that mentions a link — precisely the
+// confident wrongness this file opens by refusing. Singletons still exist as
+// graph nodes and still carry their own transaction's edge; they just never
+// claim to have been mentioned.
+const MIN_TXNS_FOR_ROSTER = 2;
+
+
+// Which kinds of thing may be recognised from the FIRST WORD of their name.
+//
+// This used to apply to everything, which was survivable while the roster held
+// nine people, one project and two places, and became a live hazard the moment
+// merchants joined it. "Sam" standing in for "Sam Smith" is how people write.
+// "Quality" standing in for "Quality Food Centers" is not — it attaches a
+// supermarket to any sentence containing the word quality, and the same rule
+// hands "Department of Education" the word *department* and "Google Workspace"
+// the word *google*.
+//
+// It was already wrong for places and nobody had noticed: the one real place on
+// file is labelled "Temporary internship home", whose first word is
+// *temporary*. Restricting the fallback to people and projects keeps the
+// behaviour it was written for and removes the three cases it was never meant
+// to cover. A project earns it because "Trifilm" genuinely is what someone
+// calls "Trifilm Exit Conversion".
+const PARTIAL_NAME_TYPES = new Set(["person", "project"]);
+
+
+export function findMentions(text, entities, { partialNames = true } = {}) {
 
   if (!text) return [];
 
@@ -508,6 +770,8 @@ export function findMentions(text, entities) {
         break;
       }
 
+      if (!partialNames) continue;
+
       // First name on its own — how people actually refer to each other.
       const first = trimmed.split(/\s+/)[0];
 
@@ -521,6 +785,29 @@ export function findMentions(text, entities) {
 
     }
 
+  }
+
+  return hits;
+
+}
+
+
+// Every mention of any known entity in one pass, with the per-type rules
+// applied. Four call sites were each looping over loadEntities() and calling
+// findMentions themselves, which is how the first-word rule reached merchants:
+// there was no single place that knew a merchant is not a person.
+export async function mentionsIn(text) {
+
+  if (!text) return [];
+
+  const entities = await loadEntities();
+
+  const hits = [];
+
+  for (const [type, roster] of Object.entries(entities)) {
+    for (const hit of findMentions(text, roster, { partialNames: PARTIAL_NAME_TYPES.has(type) })) {
+      hits.push({ ...hit, type, id: String(hit.id) });
+    }
   }
 
   return hits;
@@ -553,10 +840,19 @@ export async function loadEntities() {
     return cachedEntities;
   }
 
-  const [people, projects, places] = await Promise.all([
+  const [people, projects, places, merchants] = await Promise.all([
     supabase.from("people").select("id, name").then(r => r.data || []),
     supabase.from("projects").select("id, name").then(r => r.data || []),
-    supabase.from("places").select("id, label").then(r => (r.data || []).map(p => ({ id: p.id, name: p.label }))).catch(() => [])
+    supabase.from("places").select("id, label").then(r => (r.data || []).map(p => ({ id: p.id, name: p.label }))).catch(() => []),
+    supabase
+      .from("merchants")
+      .select("id, name, txn_count")
+      .gte("txn_count", MIN_TXNS_FOR_ROSTER)
+      .then(r => r.data || [])
+      // The table arrives in a migration that is pasted by hand, so until it is
+      // run this is simply an empty roster — the same degradation every other
+      // read in this file makes.
+      .catch(() => [])
   ]);
 
   cachedEntities = {
@@ -565,7 +861,8 @@ export async function loadEntities() {
     // A place with no label yet is not a name anyone wrote, so it can never be
     // mentioned. Filtering here also keeps findMentions from matching on the
     // first word of a placeholder.
-    place: (places || []).filter(p => p.name)
+    place: (places || []).filter(p => p.name),
+    merchant: merchants || []
   };
 
   cachedEntitiesAt = Date.now();
@@ -597,25 +894,19 @@ export async function linkText({ type, id, text }) {
 
   try {
 
-    const entities = await loadEntities();
-
     let created = 0;
 
-    for (const [entityType, roster] of Object.entries(entities)) {
+    for (const hit of await mentionsIn(text)) {
 
-      for (const hit of findMentions(text, roster)) {
+      const made = await link({
+        from: { type, id },
+        to: { type: hit.type, id: hit.id },
+        relation: "mentions",
+        confidence: hit.confidence ?? 1,
+        context: text
+      });
 
-        const made = await link({
-          from: { type, id },
-          to: { type: entityType, id: hit.id },
-          relation: "mentions",
-          confidence: hit.confidence ?? 1,
-          context: text
-        });
-
-        if (made) created++;
-
-      }
+      if (made) created++;
 
     }
 

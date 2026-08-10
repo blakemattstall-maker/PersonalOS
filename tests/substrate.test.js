@@ -104,7 +104,7 @@ test("a transfer can never be assigned by the model, only by rule", () => {
   );
 
   assert.equal(
-    categorizeByRule({ payee: "Zelle Transfer To Aunt Anita", description: "", amount: -400 }),
+    categorizeByRule({ payee: "Zelle Transfer To Aunt Rosa", description: "", amount: -400 }),
     "transfers"
   );
 
@@ -117,7 +117,7 @@ test("rules-only and rules-plus-model categorisation agree on every total", () =
   // reporting a different number than the money page. Unclassified merchants
   // land in "other" either way, and "other" is still spending.
   const rows = [
-    { merchant: "Zelle To Anita", category: "transfers", amount: -400 },
+    { merchant: "Zelle To Rosa", category: "transfers", amount: -400 },
     { merchant: "Quality Food Centers", category: "groceries", amount: -95 },
     { merchant: "Some Unknown Shop", category: "other", amount: -60 },
     { merchant: "Payroll", category: "income", amount: 1200 }

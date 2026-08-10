@@ -205,6 +205,46 @@ const MIGRATIONS = [
   },
 
   {
+    file: "docs/schema-merchants.sql",
+    purpose: "merchants and spending categories as entities, so money joins the graph",
+    tables: ["merchants", "spend_categories"],
+    breaksWithout:
+      "The entity roster stays at twelve names, so 119 of 129 transactions have " +
+      "nothing to attach to and one project keeps holding most of the graph. " +
+      "Nothing errors — rebuildLinks skips the promotion and carries on — but the " +
+      "graph page has almost nothing to show and no note can ever link to a shop.",
+
+    // Applied-but-inert again, and here it is the likeliest outcome by far: the
+    // tables are created empty and stay empty until the nightly cron runs. A
+    // graph page reading an empty merchants table looks identical to a person
+    // who has never bought anything.
+    readiness: async () => {
+
+      const [merchants, categories] = await Promise.all([
+        probeTable("merchants"),
+        probeTable("spend_categories")
+      ]);
+
+      if (merchants.error || categories.error) return null;
+
+      if ((merchants.count ?? 0) === 0) {
+        return {
+          ok: false,
+          detail:
+            "Applied, but no merchants have been derived yet — run the connectIslands " +
+            "cron once. Until then money contributes almost nothing to the graph."
+        };
+      }
+
+      return {
+        ok: true,
+        detail: `${merchants.count} merchant(s) and ${categories.count} spending categor(ies) in the roster.`
+      };
+
+    }
+  },
+
+  {
     file: "docs/schema-nudge-scheduling.sql",
     purpose: "generating a nudge and delivering it are two different moments",
     columns: [["nudges", "deliver_at"], ["nudges", "pushed_at"]],

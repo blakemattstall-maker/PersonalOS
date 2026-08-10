@@ -343,6 +343,24 @@ export async function resolveInsightAction(id, acted) {
 }
 
 
+// Walking the graph from the page, without a navigation.
+//
+// Every re-centre could have been a Link and a searchParams read, which is the
+// pattern the rest of this app uses. It is the wrong one here: every page in
+// this app is force-dynamic and a hop costs 700ms–1.5s, and exploring a graph
+// is a dozen hops in a row. As an action the round trip is one bounded walk()
+// and the SVG re-renders in place.
+//
+// No revalidatePath — reading a neighbourhood changes nothing about it.
+export async function walkGraphAction({ type, id, depth = 1 }) {
+
+  return await backendGet(
+    `/api/graph?type=${encodeURIComponent(type)}&id=${encodeURIComponent(id)}&depth=${depth}`
+  );
+
+}
+
+
 // Same tool the Shortcut's query_finances call reaches, so the answer to
 // "what did I spend on takeout" is identical whether it's asked in the app or
 // spoken into a phone. No revalidatePath — this reads, it never changes what's

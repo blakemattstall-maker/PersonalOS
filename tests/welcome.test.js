@@ -72,7 +72,25 @@ test("the passphrase gate still covers every real page", () => {
 
   const pattern = proxyMatcher();
 
-  for (const url of ["/", "/money", "/people", "/settings", "/news", "/practice"]) {
+  // Read off the filesystem rather than listed by hand.
+  //
+  // This test was a hardcoded array of six paths, which meant it could only
+  // ever confirm that the pages someone remembered in 2026 were still gated —
+  // a NEW page was unprotected and green. /graph shipped straight into that
+  // hole: it reads the entity graph, which is every domain in the system at
+  // once, and no test would have said a word.
+  const pages = fs.readdirSync(path.join(ROOT, "web/app"), { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .filter(entry => !entry.name.startsWith("_") && entry.name !== "api")
+    // The two signed-out routes, which are deliberately outside the gate and
+    // are asserted as such by the tests above and below this one.
+    .filter(entry => entry.name !== "login" && entry.name !== "welcome")
+    .filter(entry => fs.existsSync(path.join(ROOT, "web/app", entry.name, "page.js")))
+    .map(entry => `/${entry.name}`);
+
+  assert.ok(pages.length >= 6, "the page scan found almost nothing — the path is probably wrong");
+
+  for (const url of ["/", ...pages]) {
     assert.equal(pattern.test(url), true, `${url} is no longer behind the passphrase`);
   }
 

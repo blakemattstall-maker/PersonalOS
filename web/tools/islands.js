@@ -2,7 +2,7 @@ import supabase, { selectAll } from "../lib/supabase.js";
 import openai from "../lib/openai.js";
 import { MODELS } from "../lib/models.js";
 import { DateTime } from "luxon";
-import { link, findMentions, loadEntities, neighbours, linksReady } from "../lib/links.js";
+import { link, linkMany, mentionsIn, merchantKey, clearEntityCache, pruneDangling, neighbours, linksReady } from "../lib/links.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { loadMoney } from "../lib/money.js";
 
@@ -96,17 +96,163 @@ async function scanTable(table, columns) {
 }
 
 
+// Merchants and categories, promoted from columns to rows.
+//
+// The graph's problem was never the edge-writing — it was that there was almost
+// nothing to write edges TO. Nine people, one project and two places was the
+// entire roster, so one project ended up holding 65% of every connection in the
+// system while 119 of 129 transactions floated unattached.
+//
+// This derives ~44 merchants and 11 categories from money that is already
+// stored, and every edge it writes is a restatement of a column rather than a
+// judgement: this charge was at this merchant, this charge is in this category.
+// Nothing is guessed, which is what lets the result be treated as fact
+// downstream.
+//
+// Rebuilt from transactions every run rather than maintained incrementally. It
+// is one scan of a table the caller is about to scan anyway, and it means a
+// merchant can never drift out of step with the charges that define it — the
+// failure the money summariser already produced once by keeping its own totals.
+async function promoteMoneyEntities() {
+
+  const txns = await scanTable("transactions", "id, merchant, category, amount, posted_at");
+
+  if (txns.length === 0) return { edges: 0, merchants: 0, categories: 0 };
+
+  const merchants = new Map();
+  const categories = new Map();
+
+  for (const t of txns) {
+
+    const key = merchantKey(t.merchant);
+
+    if (key) {
+
+      const seen = merchants.get(key) || {
+        id: key,
+        name: String(t.merchant).trim(),
+        txn_count: 0,
+        total_amount: 0,
+        first_seen_at: t.posted_at,
+        last_seen_at: t.posted_at
+      };
+
+      seen.txn_count += 1;
+      seen.total_amount += Number(t.amount) || 0;
+
+      // The display name is whichever spelling the bank used most recently —
+      // "Salt & Straw" and "Salt and Straw" collapse to one key, and picking
+      // the newer spelling means a merchant that rebrands follows along.
+      if (t.posted_at >= seen.last_seen_at) {
+        seen.last_seen_at = t.posted_at;
+        seen.name = String(t.merchant).trim();
+      }
+
+      if (t.posted_at < seen.first_seen_at) seen.first_seen_at = t.posted_at;
+
+      merchants.set(key, seen);
+
+    }
+
+    const category = String(t.category || "").trim().toLowerCase();
+
+    if (category) {
+
+      const seen = categories.get(category) || {
+        id: category,
+        // Title case for display; the id stays exactly the string the detectors
+        // already emit as a ref, so an insight's stored evidence resolves
+        // against this table without translation.
+        name: category.replace(/\b\w/g, c => c.toUpperCase()),
+        txn_count: 0,
+        total_amount: 0,
+        updated_at: new Date().toISOString()
+      };
+
+      seen.txn_count += 1;
+      seen.total_amount += Number(t.amount) || 0;
+
+      categories.set(category, seen);
+
+    }
+
+  }
+
+  const [mErr, cErr] = await Promise.all([
+    supabase.from("merchants").upsert([...merchants.values()], { onConflict: "id" }).then(r => r.error),
+    supabase.from("spend_categories").upsert([...categories.values()], { onConflict: "id" }).then(r => r.error)
+  ]);
+
+  // The migration is pasted by hand, so until docs/schema-merchants.sql is run
+  // this reports zero and rebuildLinks carries on with the roster it had. Same
+  // posture as every other read in this layer: a missing table looks like a
+  // system that has not noticed anything, not a broken one.
+  if (mErr || cErr) {
+    console.error("PROMOTE MONEY ENTITIES FAILED:", (mErr || cErr).message);
+    return { edges: 0, merchants: 0, categories: 0 };
+  }
+
+  // The roster is cached for a minute and was loaded before these rows existed.
+  // Without this the text scan that runs next would match against the OLD list
+  // and every merchant edge would wait for tomorrow's pass.
+  clearEntityCache();
+
+  const edges = [];
+
+  for (const t of txns) {
+
+    const key = merchantKey(t.merchant);
+
+    if (key) {
+      edges.push({
+        from: { type: "transaction", id: t.id },
+        to: { type: "merchant", id: key },
+        relation: "paid_to",
+        source: "explicit",
+        context: `${t.merchant} ${t.amount}`
+      });
+    }
+
+    const category = String(t.category || "").trim().toLowerCase();
+
+    if (category) {
+      edges.push({
+        from: { type: "transaction", id: t.id },
+        to: { type: "category", id: category },
+        relation: "categorised_as",
+        source: "explicit"
+      });
+    }
+
+  }
+
+  return {
+    edges: await linkMany(edges),
+    merchants: merchants.size,
+    categories: categories.size
+  };
+
+}
+
+
 export async function rebuildLinks() {
 
   if (!(await linksReady())) {
     return { success: false, skipped: "entity_links table not created yet" };
   }
 
-  const entities = await loadEntities();
-
   let created = 0;
 
-  // Text -> person / project / place, by name.
+  // Merchants and categories first, because they become part of the roster the
+  // text scan below matches against. Run in the other order and a note saying
+  // "picked it up at Costco" would not link until the NEXT nightly pass.
+  const promoted = await promoteMoneyEntities();
+
+  created += promoted.edges;
+
+  // Text -> person / project / place / merchant, by name. mentionsIn() owns the
+  // per-type rules — a merchant is not matched on its first word the way a
+  // person is. See PARTIAL_NAME_TYPES in lib/links.js.
   for (const source of TEXT_SOURCES) {
 
     const rows = await scanTable(source.table, `id, ${source.field}`);
@@ -115,21 +261,17 @@ export async function rebuildLinks() {
 
       const text = row[source.field];
 
-      for (const [entityType, roster] of Object.entries(entities)) {
+      for (const hit of await mentionsIn(text)) {
 
-        for (const hit of findMentions(text, roster)) {
+        const made = await link({
+          from: { type: source.type, id: row.id },
+          to: { type: hit.type, id: hit.id },
+          relation: "mentions",
+          confidence: hit.confidence ?? 1,
+          context: text
+        });
 
-          const made = await link({
-            from: { type: source.type, id: row.id },
-            to: { type: entityType, id: hit.id },
-            relation: "mentions",
-            confidence: hit.confidence ?? 1,
-            context: text
-          });
-
-          if (made) created++;
-
-        }
+        if (made) created++;
 
       }
 
@@ -174,13 +316,17 @@ export async function rebuildLinks() {
 
     const haystack = `${t.merchant || ""} ${t.description || ""}`;
 
-    for (const [entityType, roster] of Object.entries(entities)) {
+    for (const hit of await mentionsIn(haystack)) {
 
-      for (const hit of findMentions(haystack, roster)) {
+      // A charge already carries an explicit `paid_to` edge to its own
+      // merchant, written above. Re-linking it as a name it happens to
+      // "mention" would be the same fact twice under two relations, and the
+      // second one would claim to be evidence of something.
+      if (hit.type !== "merchant") {
 
         const made = await link({
           from: { type: "transaction", id: t.id },
-          to: { type: entityType, id: hit.id },
+          to: { type: hit.type, id: hit.id },
           relation: "spent_on",
           confidence: hit.confidence ?? 1,
           context: `${t.merchant} ${t.amount}`
@@ -194,7 +340,18 @@ export async function rebuildLinks() {
 
   }
 
-  return { success: true, created };
+  // Last, and only after every write above. Pruning first would delete edges to
+  // rows this pass is about to recreate, and pruning concurrently would race
+  // them.
+  const pruned = await pruneDangling();
+
+  return {
+    success: true,
+    created,
+    pruned,
+    merchants: promoted.merchants,
+    categories: promoted.categories
+  };
 
 }
 

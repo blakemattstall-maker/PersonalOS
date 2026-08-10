@@ -106,7 +106,7 @@ test("backend.js serialises handler output, so no future handler can leak one", 
 // Every figure on the page agrees about what "spending" means.
 // ---------------------------------------------------------------------------
 
-const TRANSFER = { payee: "Zelle Transfer To Aunt Anita", description: "Zelle Transfer To Aunt Anita", amount: -400 };
+const TRANSFER = { payee: "Zelle Transfer To Aunt Rosa", description: "Zelle Transfer To Aunt Rosa", amount: -400 };
 
 
 test("a transfer is not spending, in the summary or the repeating list", () => {
@@ -116,8 +116,8 @@ test("a transfer is not spending, in the summary or the repeating list", () => {
   // "the spending most worth re-deciding", and the total the page prints for
   // that card could exceed the "Spent" figure directly above it.
   const rows = [
-    { merchant: "Aunt Anita", category: "transfers", amount: -400, date: "2026-07-01" },
-    { merchant: "Aunt Anita", category: "transfers", amount: -400, date: "2026-08-01" },
+    { merchant: "Aunt Rosa", category: "transfers", amount: -400, date: "2026-07-01" },
+    { merchant: "Aunt Rosa", category: "transfers", amount: -400, date: "2026-08-01" },
     { merchant: "Framer.com", category: "subscriptions", amount: -10, date: "2026-07-02" },
     { merchant: "Framer.com", category: "subscriptions", amount: -10, date: "2026-08-02" }
   ];
@@ -297,7 +297,7 @@ const BANK = {
       { id: "2", transacted_at: secondsAgo(3), amount: "-11.99", payee: "Spotify", description: "SPOTIFY USA" },
       { id: "3", transacted_at: secondsAgo(20), amount: "-11.99", payee: "Spotify", description: "SPOTIFY USA" },
       { id: "4", transacted_at: secondsAgo(21), amount: "1657.00", payee: "Payroll", description: "DIRECT DEPOSIT PAYROLL" },
-      { id: "5", transacted_at: secondsAgo(40), amount: "-400.00", payee: "Zelle Transfer To Aunt Anita", description: "ZELLE TRANSFER" },
+      { id: "5", transacted_at: secondsAgo(40), amount: "-400.00", payee: "Zelle Transfer To Aunt Rosa", description: "ZELLE TRANSFER" },
       { id: "6", transacted_at: secondsAgo(70), amount: "-31.40", payee: "Shell", description: "SHELL OIL 5544" }
     ]
   }]

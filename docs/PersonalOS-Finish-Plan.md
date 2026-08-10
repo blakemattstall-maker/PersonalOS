@@ -157,7 +157,7 @@ You said you'd consider a cheap always-on box. Don't buy one for this. Nothing i
 | Feature | Why | Size |
 |---|---|---|
 | **`resolveReference` into capture** | Already built and tested; nothing calls it. "The thing with Priya" becomes answerable | Small |
-| **A `/graph` page** | The best *demo* asset in the whole project — it makes the invisible thing visible. High resume value | Small–medium |
+| ~~A `/graph` page~~ ✅ | Built 2026-08-10. The best demo asset in the project — it makes the invisible thing visible | Done |
 | **Merchant recategorisation** | One tap fixes a wrong category forever. Already scoped in the roadmap | Small |
 | **Push action buttons** | "Done"/"Snooze" straight from the notification | Small |
 | **Per-user cost caps** | Required before anyone else uses it | Small |
@@ -204,13 +204,36 @@ That page is what you send when someone says "tell me about something you built.
 
 ## 6. Demo account, `/graph`, and the cheap company test
 
-### What `/graph` is, and why it is first
+### `/graph` — ✅ BUILT (2026-08-10)
 
-`entity_links` holds 37 real connections and, as of this week, the code can read them (`walk()`, `resolveReference()`). There is nowhere to **see** them. `/graph` is that: pick a project or a person, get everything attached to it, click through to any of them.
+Shipped. Full design rationale lives in the Knowledge Architecture doc §3 ("Seeing the graph"); this section records what changed about the *plan* while building it.
 
-It is first on the list for two reasons. It is the only screen in the app that does not look like something already seen — the brief, money and people pages are all recognisable shapes, and this one is not. And it is the hardest thing in the project to build, so it is the screen that carries the demo.
+**The plan said "pick a project or person, get everything attached." That was right. What the plan missed was that the graph was too thin to be worth a page.** Auditing the live data first turned up the real shape:
 
-Note the existing `web/app/welcome/SceneGraph.js` already animates a *fictional* version of this for the tour. `/graph` is the real one. Reuse the visual language deliberately — the tour promises this screen, and it should be recognisable when it arrives.
+| | |
+|---|---|
+| Edges | 37 |
+| One project's share of them | **65%** |
+| Next-best-connected node | degree 3 |
+| Transactions attached | 10 of 129 |
+| Memories attached | **0 of 21** |
+
+A viewer over that is a dandelion — strictly less impressive than the *fictional* net `/welcome` already animates, which would be an odd thing for the real page to be. So the page and a density pass shipped together:
+
+- **Merchants and categories became entities** (`docs/schema-merchants.sql`). The point is not the charges hanging off a merchant; it is that the entity roster goes from twelve names to ~fifty, so a *note* mentioning a shop now reaches that shop's whole history.
+- **Memories stay out of the graph, deliberately.** They are all statements about the user ("prefers walking over running") and name nothing, so only embedding similarity could attach them — and that is a guess the graph's own rule forbids. Decided, not deferred.
+
+**Three bugs the build surfaced, all of which were live before it:**
+
+1. `findMentions` matched the **first word** of any name. Fine for "Sam" → "Sam Smith"; catastrophic once merchants joined, where it hands "Quality Food Centers" the word *quality*. It was already wrong for places — the one real place on file is "Temporary internship home".
+2. `graphAnchors` counted **edges** where the page draws **nodes**, so a project advertised 24 connections and drew 23.
+3. The relation phrasing was shared between two opposite readings, so the caption claimed a merchant *mentions* a note when the note mentions the merchant — a true edge and a false sentence about it.
+
+**It is not a tab.** Six is already the limit of that bar. It is entered from `ProjectCard`, `PersonCard`, and — the good one — `InsightCard`, which walks to the entity refs the detectors fired on. "Why are you telling me this" now has an answer.
+
+Note `web/app/welcome/SceneGraph.js` still animates the fictional version for the tour. The real page shares its visual language on purpose — SVG, one moss highlight, a live caption pane — so the tour's promise is recognisable when it arrives.
+
+**One manual step remains: paste `docs/schema-merchants.sql` into the Supabase SQL editor, then run the `connectIslands` cron once.** Until then the page works on the 37 existing edges and the schema probe reports the migration pending.
 
 ### Demo account ≠ the tour that already exists
 
@@ -244,7 +267,7 @@ Each line is roughly one Claude Code session. **Steps 1–4 are the whole plan.*
 
 | # | Work | Why here |
 |---|---|---|
-| 1 | **`/graph` page + demo account** | The two things that make it showable. `/graph` is also the best screen in the video. §6 |
+| 1 | ~~**`/graph` page**~~ ✅ done · **demo account** still open | `/graph` shipped 2026-08-10 with the density pass behind it. The demo account is what remains of this step. §6 |
 | 2 | **Phase 3 engine, gated** | "That's up from last week" — what makes it feel like it is watching. Buildable now; the gate is a runtime check, not a delay |
 | 3 | **Reliability pass** | Runs a week untouched, and tells you when it breaks instead of going quiet. Includes `resolveReference` into capture and the Action Button shortcut — both small, both improve the demo |
 | 4 | **Case study + 90-second video** | The actual career asset. The highest-value item on this list and the one most likely to be skipped |
@@ -255,9 +278,8 @@ Each line is roughly one Claude Code session. **Steps 1–4 are the whole plan.*
 
 ### If usage or time is tight, in priority order
 
-1. **The video** — it can be recorded against the app as it exists today, with no further code.
-2. **`/graph`** — the single most differentiating screen.
-3. **The demo account** — turns "take my word" into "click this."
+1. **The video** — recordable against the app as it exists today, with no further code. `/graph` is now in it.
+2. **The demo account** — turns "take my word" into "click this."
 
 Everything else is improvement rather than proof.
 

@@ -83,7 +83,11 @@ from_type / from_id  ──[relation]──▶  to_type / to_id
 
 Defined once, in `ENTITIES` in `lib/links.js`. Each entry names where the row lives, the column a human would recognise it by, and the column that answers "when". **`LINKABLE` is derived from this registry**, not maintained beside it — it was maintained beside it, and had already drifted: `nudge` edges were being written while `nudge` was absent from the list, so those edges could be stored and never read back.
 
-`memory`, `note`, `intention`, `task`, `event`, `project`, `person`, `place`, `transaction`, `deep_thought`, `news_item`, `nudge`
+`memory`, `note`, `intention`, `task`, `event`, `project`, `person`, `place`, `transaction`, `deep_thought`, `news_item`, `nudge`, `merchant`, `category`
+
+**`merchant` and `category` are keyed by their normalised name, not a uuid** (`docs/schema-merchants.sql`). The name *is* the identity, and `tools/islands.js` already emits category refs as `{type:"category", id:"eating out"}` — a uuid key would mean an insight's own stored evidence could not be resolved against the graph it came from.
+
+They exist because the graph's problem was never edge-writing, it was that there was almost nothing to write edges **to**. The roster held twelve names — nine people, one project, two places — so one project ended up holding 65% of every connection in the system while 119 of 129 transactions floated unattached. Promoting merchants takes the roster to roughly fifty, and the payoff is not the charges hanging off a merchant (that is money linking to money) but that a **note** saying "return that thing to Costco" now reaches a merchant which reaches twenty-one charges. Cross-domain reach is the only thing this graph is for.
 
 ### Relations
 
@@ -93,6 +97,8 @@ Defined once, in `ENTITIES` in `lib/links.js`. Each entry names where the row li
 | `belongs_to` | a foreign key that already existed | Read from the column |
 | `spent_on` | this charge names that project or person | Merchant-string match |
 | `located_at` | this event and this visit overlapped in time | Interval arithmetic |
+| `paid_to` | this charge was at this merchant | Read from the column, normalised |
+| `categorised_as` | this charge is in this spending category | Read from the column |
 
 ### Confidence and source
 
@@ -114,6 +120,9 @@ A wrong edge is worse than a missing one, because everything downstream treats e
 - Two-letter names are ignored entirely (the false-positive rate swamps what they find).
 - `\b` word boundaries on both sides, so "Sam" never matches inside "Samuel" (`tests/graph.test.js`).
 - An unlabelled place can never be mentioned, so it is filtered out of the roster.
+- **Only people and projects may be recognised from the first word of their name** (`PARTIAL_NAME_TYPES`). "Sam" standing in for "Sam Smith" is how people write; "Quality" standing in for "Quality Food Centers" attaches a supermarket to any sentence about quality, and the same rule hands "Department of Education" the word *department*. It was already wrong for places — the one real place on file is "Temporary internship home", whose first word is *temporary*.
+- **A merchant seen once is a node; a merchant seen twice is a name.** Only merchants with two or more charges enter the text matcher (`MIN_TXNS_FOR_ROSTER`). The real data contains a single charge at "Link.com", and putting the word *link* into the matcher would attach a payment to every note that mentions a link.
+- **Every call site goes through `mentionsIn()`.** Four places used to loop over the roster and call `findMentions` themselves, which is exactly how the first-word rule reached merchants: there was no single place that knew a merchant is not a person.
 - **Transactions get no `located_at` edge.** SimpleFIN returns a posting *date*, not a time — every stored charge sits at exactly 12:00 UTC. Overlapping that against a visit would look precise and mean nothing, and linking a charge to every place visited that day would be wrong more often than right. If a bank ever supplies real transaction times, `tools/location.js` is where it goes.
 
 ### When edges are written
@@ -131,10 +140,30 @@ A wrong edge is worse than a missing one, because everything downstream treats e
 | `describeNeighbourhood()` | that neighbourhood as a few dozen tokens, for a prompt |
 | `connectionsForText({ text })` | what the graph knows about whatever this text is about — the bridge into `buildRichContext()` |
 | `resolveReference({ text })` | "the thing with Priya" → ranked candidates + an honest ambiguity flag |
+| `graphAnchors()` | what is worth looking at — nodes with more than one edge, ranked by **distinct neighbours** |
+| `pruneDangling()` | edges pointing at rows that no longer exist |
 
 Bounded in three ways, because a graph walk is the easiest place in this codebase to accidentally build something expensive: depth capped at 2, node count capped, and hydration is **one query per type** rather than one per node.
 
 `resolveReference` deliberately returns candidates rather than picking one. An ambiguous reference resolved silently to the wrong thing is exactly the confident wrongness that costs trust permanently — the caller decides whether the leader is clear enough to act on or whether to ask.
+
+**`graphAnchors()` counts distinct neighbours, not edges.** Two things can be joined by more than one relation — a deep thought both `mentions` a project and `belongs_to` it, which is two true edges about one connection — and `walk()` collapses those into a single node because a neighbourhood is a set of things, not a set of edges. Counting edges made the live project advertise 24 connections and then draw 23.
+
+**`pruneDangling()` is the other half of the healer.** The polymorphic design traded referential integrity for the ability to link anything to anything, and the accepted cost is that a deleted row leaves its edges behind. Every reader already tolerates that, but tolerating is not being correct, so `rebuildLinks()` now deletes them — last, after every write, so it cannot delete an edge the same pass is about to recreate. An edge whose *type* is not in `ENTITIES` is left alone deliberately: deleting a type's entire history because it has not been registered yet is far worse than a stale edge, and that is precisely how `nudge` edges behaved once already.
+
+### Seeing the graph — `/graph`
+
+The only screen in the app that shows the knowledge structure directly. Three deliberate choices:
+
+**It draws one neighbourhood, never the whole graph.** The real graph is a star — one project holds most of the edges, a few nodes hold a handful, and everything else is a leaf. Drawn all at once that is a dandelion plus a scatter of orphaned pairs, and strictly *less* legible than the fictional net on `/welcome`. So the page centres on one thing and makes every neighbour a door into its own neighbourhood.
+
+**There is no layout library, and that is not a style preference.** A force simulation solves "thousands of nodes, no natural arrangement". This has at most sixty and a completely natural arrangement: one centre, neighbours grouped by which table they came from. Simulating it would scatter those groups into a lumpy, non-reproducible ring and destroy the one informative thing on screen. It also could not be server-rendered and could not read the CSS variables the design system runs on. `web/app/graph/geometry.js` is pure and deterministic, and it is unit-tested for frame bounds, dot collision, label clipping and group contiguity — a diagram whose only test is "it looked fine at desktop width" is a diagram that collides on a phone.
+
+**Grouping is carried by position, an arc and a count — never colour.** Ember means one thing in this app and a diagram has nothing waiting on anybody; fourteen entity types would need fourteen hues that mean nothing. The governing number is `GAP_RATIO`: the space *between* groups is always twice the space *within* one. A first attempt used a fixed angle, which at 23 nodes made the separator narrower than the thing it separated, and every group boundary was invisible.
+
+**It is not a tab.** The bar already holds six, but the real argument is the one the tab bar itself makes about History and Manage data: they are reached from where you would actually want them. Nobody opens an app wanting *the graph* — they want to know what a project touches, or why the system said something. So it is entered from `ProjectCard`, `PersonCard`, and from `InsightCard`, which walks to the entity refs the detectors fired on. That last one is the point: an insight's evidence was previously write-only, recoverable from the database and reachable from nowhere.
+
+**Reading an edge takes two different sentences.** `web/app/graph/phrasing.js` holds both. The list rows put the neighbour first ("Rewrite the positioning page · belongs to"); the caption puts the root first ("Northline Supply · mentioned by · the note"). Sharing one string shipped a caption claiming the merchant *mentions* the note when it is the note that mentions the merchant — a true edge and a false sentence about it. An unfamiliar relation is rendered as itself rather than given an invented inverse.
 
 ---
 
@@ -249,7 +278,8 @@ Honest gaps, so nobody has to rediscover them.
 - **The feedback loop is one tap wide.** `acted_on` is now written, but only from an explicit button. Nothing infers that a finding mattered from what the user subsequently did, and with a handful of insights on file there is not yet enough signal to rank the detectors by. It is a loop that exists rather than a loop that works.
 - **Only memories are embedded.** Notes, intentions and deep thoughts are retrieved by recency, not relevance. The graph partly compensates — a note naming a project is now reachable through that project — but a note that is *about* something without naming it is still invisible to retrieval.
 - **`resolveReference()` is not wired to capture.** It resolves "the thing with Priya" and reports honestly whether the answer is ambiguous; nothing calls it from the capture path yet, so `tools/pending.js` still only handles the one-shot case where the router asks and the next utterance answers.
-- **The graph has no surface of its own.** No `/graph` page, no `query_connections` tool. Connections reach the user only through what a reasoning call happens to say about them.
+- **The graph has a surface now, but no tool.** `/graph` exists (§3), so connections are visible and walkable. There is still no `query_connections` tool, so nothing can be *asked* about connections from the Shortcut or in conversation — only `connectionsForText()` riding along inside other reasoning calls.
+- **Memories are still not in the graph, and cannot be by name-matching.** All 21 of them are statements *about the user* — "prefers walking over running", "does best work late at night" — naming no person, project or place. The only route in is embedding similarity, which is a guess, and the graph's governing rule forbids it. Decided deliberately, August 2026: memories stay out; they keep reaching reasoning through pgvector retrieval, where a probabilistic match is honestly labelled as one.
 - **Place linking is thin.** A visit joins a calendar *event*, and nothing else. Transactions cannot join at all (see §3), and Supabase's `calendar_events` is a partial mirror since the query tools read Google live — so the join reaches less than it looks like it should.
 
 ---
@@ -258,7 +288,9 @@ Honest gaps, so nobody has to rediscover them.
 
 | File | Owns |
 |---|---|
-| `lib/links.js` | the graph: entity registry, edge writing, traversal, reference resolution |
+| `lib/links.js` | the graph: entity registry, edge writing (single + batch), traversal, anchors, pruning, reference resolution |
+| `app/graph/geometry.js` | where the dots go — pure, deterministic, unit-tested |
+| `app/graph/phrasing.js` | turning an edge into a sentence, in both directions |
 | `lib/context.js` | what every reasoning call sees |
 | `lib/signals.js` | the seven computed cross-domain lines |
 | `lib/money.js` | the only source of a money figure |

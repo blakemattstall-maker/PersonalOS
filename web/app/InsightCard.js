@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { resolveInsightAction } from "./actions.js";
 import ReadAloud from "./ReadAloud.js";
@@ -26,6 +27,11 @@ export default function InsightCard({ item }) {
 
   const [isPending, startTransition] = useTransition();
   const [failed, setFailed] = useState(null);
+
+  // The strongest finding's first ref. `entities` is stored as
+  // { findings: [...], refs: [...] } and refs are ordered by the finding that
+  // produced them, so the head is the thing this insight is most about.
+  const evidence = (item.entities?.refs || []).find(ref => ref?.type && ref?.id) || null;
 
   // Trap #15: a server action whose result is thrown away cannot fail. The
   // card would clear itself on screen, the row would be untouched, and the
@@ -62,6 +68,26 @@ export default function InsightCard({ item }) {
 
       {failed && (
         <p className="mt-3 text-[0.82rem] text-ember-ink">{failed}</p>
+      )}
+
+      {/* "Why are you telling me this."
+
+          An insight already stores the entity refs the detectors fired on, and
+          until now that evidence was write-only — recoverable from the database
+          and reachable from nowhere. This walks straight to it. Category refs
+          resolve too, now that a spending category is a real node.
+
+          Guarded rather than assumed: insights written before refs were stored
+          have none, and a link to `undefined` is a page that says nothing is
+          connected to nothing. */}
+      {evidence && (
+        <Link
+          href={`/graph?type=${encodeURIComponent(evidence.type)}&id=${encodeURIComponent(evidence.id)}`}
+          className="pos-data mt-3 inline-flex items-center gap-1 text-[0.72rem] text-ink-soft underline decoration-[var(--line)] underline-offset-[3px] hover:text-ink"
+        >
+          See what this is built on
+          <span aria-hidden="true">→</span>
+        </Link>
       )}
 
       <div className="mt-4 flex flex-wrap gap-2">

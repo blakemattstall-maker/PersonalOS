@@ -24,6 +24,7 @@ import { loadMoney } from "../../../lib/money.js";
 import { summarise, findRecurring, FINANCE_RANGES } from "../../../lib/categorize.js";
 import { queryFinances } from "../../../tools/finances.js";
 import { pendingInsights, resolveInsight } from "../../../tools/islands.js";
+import { walk, graphAnchors, ENTITIES } from "../../../lib/links.js";
 
 
 // Every read/write endpoint the dashboard uses, behind ONE serverless function.
@@ -671,7 +672,45 @@ async function finance(req, res) {
 }
 
 
-const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice, people, news, finance };
+// Reading the graph.
+//
+// Two shapes, one endpoint. With no type/id it answers "what is worth looking
+// at" — the anchors, ranked by degree. With a type and id it answers "what is
+// this connected to", which is walk() with its existing bounds intact.
+//
+// Read-only by construction: there is no POST here and no branch that writes.
+// Everything on this page comes from edges some other part of the system
+// already decided to create, and a page that could create edges by being
+// looked at would make the graph a record of browsing rather than of life.
+async function graph(req, res) {
+
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+
+  const { type, id } = req.query;
+
+  if (!type || !id) {
+    return res.status(200).json({ success: true, anchors: await graphAnchors({ limit: 24 }) });
+  }
+
+  if (!ENTITIES[type]) {
+    return res.status(400).json({ error: `Unknown entity type: ${type}` });
+  }
+
+  // Depth 2 is available but never the default. One hop is "what touches this";
+  // two hops on the project that holds most of the graph is most of the graph,
+  // which is the hairball this page exists to avoid.
+  const depth = req.query.depth === "2" ? 2 : 1;
+
+  const result = await walk({ type, id, depth, limit: 60 });
+
+  if (!result.root) return res.status(404).json({ error: "That entity no longer exists" });
+
+  return res.status(200).json({ success: true, depth, ...result });
+
+}
+
+
+const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice, people, news, finance, graph };
 
 
 export default async function handler(req, res) {
