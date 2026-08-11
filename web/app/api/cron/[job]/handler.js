@@ -11,7 +11,7 @@ import { rollupDailyMetrics } from "../../../../tools/metrics.js";
 import { runDailyObservation } from "../../../../tools/observer.js";
 import { syncNewsDigest } from "../../../../tools/news.js";
 import { ensureTopicsFramed } from "../../../../tools/debateTopics.js";
-import { checkRelationshipCheckins, materialiseUpcomingDateReminders } from "../../../../tools/people.js";
+import { checkRelationshipCheckins, syncAllImportantDateEvents } from "../../../../tools/people.js";
 import { getUserTimezone } from "../../../../lib/profile.js";
 import { sendPush } from "../../../../lib/push.js";
 import { pushAllowed } from "../../../../lib/settings.js";
@@ -202,12 +202,13 @@ async function reviewIntentions() {
       console.error("RELATIONSHIP CHECK-IN REVIEW FAILED:", error.message);
       return { success: false, error: error.message };
     }),
-    // This IS the recurrence engine for birthdays and anniversaries — Google's
-    // Tasks API has no recurrence field, so each year's reminder is created
-    // here as the date comes back into range. Idempotent via a unique
-    // recurrence_key, so running it daily is the intended usage.
-    materialiseUpcomingDateReminders().catch(error => {
-      console.error("DATE REMINDER MATERIALISATION FAILED:", error.message);
+    // The healer for birthday/anniversary calendar events: fills in any that
+    // are missing (a Google hiccup during a save, or a person saved before the
+    // feature existed). update:false, so it never resurrects an event the owner
+    // deleted. The events recur natively via RRULE:FREQ=YEARLY — there is
+    // nothing to renew each year, unlike the old task approach.
+    syncAllImportantDateEvents({ update: false }).catch(error => {
+      console.error("IMPORTANT DATE EVENT SYNC FAILED:", error.message);
       return { success: false, error: error.message };
     })
   ]);

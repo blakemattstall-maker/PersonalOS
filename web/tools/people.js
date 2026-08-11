@@ -2,8 +2,8 @@ import { DateTime } from "luxon";
 import openai from "../lib/openai.js";
 import supabase from "../lib/supabase.js";
 import { getUserTimezone, getProfileBio } from "../lib/profile.js";
-import { createTask, deleteGoogleTask } from "./googleTasks.js";
-import { deleteGoogleEvent } from "./googleCalendar.js";
+import { deleteGoogleTask } from "./googleTasks.js";
+import { upsertYearlyAllDayEvent, deleteGoogleEvent } from "./googleCalendar.js";
 import { sendPush } from "../lib/push.js";
 import { pushAllowed } from "../lib/settings.js";
 import { mapWithConcurrency } from "../lib/async.js";
@@ -124,81 +124,55 @@ async function computeNextCheckIn(check_in_days, tz, { excludePersonId = null, s
 }
 
 
-// Next real calendar date this month/day falls on — today if it's today,
-// otherwise the next time it comes around, never a date already past.
-// Known gap, deliberately unhandled: Feb 29 in a non-leap-year target year
-// returns null (DateTime.fromObject correctly rejects it), so that person's
-// reminder silently doesn't get scheduled that year. Falling back to Feb 28
-// vs Mar 1 is a genuine judgment call either way — not obviously worth
-// guessing at for how rarely it applies.
-function nextOccurrence(month, day, tz) {
+// A deterministic Google Calendar event id per person. Calendar ids are
+// base32hex (0-9, a-v), and a UUID with its dashes stripped is 32 valid hex
+// characters — so the same person always maps to the same event. That is what
+// makes the sync idempotent without having to store an id anywhere.
+function importantDateEventId(personId) {
+  return "almdate" + String(personId).replace(/-/g, "");
+}
 
-  const now = DateTime.now().setZone(tz).startOf("day");
 
-  let candidate = DateTime.fromObject({ year: now.year, month, day }, { zone: tz });
+function importantDateEventTitle(name, label) {
+  return label ? `${name}'s ${label}` : `${name}'s important date`;
+}
 
-  if (!candidate.isValid) return null;
 
-  if (candidate < now) {
-    candidate = DateTime.fromObject({ year: now.year + 1, month, day }, { zone: tz });
+// One all-day, yearly-recurring calendar event for a person's important date.
+// `update:true` on an explicit save (patch it if the date moved); the nightly
+// healer passes `update:false` so it only fills a missing event and never
+// resurrects one the owner deleted on purpose.
+export async function syncImportantDateEvent(person, { tz = null, update = false } = {}) {
+
+  if (!person?.important_date_month || !person?.important_date_day) {
+    return { success: true, skipped: "no date" };
   }
 
-  return candidate;
+  const zone = tz || await getUserTimezone();
 
-}
-
-
-// How many days before the date the reminder task is due. Enough warning to
-// actually do something about it — buy a present, plan a call — rather than
-// finding out on the morning.
-export const DATE_REMINDER_LEAD_DAYS = 7;
-
-
-export function dateReminderTitle(name, label) {
-  return label ? `${name} — ${label}` : `${name}'s important date`;
-}
-
-
-// A birthday is a TASK, not a calendar event.
-//
-// It was an event, and that was wrong twice over. A calendar is for things that
-// occupy time, and a birthday reminder occupies none — it just cluttered the
-// week. Worse, it was written as a single one-off occurrence, so the reminder
-// existed for exactly one year and then silently never appeared again.
-//
-// Google's Tasks API has NO recurrence field — recurring tasks exist in the
-// Google UI but are not exposed through v1 at all — so recurrence is ours to
-// run. materialiseUpcomingDateReminders() below is called daily and creates
-// each year's task as the date comes back around, made idempotent by a unique
-// recurrence_key rather than by checking first.
-async function scheduleImportantDateTask({ person_id, name, month, day, label, tz }) {
-
-  const date = nextOccurrence(month, day, tz);
-
-  if (!date) return null;
-
-  const due = date.minus({ days: DATE_REMINDER_LEAD_DAYS });
-
-  return createTask({
-    title: dateReminderTitle(name, label),
-    year: due.year,
-    month: due.month,
-    day: due.day,
-    hour: 9,
-    minute: 0,
-    timezone: tz,
-    person_id,
-    recurrence_key: `person:${person_id}:${label || "date"}:${date.year}`,
-    notes: `${name}'s ${label || "important date"} is ${date.toFormat("MMMM d")}.`
+  return upsertYearlyAllDayEvent({
+    eventId: importantDateEventId(person.id),
+    title: importantDateEventTitle(person.name, person.important_date_label),
+    month: person.important_date_month,
+    day: person.important_date_day,
+    tz: zone,
+    notes: `${person.name}'s ${person.important_date_label || "important date"}.`,
+    update
   });
 
 }
 
 
-// Called daily. Anyone whose important date is now inside the lead window gets
-// this year's reminder created; the unique index makes a repeat run a no-op.
-// This IS the recurrence engine — there is nothing to renew or expire.
-export async function materialiseUpcomingDateReminders() {
+// The nightly healer, and the one-time backfill. Ensures every important date
+// on file has its all-day yearly event.
+//
+// `update:false` — it only fills in an event that is MISSING, and never touches
+// or resurrects one that already exists, so a birthday the owner deleted stays
+// deleted. New and edited people get their event immediately from savePerson;
+// this is the safety net for a Google hiccup during a save, and the backfill
+// for anyone saved before calendar events existed. There is nothing to renew:
+// RRULE:FREQ=YEARLY carries each date to every future year on its own.
+export async function syncAllImportantDateEvents({ update = false } = {}) {
 
   const tz = await getUserTimezone();
 
@@ -213,45 +187,27 @@ export async function materialiseUpcomingDateReminders() {
     throw new Error(error.message);
   }
 
-  const now = DateTime.now().setZone(tz).startOf("day");
-
   let created = 0;
-  let alreadyThere = 0;
-
+  let existed = 0;
   const errors = [];
 
   for (const person of people || []) {
 
-    const date = nextOccurrence(person.important_date_month, person.important_date_day, tz);
-
-    if (!date) continue;
-
-    const due = date.minus({ days: DATE_REMINDER_LEAD_DAYS });
-
-    // Not yet inside the window — nothing to do until closer to the day.
-    if (due > now) continue;
-
     try {
 
-      const result = await scheduleImportantDateTask({
-        person_id: person.id,
-        name: person.name,
-        month: person.important_date_month,
-        day: person.important_date_day,
-        label: person.important_date_label,
-        tz
-      });
+      const result = await syncImportantDateEvent(person, { tz, update });
 
-      if (result?.duplicate) alreadyThere += 1;
-      else if (result?.success) created += 1;
+      if (result.created) created += 1;
+      else if (result.existed || result.updated) existed += 1;
 
     } catch (error) {
+      console.error(`IMPORTANT DATE EVENT for ${person.name} FAILED:`, error.message);
       errors.push({ person: person.name, error: error.message });
     }
 
   }
 
-  return { success: true, created, alreadyThere, errors };
+  return { success: true, created, existed, errors };
 
 }
 
@@ -374,51 +330,41 @@ export async function savePerson({
   }
 
 
-  let taskResult = null;
+  let dateEventResult = null;
 
   const month = important_date_month ?? existing?.important_date_month;
   const day = important_date_day ?? existing?.important_date_day;
 
-  // Only schedule when this call actually supplied the date — re-saving
-  // someone for an unrelated reason (a new note, a check-in cadence change)
-  // shouldn't silently create a fresh reminder every time.
-  //
-  // And only when the date is already inside the lead window; otherwise the
-  // daily job picks it up nearer the time. Creating a task due in eleven
-  // months would just sit at the bottom of the list being ignored.
+  // Whenever this save carries an important date, make (or update) the person's
+  // all-day yearly calendar event for it — straight away, not near the day: a
+  // recurring calendar event is a marker that should already be on the
+  // calendar. update:true so moving the date patches the same event rather than
+  // leaving a stale one behind. A Google failure must never fail the save.
   if (important_date_month && important_date_day) {
 
     try {
 
-      const date = nextOccurrence(month, day, tz);
-      const due = date?.minus({ days: DATE_REMINDER_LEAD_DAYS });
-
-      if (due && due <= DateTime.now().setZone(tz).startOf("day")) {
-
-        taskResult = await scheduleImportantDateTask({
-          person_id: person.id,
+      dateEventResult = await syncImportantDateEvent(
+        {
+          id: person.id,
           name,
-          month,
-          day,
-          label: important_date_label ?? existing?.important_date_label,
-          tz
-        });
-
-      }
+          important_date_month: month,
+          important_date_day: day,
+          important_date_label: important_date_label ?? existing?.important_date_label
+        },
+        { tz, update: true }
+      );
 
     } catch (error) {
-      console.error("PERSON DATE REMINDER FAILED:", error.message);
+      console.error("PERSON DATE EVENT FAILED:", error.message);
     }
 
   }
 
 
   const remarks = [
-    taskResult?.success && !taskResult?.duplicate
-      ? `Added a reminder task for ${important_date_label || "their date"}.`
-      : null,
-    month && day && !taskResult
-      ? `${important_date_label || "Their date"} is saved — the reminder task appears ${DATE_REMINDER_LEAD_DAYS} days before, every year.`
+    dateEventResult?.created || dateEventResult?.updated
+      ? `${important_date_label || "Their date"} is on your calendar as an all-day event, repeating every year.`
       : null,
     staggerOffset > 0
       ? `Check-in moved ${staggerOffset} day${staggerOffset === 1 ? "" : "s"} later so it doesn't land on the same day as someone else.`
@@ -474,11 +420,10 @@ export async function recordContact({ name }) {
 
 
 // Removing someone has to remove what the app built on their behalf, or the
-// deletion is a lie. A person's birthday becomes a real recurring Google Task
-// (materialiseUpcomingDateReminders creates one per year as the date comes into
-// range), their check-ins become prompts, and both outlive the row that
-// explains them. Deleting only the row left the phone reminding him about the
-// birthday of someone he had explicitly removed, every year, forever, with
+// deletion is a lie. A person's birthday becomes a real recurring Google
+// Calendar event and their check-ins become prompts, and both outlive the row
+// that explains them. Deleting only the row left the phone reminding him about
+// the birthday of someone he had explicitly removed, every year, forever, with
 // nothing left in the system saying who it was for.
 //
 // Google is cleaned up first and the row goes last: a failure partway through
@@ -516,6 +461,17 @@ export async function deletePerson(id) {
       errors.push(`event ${event.id}: ${error.message}`);
     }
   });
+
+
+  // The important-date event is keyed by a deterministic id and has no
+  // calendar_events row, so the query above never sees it — delete it directly,
+  // or the birthday outlives the person it belonged to. Already-gone is fine
+  // (deleteGoogleEvent swallows 404/410).
+  try {
+    await deleteGoogleEvent(importantDateEventId(id));
+  } catch (error) {
+    errors.push(`important-date event: ${error.message}`);
+  }
 
 
   // Anything still awaiting an answer about this person can no longer be

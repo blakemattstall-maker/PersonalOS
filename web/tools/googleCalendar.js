@@ -176,6 +176,80 @@ export async function createEvent({
 
 }
 
+
+// An all-day, yearly-recurring event on a fixed month/day — for birthdays and
+// anniversaries.
+//
+// A birthday was a TASK because Google Tasks cannot recur (v1 has no recurrence
+// field), so recurrence had to be re-materialised by a daily job. A calendar
+// event has no such limit: one event with RRULE:FREQ=YEARLY appears every year
+// forever with nothing to renew, which is both simpler and what an important
+// date actually is — a marker on the calendar, not a to-do.
+//
+// Idempotent through a caller-supplied deterministic id. A second insert of the
+// same id comes back 409, and what happens then is the caller's choice:
+//   update:false — leave it (the daily healer, which must NEVER resurrect an
+//                  event the owner deleted on purpose).
+//   update:true  — patch it to the current date/title (an explicit re-save).
+export async function upsertYearlyAllDayEvent({ eventId, title, month, day, tz = null, notes = null, update = false }) {
+
+  const zone = tz || await getUserTimezone();
+
+  const now = DateTime.now().setZone(zone);
+
+  // Anchor on this year's occurrence; the recurrence covers every year after.
+  // Feb 29 in a non-leap year is invalid and simply skipped — the same
+  // deliberate gap the task path had.
+  const start = DateTime.fromObject({ year: now.year, month, day }, { zone });
+
+  if (!start.isValid) return { success: false, skipped: `invalid date ${month}/${day}` };
+
+  const body = {
+    summary: title,
+    ...(notes ? { description: notes } : {}),
+    // All-day events carry a `date`, never a `dateTime`, and the end date is
+    // EXCLUSIVE — the day after.
+    start: { date: start.toFormat("yyyy-MM-dd") },
+    end: { date: start.plus({ days: 1 }).toFormat("yyyy-MM-dd") },
+    recurrence: ["RRULE:FREQ=YEARLY"],
+    // A birthday shouldn't paint you busy all day.
+    transparency: "transparent",
+    // A heads-up the afternoon before, rather than silence or a wall of default
+    // reminders.
+    reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 600 }] }
+  };
+
+  const { auth, google } = await getGoogleClient();
+
+  const calendar = google.calendar({ version: "v3", auth });
+
+  try {
+
+    const res = await calendar.events.insert({
+      calendarId: "primary",
+      requestBody: { id: eventId, ...body }
+    });
+
+    return { success: true, created: true, id: res.data.id };
+
+  } catch (error) {
+
+    const code = error.code || error?.response?.status;
+
+    if (code !== 409) throw error;
+
+    // Already there. The healer leaves it alone; an explicit save patches it.
+    if (!update) return { success: true, existed: true, id: eventId };
+
+    await calendar.events.patch({ calendarId: "primary", eventId, requestBody: body });
+
+    return { success: true, updated: true, id: eventId };
+
+  }
+
+}
+
+
 export async function getEvents({
   startDate,
   endDate,
