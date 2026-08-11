@@ -326,10 +326,29 @@ export default function SceneGraph() {
         </div>
 
         {/* The caption is the accessible version of the highlight. The graph
-            above says it in position and colour, this says it in words. */}
-        <div className="mt-4 min-h-[7rem] rounded-item bg-[var(--sunken)] px-4 py-3" aria-live="polite">
-          {chosen ? (
-            <>
+            above says it in position and colour, this says it in words.
+
+            The resting paragraph is taller than any node's link list, and it is
+            ALWAYS rendered — turned invisible rather than removed when a node is
+            chosen — so it goes on holding the box open. Without the ghost,
+            picking a node with two links shrank the box by a few lines and the
+            whole page shivered under the tap. Grid-stacked, same trick as the
+            capture scene's tabs. */}
+        <div className="mt-4 grid min-h-[7rem] rounded-item bg-[var(--sunken)] px-4 py-3" aria-live="polite">
+
+          <p
+            aria-hidden={chosen ? true : undefined}
+            className={`col-start-1 row-start-1 text-[0.85rem] leading-relaxed text-ink-soft ${chosen ? "invisible" : ""}`}
+          >
+            Fifteen records from nine different tables, sitting at different
+            depths because a real one has no single layer. Tap any of them: a
+            charge reaches the project it paid for, a task reaches the person
+            it is owed to, a memory about someone reaches the evening it
+            explains. Nothing here was tagged by hand.
+          </p>
+
+          {chosen && (
+            <div className="col-start-1 row-start-1">
               <p className="pos-data text-[0.68rem] uppercase tracking-[0.12em] text-ink-soft">
                 {TYPE_LABEL[chosen.type]} · {edgesFor(chosen.id).length} links
               </p>
@@ -345,16 +364,9 @@ export default function SceneGraph() {
                   );
                 })}
               </ul>
-            </>
-          ) : (
-            <p className="text-[0.85rem] leading-relaxed text-ink-soft">
-              Fifteen records from nine different tables, sitting at different
-              depths because a real one has no single layer. Tap any of them: a
-              charge reaches the project it paid for, a task reaches the person
-              it is owed to, a memory about someone reaches the evening it
-              explains. Nothing here was tagged by hand.
-            </p>
+            </div>
           )}
+
         </div>
 
       </Stage>

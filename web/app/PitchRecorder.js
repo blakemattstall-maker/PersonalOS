@@ -247,9 +247,11 @@ export default function PitchRecorder() {
 
         <div className="space-y-3">
 
+          {/* max-lg: the desktop frame keeps the app phone-narrow at lg+,
+              so the row upgrade must not fire there — see MoneyCharts.js. */}
           {!brief && (
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-2 sm:max-lg:flex-row sm:max-lg:items-center">
 
               <input
                 type="text"
@@ -364,8 +366,8 @@ export default function PitchRecorder() {
           // browser — wide enough on iOS Safari alone to collide with
           // buttons in the same row on a phone screen. Stacked on mobile,
           // side by side once there's room for it.
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <audio controls src={audioUrl} className="h-9 w-full sm:w-auto" />
+          <div className="flex flex-col gap-3 sm:max-lg:flex-row sm:max-lg:items-center">
+            <audio controls src={audioUrl} className="h-9 w-full sm:max-lg:w-auto" />
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={submit}

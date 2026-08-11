@@ -173,8 +173,14 @@ export function SpendDonut({ categories, total }) {
 
   }
 
+  // sm:max-lg, not sm: — at lg and up the desktop frame (AppFrame) narrows
+  // the whole app to a phone-width column, so a viewport breakpoint that says
+  // "wide" is lying about the space actually available. Side-by-side needs
+  // ~430px; the framed column has ~376. Without the max-lg cap the legend's
+  // dollar amounts hung outside the phone screen onto the desk. Same rule
+  // applies to every layout upgrade inside the app shell.
   return (
-    <div ref={ref} className="flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:gap-7">
+    <div ref={ref} className="flex flex-col items-center gap-5 sm:max-lg:flex-row sm:max-lg:gap-7">
 
       <svg
         viewBox={`0 0 ${size} ${size}`}

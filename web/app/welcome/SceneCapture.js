@@ -68,18 +68,22 @@ export default function SceneCapture() {
 
   const outRef = useRef(null);
 
-  const capture = CAPTURES[index];
-
   // Re-runs on every selection, which is the whole interaction: the previous
   // result clears and the new one is built in front of you, in the order the
   // pipeline actually produces it. Text, then dates, then the filed records.
+  //
+  // Scoped to the ACTIVE panel — all three panels are always in the DOM (see
+  // the stacking note in the render), and animating the hidden ones would be
+  // wasted frames on content nobody can see.
   useEffect(() => {
 
     const root = outRef.current;
 
     if (!root) return;
 
-    const parts = root.querySelectorAll("[data-part]");
+    const panel = root.children[index];
+
+    const parts = panel ? panel.querySelectorAll("[data-part]") : [];
 
     if (reducedMotion() || parts.length === 0) {
       utils.set(parts, { opacity: 1, translateY: 0 });
@@ -125,62 +129,78 @@ export default function SceneCapture() {
 
       <Stage>
 
-        <div ref={outRef}>
+        {/* All three panels are rendered and stacked in the same grid cell,
+            with the inactive two invisible rather than absent. visibility
+            keeps their space, so the card is permanently the height of the
+            tallest panel — switching tabs swaps content in place instead of
+            resizing the card and shoving everything below it up and down the
+            page, which read as the whole site lurching. */}
+        <div ref={outRef} className="grid">
 
-          <div data-part>
-            <p className="pos-data text-[0.68rem] uppercase tracking-[0.12em] text-ink-soft">
-              What was said, {capture.spoken}
-            </p>
-            <p className="mt-2 text-[1.05rem] leading-relaxed text-ink">
-              &ldquo;{capture.said}&rdquo;
-            </p>
-          </div>
+          {CAPTURES.map((capture, panelIndex) => (
+            <div
+              key={capture.tab}
+              aria-hidden={panelIndex !== index ? true : undefined}
+              className={`col-start-1 row-start-1 ${panelIndex === index ? "" : "invisible"}`}
+            >
 
-          {capture.resolved.length > 0 && (
-            <div data-part className="mt-5">
-              <p className="pos-data text-[0.68rem] uppercase tracking-[0.12em] text-ink-soft">
-                Dates fixed at the moment of capture
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {capture.resolved.map(r => (
-                  <span
-                    key={r.from}
-                    className="inline-flex items-center gap-2 rounded-[var(--r-pill)] border border-[var(--line)] px-3 py-1.5 text-[0.78rem]"
+              <div data-part>
+                <p className="pos-data text-[0.68rem] uppercase tracking-[0.12em] text-ink-soft">
+                  What was said, {capture.spoken}
+                </p>
+                <p className="mt-2 text-[1.05rem] leading-relaxed text-ink">
+                  &ldquo;{capture.said}&rdquo;
+                </p>
+              </div>
+
+              {capture.resolved.length > 0 && (
+                <div data-part className="mt-5">
+                  <p className="pos-data text-[0.68rem] uppercase tracking-[0.12em] text-ink-soft">
+                    Dates fixed at the moment of capture
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {capture.resolved.map(r => (
+                      <span
+                        key={r.from}
+                        className="inline-flex items-center gap-2 rounded-[var(--r-pill)] border border-[var(--line)] px-3 py-1.5 text-[0.78rem]"
+                      >
+                        <span className="text-ink-soft line-through">{r.from}</span>
+                        <span aria-hidden="true" className="text-ink-soft">→</span>
+                        <span className="pos-data text-moss">{r.to}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div data-part className="mt-5">
+                <p className="pos-data text-[0.68rem] uppercase tracking-[0.12em] text-ink-soft">
+                  Filed
+                </p>
+              </div>
+
+              <div className="mt-2 space-y-2">
+                {capture.items.map((item, i) => (
+                  <div
+                    key={i}
+                    data-part
+                    className="flex items-start gap-3 rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-3"
                   >
-                    <span className="text-ink-soft line-through">{r.from}</span>
-                    <span aria-hidden="true" className="text-ink-soft">→</span>
-                    <span className="pos-data text-moss">{r.to}</span>
-                  </span>
+                    <span
+                      className={`pos-data shrink-0 rounded-[6px] px-2 py-1 text-[0.65rem] uppercase tracking-[0.06em] ${KIND_STYLE[item.kind]}`}
+                    >
+                      {item.label}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[0.9rem] leading-snug text-ink">{item.title}</span>
+                      <span className="pos-data mt-1 block text-[0.7rem] text-ink-soft">{item.meta}</span>
+                    </span>
+                  </div>
                 ))}
               </div>
+
             </div>
-          )}
-
-          <div data-part className="mt-5">
-            <p className="pos-data text-[0.68rem] uppercase tracking-[0.12em] text-ink-soft">
-              Filed
-            </p>
-          </div>
-
-          <div className="mt-2 space-y-2">
-            {capture.items.map((item, i) => (
-              <div
-                key={i}
-                data-part
-                className="flex items-start gap-3 rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-3"
-              >
-                <span
-                  className={`pos-data shrink-0 rounded-[6px] px-2 py-1 text-[0.65rem] uppercase tracking-[0.06em] ${KIND_STYLE[item.kind]}`}
-                >
-                  {item.label}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[0.9rem] leading-snug text-ink">{item.title}</span>
-                  <span className="pos-data mt-1 block text-[0.7rem] text-ink-soft">{item.meta}</span>
-                </span>
-              </div>
-            ))}
-          </div>
+          ))}
 
         </div>
 

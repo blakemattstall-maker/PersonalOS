@@ -18,7 +18,10 @@ export async function enterDemo() {
     secure: true,
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24
+    // An hour, matching login's demo branch. The proxy bounces outside
+    // arrivals to /welcome regardless, so this only bounds how long the
+    // in-demo tabs keep working before the tour gets to pitch again.
+    maxAge: 60 * 60
   });
 
   redirect("/");

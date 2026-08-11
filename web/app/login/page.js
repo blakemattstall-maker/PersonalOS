@@ -40,7 +40,10 @@ async function login(formData) {
       secure: true,
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24
+      // An hour: the length of a demo visit, not a standing pass. The proxy
+      // additionally bounces outside arrivals to /welcome, so this only decides
+      // how long in-demo navigation keeps working.
+      maxAge: 60 * 60
     });
 
     redirect("/");

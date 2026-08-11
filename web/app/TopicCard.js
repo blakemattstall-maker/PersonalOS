@@ -113,7 +113,9 @@ export default function TopicCard({ topic }) {
         Pick the side you&apos;ll argue
       </p>
 
-      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {/* max-lg: at lg+ the desktop frame holds the app at phone width, so the
+          two-column upgrade has to switch back off — see MoneyCharts.js. */}
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:max-lg:grid-cols-2">
 
         <button
           onClick={() => pick("side_a")}

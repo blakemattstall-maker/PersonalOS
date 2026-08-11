@@ -62,8 +62,10 @@ export function DeepThoughtBody({ content }) {
         <p className="leading-relaxed text-ink">{parsed.reasoning}</p>
       )}
 
+      {/* max-lg: the desktop frame keeps the app phone-narrow at lg+, so the
+          two-column upgrade must not fire there — see MoneyCharts.js. */}
       {(parsed.pros?.length > 0 || parsed.cons?.length > 0) && (
-        <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:max-lg:grid-cols-2">
 
           {parsed.pros?.length > 0 && (
             <div>

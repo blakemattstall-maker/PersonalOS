@@ -101,11 +101,12 @@ export function Section({ id, eyebrow, title, lede, children, tech, tone = "ink"
 
       </div>
 
-      {/* Runs full width under a single-column section, but capped back to the
-          reading measure under a wide one — a disclosure of dense prose stretched
-          across 68rem is unreadable. */}
+      {/* The bar spans the full frame, wide or narrow — a box stopped at
+          three-quarter width under a two-column row read as a mistake, not a
+          measure. Readability is handled inside Detail, which caps the open
+          prose while letting the bar itself run edge to edge. */}
       {tech && (
-        <div className={`pos-reveal mt-6 ${split ? "lg:max-w-[46rem]" : ""}`} data-reveal>
+        <div className="pos-reveal mt-6" data-reveal>
           <Detail summary={techLabel}>{tech}</Detail>
         </div>
       )}
@@ -131,8 +132,14 @@ export function Detail({ summary, children }) {
         {summary}
       </summary>
 
-      <div className="mt-3.5 space-y-3 border-t border-[var(--line)] pt-3.5 text-[0.85rem] leading-relaxed text-ink-soft">
-        {children}
+      {/* The box may span the whole 64rem frame, so the prose inside carries
+          its own measure — dense technical copy at 120 characters a line is
+          where reading goes to die. The border-t spans the full box; only the
+          text is capped. */}
+      <div className="mt-3.5 border-t border-[var(--line)] pt-3.5">
+        <div className="max-w-[46rem] space-y-3 text-[0.85rem] leading-relaxed text-ink-soft">
+          {children}
+        </div>
       </div>
 
     </details>

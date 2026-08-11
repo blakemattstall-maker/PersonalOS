@@ -18,7 +18,22 @@ export function proxy(request) {
   // The demo session walks through the same door. What it can SEE is decided
   // in backend.js — fixtures only, writes refused — so admitting it here
   // grants the shell of the app, never the contents.
+  //
+  // But a demo is a visit, not a home. The cookie used to admit its holder on
+  // ARRIVAL too, so anyone who had ever clicked the demo button typed
+  // getalmanac.xyz the next day and landed inside the fictional dashboard with
+  // the pitch skipped — exactly backwards for the page doing the selling. The
+  // Sec-Fetch headers tell the two apart: a document navigation arriving from
+  // outside the site (typed URL, bookmark, a link on another site) goes to the
+  // tour, while every navigation the demo makes from within — tab taps, server
+  // actions, the entry redirect itself — is same-origin and passes untouched.
+  // Browsers too old to send the headers just keep the old behaviour.
   if (cookie?.value === DEMO_SESSION) {
+    const mode = request.headers.get("sec-fetch-mode");
+    const site = request.headers.get("sec-fetch-site");
+    if (mode === "navigate" && (site === "none" || site === "cross-site")) {
+      return NextResponse.redirect(new URL("/welcome", request.url));
+    }
     return NextResponse.next();
   }
 

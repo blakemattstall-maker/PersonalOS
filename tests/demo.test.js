@@ -144,10 +144,13 @@ test("login checks the real passphrase before the demo one", () => {
 
 test("a demo session expires faster than a real one", () => {
 
-  // 180 days for the owner; a day for a stranger. The magic numbers are the
-  // contract, so they are asserted as written.
+  // 180 days for the owner; an hour for a stranger. The demo cookie was a day
+  // once, and a day is long enough for a returning visitor to land inside the
+  // fictional dashboard with the pitch skipped — so the hour is deliberate: a
+  // visit's length, not a standing pass. The magic numbers are the contract,
+  // so they are asserted as written.
   assert.match(loginSource, /maxAge: 60 \* 60 \* 24 \* 180/);
-  assert.match(loginSource, /maxAge: 60 \* 60 \* 24\n/);
+  assert.match(loginSource, /maxAge: 60 \* 60\n/);
 
 });
 

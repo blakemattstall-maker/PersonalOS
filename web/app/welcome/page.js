@@ -34,6 +34,35 @@ export const metadata = {
 };
 
 
+// The loop, stated before any feature is shown. Shown to people cold, the page
+// read as a list of impressive parts with no picture of what USING it is like —
+// this is that picture: press, say, and it comes back to you. Each step links
+// down to the section that shows that stop of the loop actually working.
+const HOW_STEPS = [
+  {
+    step: "1",
+    title: "Say it, from anywhere",
+    body: "Press the Action Button — or double-tap the back of the phone — and just talk. “Dinner with Dana Thursday at 7.” “Spent $146 printing the decks.” The lock screen is enough; there is no app to open.",
+    href: "#capture",
+    link: "What a sentence becomes"
+  },
+  {
+    step: "2",
+    title: "It files itself",
+    body: "The sentence is parsed on arrival: dates pinned to real days, the right kind of record created — event, task, expense, note — and every person or project it mentions linked to it. Events land on your actual calendar.",
+    href: "#graph",
+    link: "How records connect"
+  },
+  {
+    step: "3",
+    title: "It reports back",
+    body: "A short briefing each morning that has already done the reading, and a push notification during the day only when something clears the bar. Most days, silence — quiet is the default, not a failure.",
+    href: "#brief",
+    link: "The morning briefing"
+  }
+];
+
+
 const DETECTORS = [
   {
     name: "relationship_debt",
@@ -94,6 +123,36 @@ export default function Welcome() {
     <div className="bg-paper">
 
       <Hero />
+
+      {/* Unnumbered on purpose: the numbered sections are chapters of the tour,
+          and this is the map handed out before chapter one — the one thing a
+          cold visitor was missing. */}
+      <Section
+        id="how"
+        eyebrow="How it works"
+        tone="moss"
+        wide
+        title="You say it. It files it. It tells you."
+        lede="The whole system runs on one habit: saying things out loud as they occur to you. This is the full loop — everything further down the page is one of its stops, shown working."
+      >
+        <div className="grid gap-3 lg:grid-cols-3">
+          {HOW_STEPS.map(s => (
+            <div key={s.step} className="flex flex-col rounded-card border border-[var(--line)] bg-card p-5 shadow-lift">
+              <p className="pos-data text-[0.72rem] uppercase tracking-[0.08em] text-moss">Step {s.step}</p>
+              <h3 className="pos-display mt-2 text-[1.15rem] leading-snug text-ink">{s.title}</h3>
+              <p className="mt-2 flex-1 text-[0.88rem] leading-relaxed text-ink-soft">{s.body}</p>
+              {/* Plain anchors, not scripted scrolls: this is a server component
+                  and the sections carry scroll-mt for exactly this. */}
+              <a
+                href={s.href}
+                className="mt-4 inline-flex items-center gap-1.5 text-[0.8rem] font-medium text-ink-soft transition-colors hover:text-ink"
+              >
+                {s.link} <span aria-hidden="true">↓</span>
+              </a>
+            </div>
+          ))}
+        </div>
+      </Section>
 
       <Section
         id="capture"
