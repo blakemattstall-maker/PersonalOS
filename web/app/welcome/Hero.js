@@ -93,11 +93,11 @@ export default function Hero() {
             HTML (reduced-motion and no-JS overrides live in globals.css), or it
             flashes at full opacity for the one paint before the effect runs. */}
         <h1 className="pos-display text-[4rem] leading-[0.9] tracking-[-0.02em] text-ink sm:text-[6.5rem]">
-          <span data-word className="pos-reveal inline-block">Almanac</span>
+          <span data-word className={`pos-reveal pos-wordmark inline-block${ready ? " is-lit" : ""}`}>Almanac</span>
         </h1>
 
         <p data-tail className="pos-reveal pos-display mt-5 max-w-[32rem] text-[1.65rem] leading-[1.08] text-ink sm:text-[2.4rem]">
-          An executive assistant for your whole life.
+          Turn your phone into an executive assistant.
         </p>
 
         {/* The old version of this opened on the filing mechanism — parsed,

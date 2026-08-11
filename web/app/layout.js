@@ -32,7 +32,7 @@ const dmMono = DM_Mono({
 
 
 const DESCRIPTION =
-  "A quiet system of record for your whole life — calendar, tasks, notes, money, people — and a mind that reads across all of it.";
+  "A quiet system of record for your calendar, tasks, notes, money and people — and a mind that reads across all of it.";
 
 export const metadata = {
   // The public home. Resolves relative URLs (the Open Graph image below,

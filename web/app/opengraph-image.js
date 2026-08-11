@@ -10,7 +10,7 @@ import { ImageResponse } from "next/og";
 // surface. Ember never appears (the app reserves it for "waiting on you").
 
 export const runtime = "edge";
-export const alt = "Almanac — an executive assistant for your whole life";
+export const alt = "Almanac — turn your phone into an executive assistant";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -65,7 +65,7 @@ export default function OpengraphImage() {
             fontWeight: 600
           }}
         >
-          An executive assistant for your whole life
+          Turn your phone into an executive assistant
         </div>
 
         <div style={{ fontSize: "150px", fontWeight: 700, letterSpacing: "-5px", lineHeight: 1, marginTop: "10px" }}>
