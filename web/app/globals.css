@@ -32,7 +32,7 @@
   --paper: #efeee9;          /* page ground */
   --card: #fdfcf9;           /* widgets sit on the ground, slightly lifted */
   --sunken: #e7e5de;         /* inputs, inactive tracks, wells */
-  --pos-desk: #dcd9cf;       /* the surface a phone sits on — desktop frame only,
+  --pos-desk: #cfccc1;       /* the surface a phone sits on — desktop frame only,
                                 clearly darker than paper so the screen floats */
 
   /* Text */
@@ -91,7 +91,7 @@
     --paper: #20272b;
     --card: #2b343a;
     --sunken: #1a2024;
-    --pos-desk: #12171a;
+    --pos-desk: #0d1113;
     --ink: #efeee9;
     --ink-soft: #9aa5a5;
     --line: #3c484e;
@@ -114,7 +114,7 @@
   --paper: #20272b;
   --card: #2b343a;
   --sunken: #1a2024;
-  --pos-desk: #12171a;
+  --pos-desk: #0d1113;
   --ink: #efeee9;
   --ink-soft: #9aa5a5;
   --line: #3c484e;
@@ -403,13 +403,16 @@ body {
     transform: translateX(-50%);
     z-index: -1;
     background: var(--paper);
-    border-left: 1px solid var(--line);
-    border-right: 1px solid var(--line);
-    /* An even ambient glow rather than a dropped one: the panel is full height,
-       so top and bottom clip at the viewport and only the left and right sides
-       show — a directional y-shadow would be invisible. This spreads softly onto
-       the desk on both sides and is what actually lifts the screen. */
-    box-shadow: 0 0 64px -8px rgba(20, 24, 26, 0.28);
+    /* Two jobs. The first shadow is a crisp 1px ring drawn just OUTSIDE the
+       panel — a border can't be used because the app's own paper background sits
+       flush to the edge and would paint over it, but an outset ring lands on the
+       desk where nothing covers it, giving a clean screen edge. The second is a
+       wide ambient spread that lifts the whole screen off the desk; the panel is
+       full height, so a directional drop shadow would clip at the viewport and
+       only this even spread reads on the visible left and right sides. */
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 0 55px 6px rgba(20, 24, 26, 0.24);
     pointer-events: none;
   }
 
@@ -417,5 +420,16 @@ body {
      not the window's, or it drifts off alone onto the desk. */
   .pos-graph-frame {
     right: calc((100vw - 26rem) / 2 + 0.75rem);
+  }
+
+  /* Any element that fills the viewport with `fixed inset-0` — the graph canvas
+     and its empty/failed states — has to be pulled back into the frame too, or
+     it spills across the whole desk. Overrides only the horizontal half of
+     `inset-0`, keeping the full height. */
+  .pos-frame-fixed {
+    left: 50%;
+    right: auto;
+    width: 26rem;
+    transform: translateX(-50%);
   }
 }

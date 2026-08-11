@@ -890,7 +890,7 @@ export default function GraphCanvas({ nodes, links, focus = null, failed = false
 
   if (failed) {
     return (
-      <div className="fixed inset-0 grid place-items-center bg-paper px-8">
+      <div className="pos-frame-fixed fixed inset-0 grid place-items-center bg-paper px-8">
         <p className="max-w-[26rem] text-center text-[0.9rem] leading-relaxed text-ink-soft">
           The graph couldn’t load just now — the connections are there, the page
           failed to fetch them. Pull to refresh, or try again in a moment.
@@ -901,7 +901,7 @@ export default function GraphCanvas({ nodes, links, focus = null, failed = false
 
   if (nodes.length === 0) {
     return (
-      <div className="fixed inset-0 grid place-items-center bg-paper px-8">
+      <div className="pos-frame-fixed fixed inset-0 grid place-items-center bg-paper px-8">
         <p className="max-w-[26rem] text-center text-[0.9rem] leading-relaxed text-ink-soft">
           Nothing is connected yet. The graph is built each night from what you
           capture — a note that names a person, a charge at a shop you know.
@@ -913,7 +913,7 @@ export default function GraphCanvas({ nodes, links, focus = null, failed = false
 
 
   return (
-    <div className="fixed inset-0 bg-paper">
+    <div className="pos-frame-fixed fixed inset-0 bg-paper">
 
       <div ref={flatRef} className={`absolute inset-0 ${mode === "flat" ? "" : "invisible"}`} />
       <div ref={roundRef} className={`absolute inset-0 ${mode === "round" ? "" : "invisible"}`} />
