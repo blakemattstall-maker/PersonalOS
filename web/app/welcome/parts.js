@@ -38,10 +38,15 @@ const TONE = {
 // the plain-language copy in one column, the animated scene beside it, and
 // `flip` swaps which side each takes so the rows alternate down the page. It is
 // strictly a wide-screen affordance: every class it adds is `lg:`-gated, so on a
-// phone the copy and scene stack exactly as they always have. Sections whose
-// "scene" is really a full-width grid (the detectors) or a definition list (the
-// stack) opt out and stay a single centred column.
-export function Section({ id, eyebrow, title, lede, children, tech, tone = "ink", techLabel = "Under the hood", split = false, flip = false }) {
+// phone the copy and scene stack exactly as they always have.
+//
+// `wide` opts a single-column section into the same 64rem frame without the
+// grid — for the detector cards, which fill that width on their own. Every
+// section from the hero through the detectors shares this one frame so the page
+// keeps a single, unbroken left/right margin down the whole tour rather than
+// stepping in and out. The technical coda and the footer are deliberately
+// narrower, a settling-down before the end.
+export function Section({ id, eyebrow, title, lede, children, tech, tone = "ink", techLabel = "Under the hood", split = false, flip = false, wide = false }) {
 
   const ref = useRef(null);
 
@@ -62,7 +67,7 @@ export function Section({ id, eyebrow, title, lede, children, tech, tone = "ink"
     <section
       id={id}
       ref={ref}
-      className={`mx-auto w-full scroll-mt-20 px-5 pt-16 sm:pt-24 ${split ? "max-w-[46rem] lg:max-w-[68rem]" : "max-w-[46rem]"}`}
+      className={`mx-auto w-full max-w-[46rem] scroll-mt-20 px-5 pt-16 sm:pt-24 ${split || wide ? "lg:max-w-[64rem]" : ""}`}
     >
 
       {/* No display set at the base width, so on a phone this is an ordinary

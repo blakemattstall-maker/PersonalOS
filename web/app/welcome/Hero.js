@@ -97,65 +97,74 @@ export default function Hero() {
         Sign in
       </Link>
 
-      <div className="mx-auto w-full max-w-[46rem] px-5 pt-16 pb-4 sm:pt-24 lg:max-w-[68rem]">
+      {/* One frame on desktop, split into copy and net so neither the words nor
+          the right edge is left stranded. On a phone it is an ordinary block:
+          the copy column, then the net beneath it, exactly as before. */}
+      <div className="mx-auto w-full max-w-[46rem] px-5 pt-16 pb-4 sm:pt-24 lg:max-w-[64rem] lg:grid lg:grid-cols-[3fr_2fr] lg:items-center lg:gap-x-12">
 
-        {/* The wordmark IS the hero. Big enough to remember, and it resolves
-            straight out of the opening sequence's own "Almanac" so the two read
-            as one motion. pos-reveal keeps it invisible from the first byte of
-            HTML (reduced-motion and no-JS overrides live in globals.css), or it
-            flashes at full opacity for the one paint before the effect runs. */}
-        <h1 className="pos-display text-[4rem] leading-[0.9] tracking-[-0.02em] text-ink sm:text-[6.5rem]">
-          <span data-word className={`pos-reveal pos-wordmark inline-block${ready ? " is-lit" : ""}`}>Almanac</span>
-        </h1>
+        <div>
 
-        <p data-tail className="pos-reveal pos-display mt-5 max-w-[32rem] text-[1.65rem] leading-[1.08] text-ink sm:text-[2.4rem]">
-          Turn your phone into an executive assistant.
-        </p>
+          {/* The wordmark IS the hero. Big enough to remember, and it resolves
+              straight out of the opening sequence's own "Almanac" so the two read
+              as one motion. pos-reveal keeps it invisible from the first byte of
+              HTML (reduced-motion and no-JS overrides live in globals.css), or it
+              flashes at full opacity for the one paint before the effect runs. */}
+          <h1 className="pos-display text-[4rem] leading-[0.9] tracking-[-0.02em] text-ink sm:text-[6.5rem]">
+            <span data-word className={`pos-reveal pos-wordmark inline-block${ready ? " is-lit" : ""}`}>Almanac</span>
+          </h1>
 
-        {/* Half the length it was. A wall of text is the wrong first thing to
-            hand a stranger; the sections below carry the detail, so the hero
-            only has to say what it is and what it feels like. */}
-        <p data-tail className="pos-reveal mt-6 max-w-[35rem] text-[1.05rem] leading-relaxed text-ink-soft">
-          One place for your tasks, notes, money and the people in your life —
-          with a reasoning layer that works across all of it.
-        </p>
+          <p data-tail className="pos-reveal pos-display mt-5 max-w-[32rem] text-[1.65rem] leading-[1.08] text-ink sm:text-[2.4rem]">
+            Turn your phone into an executive assistant.
+          </p>
 
-        <p data-tail className="pos-reveal mt-4 max-w-[35rem] text-[1.05rem] leading-relaxed text-ink-soft">
-          Say a sentence and it files itself, linked to everything related. Ask
-          for a plan and it builds the whole thing, then reads the picture back
-          each morning — and stays quiet the rest of the day.
-        </p>
+          {/* Half the length it was. A wall of text is the wrong first thing to
+              hand a stranger; the sections below carry the detail, so the hero
+              only has to say what it is and what it feels like. */}
+          <p data-tail className="pos-reveal mt-6 max-w-[35rem] text-[1.05rem] leading-relaxed text-ink-soft">
+            One place for your tasks, notes, money and the people in your life —
+            with a reasoning layer that works across all of it.
+          </p>
 
-        {/* The only two things a visitor should do — and both glide to the foot
-            of the page rather than acting on the spot, so the walkthrough scrolls
-            past on the way down. Real #start hrefs, so with JS off (or reduced
-            motion) they still jump straight there; onClick upgrades the jump to
-            a glide. */}
-        <div data-tail className="pos-reveal mt-8 flex flex-wrap items-center gap-3">
-          <a
-            href="#start"
-            onClick={handleToStart}
-            className="inline-flex items-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-3 text-[0.88rem] font-medium text-paper transition-opacity hover:opacity-90"
-          >
-            Try the demo
-            <span aria-hidden="true">↓</span>
-          </a>
-          <a
-            href="#start"
-            onClick={handleToStart}
-            className="inline-flex items-center gap-2 rounded-[var(--r-pill)] border border-[var(--line)] px-5 py-3 text-[0.88rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
-          >
-            Join the waitlist
-            <span aria-hidden="true">↓</span>
-          </a>
+          <p data-tail className="pos-reveal mt-4 max-w-[35rem] text-[1.05rem] leading-relaxed text-ink-soft">
+            Say a sentence and it files itself, linked to everything related. Ask
+            for a plan and it builds the whole thing, then reads the picture back
+            each morning — and stays quiet the rest of the day.
+          </p>
+
+          {/* The only two things a visitor should do — and both glide to the foot
+              of the page rather than acting on the spot, so the walkthrough scrolls
+              past on the way down. Real #start hrefs, so with JS off (or reduced
+              motion) they still jump straight there; onClick upgrades the jump to
+              a glide. */}
+          <div data-tail className="pos-reveal mt-8 flex flex-wrap items-center gap-3">
+            <a
+              href="#start"
+              onClick={handleToStart}
+              className="inline-flex items-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-3 text-[0.88rem] font-medium text-paper transition-opacity hover:opacity-90"
+            >
+              Try the demo
+              <span aria-hidden="true">↓</span>
+            </a>
+            <a
+              href="#start"
+              onClick={handleToStart}
+              className="inline-flex items-center gap-2 rounded-[var(--r-pill)] border border-[var(--line)] px-5 py-3 text-[0.88rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
+            >
+              Join the waitlist
+              <span aria-hidden="true">↓</span>
+            </a>
+          </div>
+
         </div>
 
-      </div>
+        {/* Foreshadows the section on how records are connected, before the
+            reader has met the word. On desktop it is the right column that fills
+            the frame; on a phone it drops below the copy. aria-hidden because it
+            says nothing a screen reader can use — section 02 explains the same
+            idea in words. */}
+        <HeroNet />
 
-      {/* Foreshadows the section on how records are connected, before the
-          reader has met the word. aria-hidden because it says nothing a screen
-          reader can use — section 02 explains the same idea in words. */}
-      <HeroNet />
+      </div>
 
     </header>
   );

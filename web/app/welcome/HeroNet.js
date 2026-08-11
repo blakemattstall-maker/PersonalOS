@@ -283,10 +283,10 @@ export default function HeroNet() {
   const initial = NODES.map(node => project(node, 0));
 
   return (
-    <div ref={ref} className="pointer-events-none mx-auto w-full max-w-[46rem] px-5 pb-8 lg:max-w-[68rem]">
+    <div ref={ref} className="pointer-events-none mx-auto w-full max-w-[46rem] px-5 pb-8 lg:mx-0 lg:max-w-none lg:px-0 lg:pb-0">
       <svg
         viewBox={`0 0 ${SIZE.w} ${SIZE.h}`}
-        className="mt-6 h-auto w-full max-w-[26rem]"
+        className="mt-6 h-auto w-full max-w-[26rem] lg:mt-0 lg:max-w-none"
         aria-hidden="true"
         fill="none"
       >
