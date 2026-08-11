@@ -334,10 +334,13 @@ export function SkeletonPage({ title = null, cards = 3, lines = 3 }) {
   return (
     <Page>
       <div role="status" aria-busy="true" aria-live="polite">
-        <span className="sr-only">Loading</span>
-        {title
-          ? <h1 className="pos-display mb-6 text-[2rem] text-ink">{title}</h1>
-          : <Shimmer className="mb-6 h-9 w-1/2" />}
+        {/* The title is a shimmer bar, never the finished text. Every page
+            fades and RAISES its real title in on arrival; painting the settled
+            title in the skeleton first makes that entrance land on top of a
+            title the eye has already read, so the animation reads as a flicker
+            rather than an arrival. The name still goes to screen readers. */}
+        <span className="sr-only">{title ? `Loading ${title}` : "Loading"}</span>
+        <Shimmer className="mb-6 h-8 w-1/2" />
         <div className="space-y-3">
           {Array.from({ length: cards }).map((_, i) => (
             <SkeletonCard key={i} lines={lines} />
