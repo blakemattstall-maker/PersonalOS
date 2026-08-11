@@ -18,24 +18,26 @@ export default function Hero() {
 
   const handleIntroDone = useCallback(() => setReady(true), []);
 
-  // Reduced motion falls through to the browser's own instant jump rather than
-  // being handled here: someone who asked the OS for less movement did not ask
-  // for a two-second animated scroll, and `behavior: "smooth"` would give them
-  // one regardless of the media query.
-  const handleSeeHow = useCallback((event) => {
+  // Both hero CTAs glide the reader all the way down to the demo + waitlist at
+  // the foot of the page. The point is the journey: the smooth scroll passes
+  // through every section on the way, so a viewer sees how much is here rather
+  // than teleporting past it. Falls back to a native jump with JS off or
+  // reduced motion — still lands them at the same place.
+  const handleToStart = useCallback((event) => {
 
-    const target = document.getElementById("capture");
+    const target = document.getElementById("start");
 
-    if (!target || reducedMotion()) return;
+    if (!target) return;
 
+    // Always drive the scroll ourselves rather than leaning on the native
+    // href jump — that no-ops when the URL is already at #start (a second
+    // click), which would strand the button doing nothing. Smooth when motion
+    // is welcome, an instant jump when it is not.
     event.preventDefault();
 
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    target.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
 
-    // The hash still belongs in the URL — it is what makes the position
-    // shareable and survives a reload. Written rather than navigated to, so the
-    // browser does not also jump there and cancel the scroll that is running.
-    history.replaceState(null, "", "#capture");
+    history.replaceState(null, "", "#start");
 
   }, []);
 
@@ -85,6 +87,16 @@ export default function Hero() {
 
       <Intro onDone={handleIntroDone} />
 
+      {/* Sign in lives in the corner, small and out of the way: realistically
+          the only person who ever needs it is the owner, and a visitor should
+          be pulled toward the demo and the waitlist, not a login. */}
+      <Link
+        href="/login"
+        className="absolute right-4 top-4 z-20 rounded-[var(--r-pill)] px-3 py-1.5 text-[0.82rem] font-medium text-ink-soft transition-colors hover:text-ink sm:right-6 sm:top-6"
+      >
+        Sign in
+      </Link>
+
       <div className="mx-auto w-full max-w-[46rem] px-5 pt-16 pb-4 sm:pt-24">
 
         {/* The wordmark IS the hero. Big enough to remember, and it resolves
@@ -100,53 +112,42 @@ export default function Hero() {
           Turn your phone into an executive assistant.
         </p>
 
-        {/* The old version of this opened on the filing mechanism — parsed,
-            dated, filed — which is the third thing a reader needs, not the
-            first. It described the intake pipe of a system it never named. This
-            says what the thing IS, then what becomes possible, and leaves the
-            mechanism to the seven sections below that exist to explain it. */}
+        {/* Half the length it was. A wall of text is the wrong first thing to
+            hand a stranger; the sections below carry the detail, so the hero
+            only has to say what it is and what it feels like. */}
         <p data-tail className="pos-reveal mt-6 max-w-[35rem] text-[1.05rem] leading-relaxed text-ink-soft">
-          Almanac is a single system of record for your goals, intentions,
-          tasks, notes, spending and the people in your life — and a reasoning
-          layer that works across all of it on your behalf.
+          One place for your tasks, notes, money and the people in your life —
+          with a reasoning layer that works across all of it.
         </p>
 
         <p data-tail className="pos-reveal mt-4 max-w-[35rem] text-[1.05rem] leading-relaxed text-ink-soft">
-          Say one sentence and it files itself, dated and linked to everything
-          related. Ask for a plan and it builds the whole thing — tasks and
-          events in Google Calendar and Tasks, drafted email, a working document
-          in Docs, research pulled from the open web — then tracks what you
-          actually do against it, scores what is slipping, and each morning reads
-          the whole picture back in a few sentences. The rest of the day it stays
-          quiet unless something genuinely needs you.
+          Say a sentence and it files itself, linked to everything related. Ask
+          for a plan and it builds the whole thing, then reads the picture back
+          each morning — and stays quiet the rest of the day.
         </p>
 
-        <p data-tail className="pos-reveal mt-3 max-w-[34rem] text-[0.9rem] leading-relaxed text-ink-soft">
-          This page is a walkthrough of how each part works. Every section opens
-          up into the mechanism behind it, so you can read it either way.
-        </p>
-
+        {/* The only two things a visitor should do — and both glide to the foot
+            of the page rather than acting on the spot, so the walkthrough scrolls
+            past on the way down. Real #start hrefs, so with JS off (or reduced
+            motion) they still jump straight there; onClick upgrades the jump to
+            a glide. */}
         <div data-tail className="pos-reveal mt-8 flex flex-wrap items-center gap-3">
-          {/* Still a real href, so it works with JavaScript off, opens in a new
-              tab, and shows the target on hover. onClick only upgrades the jump
-              to a glide. Done here rather than with `scroll-behavior: smooth` in
-              globals.css because that property only applies to the scrolling
-              element — html — and setting it there would also animate every
-              route change's scroll-to-top across the whole app. */}
           <a
-            href="#capture"
-            onClick={handleSeeHow}
+            href="#start"
+            onClick={handleToStart}
             className="inline-flex items-center gap-2 rounded-[var(--r-pill)] bg-ink px-5 py-3 text-[0.88rem] font-medium text-paper transition-opacity hover:opacity-90"
           >
-            See how it works
+            Try the demo
             <span aria-hidden="true">↓</span>
           </a>
-          <Link
-            href="/login"
-            className="inline-flex items-center rounded-[var(--r-pill)] border border-[var(--line)] px-5 py-3 text-[0.88rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
+          <a
+            href="#start"
+            onClick={handleToStart}
+            className="inline-flex items-center gap-2 rounded-[var(--r-pill)] border border-[var(--line)] px-5 py-3 text-[0.88rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink"
           >
-            Sign in
-          </Link>
+            Join the waitlist
+            <span aria-hidden="true">↓</span>
+          </a>
         </div>
 
       </div>
