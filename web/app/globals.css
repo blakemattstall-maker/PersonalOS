@@ -200,6 +200,23 @@ body {
   }
 }
 
+/* Installed to the home screen, the app draws full-bleed under the status bar
+   and the home indicator, because the viewport is viewport-fit=cover. The
+   browser reports these insets as 0, so both rules are inert there and only do
+   their job in the standalone app — no display-mode query needed.
+
+   Top: the page's own 2rem of breathing PLUS whatever the status bar occupies,
+   so content clears the clock/battery instead of colliding with it.
+   Bottom: the tab bar is a floating pill, so it only has to clear the home
+   indicator, not reserve the entire inset — reserving all of it left a visible
+   empty strip beneath the pill. */
+.pos-safe-top {
+  padding-top: calc(env(safe-area-inset-top) + 2rem);
+}
+.pos-safe-bottom {
+  padding-bottom: max(0.6rem, calc(env(safe-area-inset-bottom) - 0.75rem));
+}
+
 /* Numbers, times, counts and dates. This is an operating system; its readings
    should look like readings. Tabular figures keep columns from jittering as
    values change between renders. */

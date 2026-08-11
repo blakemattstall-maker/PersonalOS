@@ -135,7 +135,7 @@ export default function TabBar() {
   return (
     <nav
       aria-label="Sections"
-      className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2"
+      className="pos-safe-bottom fixed inset-x-0 bottom-0 z-40 px-4 pt-2"
     >
       <div className="mx-auto flex w-full max-w-[24rem] items-stretch justify-between gap-1 rounded-[var(--r-pill)] border border-[var(--line)] bg-card/85 p-1.5 shadow-lift backdrop-blur-xl">
 

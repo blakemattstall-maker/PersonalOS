@@ -44,10 +44,14 @@ const KINDS = {
 
 // pb-32 is not arbitrary: the tab bar is fixed, so without it the last card on
 // every page sits underneath the nav and can't be scrolled into view.
+//
+// pos-safe-top (not a plain pt-8) so that when the app is installed to the home
+// screen — where it draws under the status bar — the top content clears the
+// clock and battery instead of colliding with them. Inert in the browser.
 export function Page({ children }) {
   return (
     <div className="flex flex-1 flex-col bg-paper">
-      <main className="mx-auto w-full max-w-[34rem] flex-1 px-5 pt-8 pb-32">
+      <main className="pos-safe-top mx-auto w-full max-w-[34rem] flex-1 px-5 pb-32">
         {children}
       </main>
     </div>
