@@ -34,7 +34,14 @@ const TONE = {
 };
 
 
-export function Section({ id, eyebrow, title, lede, children, tech, tone = "ink", techLabel = "Under the hood" }) {
+// `split` turns a section into a two-column feature row on desktop only —
+// the plain-language copy in one column, the animated scene beside it, and
+// `flip` swaps which side each takes so the rows alternate down the page. It is
+// strictly a wide-screen affordance: every class it adds is `lg:`-gated, so on a
+// phone the copy and scene stack exactly as they always have. Sections whose
+// "scene" is really a full-width grid (the detectors) or a definition list (the
+// stack) opt out and stay a single centred column.
+export function Section({ id, eyebrow, title, lede, children, tech, tone = "ink", techLabel = "Under the hood", split = false, flip = false }) {
 
   const ref = useRef(null);
 
@@ -47,33 +54,53 @@ export function Section({ id, eyebrow, title, lede, children, tech, tone = "ink"
   // things belongs to one of them; here it is the one below, so the gap is
   // whatever `pt` says and cannot double. welcome/page.js's footer carries the
   // matching `pt` for the last seam.
+  //
+  // A split section is allowed to grow wider than the reading column so the two
+  // columns each keep a comfortable measure; a single-column one stays at 46rem
+  // because that IS the comfortable measure for one column of prose.
   return (
     <section
       id={id}
       ref={ref}
-      className="mx-auto w-full max-w-[46rem] scroll-mt-20 px-5 pt-16 sm:pt-24"
+      className={`mx-auto w-full scroll-mt-20 px-5 pt-16 sm:pt-24 ${split ? "max-w-[46rem] lg:max-w-[68rem]" : "max-w-[46rem]"}`}
     >
 
-      <div className="pos-reveal" data-reveal>
-        <p className={`pos-data text-[0.7rem] uppercase tracking-[0.14em] ${TONE[tone] || TONE.ink}`}>
-          {eyebrow}
-        </p>
-        <h2 className="pos-display mt-2.5 text-[1.9rem] leading-[1.1] text-ink sm:text-[2.4rem]">
-          {title}
-        </h2>
-        {lede && (
-          <p className="mt-3.5 max-w-[36rem] text-[1rem] leading-relaxed text-ink-soft">
-            {lede}
+      {/* No display set at the base width, so on a phone this is an ordinary
+          block and the two children stack in source order — identical to before
+          this wrapper existed. The grid only switches on at lg. */}
+      <div className={split ? "lg:grid lg:grid-cols-2 lg:items-center lg:gap-x-14" : ""}>
+
+        <div className="pos-reveal" data-reveal>
+          <p className={`pos-data text-[0.7rem] uppercase tracking-[0.14em] ${TONE[tone] || TONE.ink}`}>
+            {eyebrow}
           </p>
-        )}
+          <h2 className="pos-display mt-2.5 text-[1.9rem] leading-[1.1] text-ink sm:text-[2.4rem]">
+            {title}
+          </h2>
+          {lede && (
+            <p className="mt-3.5 max-w-[36rem] text-[1rem] leading-relaxed text-ink-soft">
+              {lede}
+            </p>
+          )}
+        </div>
+
+        {/* mt-8 keeps the stacked gap on a phone; lg:mt-0 drops it once the scene
+            sits alongside the copy. order-first (lg only) is what alternates the
+            rows — on a phone the copy always comes first regardless of `flip`. */}
+        <div
+          className={`pos-reveal mt-8 ${split ? "lg:mt-0" : ""} ${split && flip ? "lg:order-first" : ""}`}
+          data-reveal
+        >
+          {children}
+        </div>
+
       </div>
 
-      <div className="pos-reveal mt-8" data-reveal>
-        {children}
-      </div>
-
+      {/* Runs full width under a single-column section, but capped back to the
+          reading measure under a wide one — a disclosure of dense prose stretched
+          across 68rem is unreadable. */}
       {tech && (
-        <div className="pos-reveal mt-6" data-reveal>
+        <div className={`pos-reveal mt-6 ${split ? "lg:max-w-[46rem]" : ""}`} data-reveal>
           <Detail summary={techLabel}>{tech}</Detail>
         </div>
       )}

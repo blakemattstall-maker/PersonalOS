@@ -99,6 +99,7 @@ export default function Welcome() {
         id="capture"
         eyebrow="01 · Capture"
         tone="ember"
+        split
         title="Say it once and it files itself."
         lede="One sentence, typed or spoken, gets parsed into the right kind of record, given a real date, written to your calendar, task list or notes, and attached to anything it mentions. There is no form to fill in and no category to choose."
         tech={
@@ -133,6 +134,8 @@ export default function Welcome() {
         id="graph"
         eyebrow="02 · Connections"
         tone="tide"
+        split
+        flip
         title="Every record knows what it relates to."
         lede="Most tools keep tidy separate lists: contacts in one place, spending in another, notes somewhere else. The useful information lives between them. That a charge paid for a specific project, that an evening belongs to a specific person, that one workspace is where two different things actually get done."
         tech={
@@ -210,6 +213,7 @@ export default function Welcome() {
         id="brief"
         eyebrow="04 · Daily briefing"
         tone="ember"
+        split
         title="A short briefing each morning that has done the reading for you."
         lede="Not a list of your events read back to you. Every figure is calculated before a model sees anything, and the model is asked only to decide what actually matters today and say it in three short paragraphs."
         tech={
@@ -243,6 +247,8 @@ export default function Welcome() {
         id="nudges"
         eyebrow="05 · Interruptions"
         tone="moss"
+        split
+        flip
         title="It only reaches you when something genuinely needs an answer."
         lede="Anything that can reach your lock screen has to earn it every time. Candidates are generated freely, and most of the work goes into throwing them away."
         tech={
@@ -279,6 +285,7 @@ export default function Welcome() {
         id="money"
         eyebrow="06 · Spending"
         tone="tide"
+        split
         title="Spending sorted into real categories, without tagging anything."
         lede="Bank feeds arrive as a merchant string and an amount, with no category attached to them. Every transaction here is classified on arrival, ranked by size, and checked for the charges that repeat."
         tech={

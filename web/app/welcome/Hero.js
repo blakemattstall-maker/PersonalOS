@@ -97,7 +97,7 @@ export default function Hero() {
         Sign in
       </Link>
 
-      <div className="mx-auto w-full max-w-[46rem] px-5 pt-16 pb-4 sm:pt-24">
+      <div className="mx-auto w-full max-w-[46rem] px-5 pt-16 pb-4 sm:pt-24 lg:max-w-[68rem]">
 
         {/* The wordmark IS the hero. Big enough to remember, and it resolves
             straight out of the opening sequence's own "Almanac" so the two read
