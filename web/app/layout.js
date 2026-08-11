@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import "./globals.css";
 import TabBar from "./TabBar.js";
 import GraphButton from "./GraphButton.js";
+import AppFrame from "./AppFrame.js";
 import { DEMO_SESSION } from "../lib/demo.js";
 
 // Three roles, not three decorations. Bricolage carries headings and the
@@ -204,15 +205,12 @@ export default async function RootLayout({ children }) {
           <span className="pos-dot" />
         </div>
 
-        {/* Fixture mode makes the dashboard look completely real. Say so, so
-            nobody reads invented spending figures as their own. Fires for the
-            local preview AND the public demo session. */}
-        {showFixtureBar && (
-          <div className="bg-ember px-4 py-1 text-center text-[0.7rem] font-medium text-white">
-            Demo — sample data, nothing here is real
-          </div>
-        )}
-        {children}
+        {/* The frame that turns a wide screen into a phone on a desk — and, on
+            the signed-out routes, gets out of the way so the marketing page runs
+            full width. Client-side because only it can see the path; the demo
+            bar rides along inside it so it sits within the framed screen. */}
+        <AppFrame showFixtureBar={showFixtureBar}>{children}</AppFrame>
+
         <GraphButton />
         <TabBar />
       </body>

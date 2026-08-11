@@ -32,6 +32,8 @@
   --paper: #efeee9;          /* page ground */
   --card: #fdfcf9;           /* widgets sit on the ground, slightly lifted */
   --sunken: #e7e5de;         /* inputs, inactive tracks, wells */
+  --pos-desk: #dcd9cf;       /* the surface a phone sits on — desktop frame only,
+                                clearly darker than paper so the screen floats */
 
   /* Text */
   --ink: #37424a;            /* primary */
@@ -89,6 +91,7 @@
     --paper: #20272b;
     --card: #2b343a;
     --sunken: #1a2024;
+    --pos-desk: #12171a;
     --ink: #efeee9;
     --ink-soft: #9aa5a5;
     --line: #3c484e;
@@ -111,6 +114,7 @@
   --paper: #20272b;
   --card: #2b343a;
   --sunken: #1a2024;
+  --pos-desk: #12171a;
   --ink: #efeee9;
   --ink-soft: #9aa5a5;
   --line: #3c484e;
@@ -358,5 +362,60 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* ── Desktop device frame ─────────────────────────────────────────────────
+   Almanac is a phone product. On a wide screen its narrow column would sit
+   marooned in the middle of an empty page — the "why is this squished?" look.
+   So above the phone breakpoint the app is shown inside a centred, phone-width
+   screen resting on a slightly darker desk: the width then reads as a
+   deliberate choice rather than a layout that never grew up. Everything here is
+   gated to >=1024px, and the app column / desk colour it pairs with are
+   lg:-only Tailwind — the phone itself never sees any of this. Unlayered on
+   purpose, so it wins over the width utility on the floating button without an
+   !important. */
+@media (min-width: 1024px) {
+
+  /* The desk: a flat fixed surface covering the viewport, a touch darker than
+     paper so the screen floats on it. z-index -2 puts it behind the screen and
+     everything the app draws, but in front of the body's own background. */
+  .pos-desk {
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background: var(--pos-desk);
+    pointer-events: none;
+  }
+
+  /* A fixed paper panel exactly the width of the frame, so the "screen" stays
+     full height even when a page is short. It sits behind the content and never
+     catches a click; the desk shows to either side, and the shadow is what
+     lifts the phone off it. z-index -1 keeps it in front of the desk but behind
+     everything the app draws. */
+  .pos-screen {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 26rem;
+    transform: translateX(-50%);
+    z-index: -1;
+    background: var(--paper);
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    /* An even ambient glow rather than a dropped one: the panel is full height,
+       so top and bottom clip at the viewport and only the left and right sides
+       show — a directional y-shadow would be invisible. This spreads softly onto
+       the desk on both sides and is what actually lifts the screen. */
+    box-shadow: 0 0 64px -8px rgba(20, 24, 26, 0.28);
+    pointer-events: none;
+  }
+
+  /* The one floating control that hugs a corner has to hug the frame's corner,
+     not the window's, or it drifts off alone onto the desk. */
+  .pos-graph-frame {
+    right: calc((100vw - 26rem) / 2 + 0.75rem);
   }
 }

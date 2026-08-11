@@ -34,7 +34,7 @@ export default function GraphButton() {
       href="/graph"
       aria-label="Connections"
       aria-current={active ? "page" : undefined}
-      className={`fixed right-4 top-[max(1rem,env(safe-area-inset-top))] z-40 grid h-11 w-11 place-items-center rounded-[var(--r-pill)] border border-[var(--line)] bg-card/85 shadow-lift backdrop-blur-xl transition-colors ${
+      className={`pos-graph-frame fixed right-4 top-[max(1rem,env(safe-area-inset-top))] z-40 grid h-11 w-11 place-items-center rounded-[var(--r-pill)] border border-[var(--line)] bg-card/85 shadow-lift backdrop-blur-xl transition-colors ${
         active ? "text-ink" : "text-ink-soft hover:text-ink"
       }`}
     >
