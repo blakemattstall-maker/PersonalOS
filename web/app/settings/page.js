@@ -44,7 +44,19 @@ const ELSEWHERE = [
 ];
 
 
-export default async function Settings() {
+export default async function Settings({ searchParams }) {
+
+  // The Google OAuth callback lands here with ?google=connected|partial rather
+  // than leaving him staring at a JSON body on his phone. The diagnostics
+  // fetched on this same load re-probe the fresh token, so the panel below
+  // agrees with the banner.
+  const params = await searchParams;
+
+  const googleOutcome = params?.google || null;
+
+  const missingScopes = typeof params?.missing === "string" && params.missing
+    ? params.missing.split(",")
+    : [];
 
   const [settings, diagnostics] = await Promise.all([
     safeGet("/api/settings", { settings: null }),
@@ -59,6 +71,32 @@ export default async function Settings() {
       <div className="pos-reveal" data-reveal>
         <PageHeader title="Settings" />
       </div>
+
+      {googleOutcome === "connected" && (
+        <div className="pos-reveal" data-reveal>
+          <Card className="mb-2">
+            <p className="text-sm text-moss">
+              Google reconnected — every permission granted. Calendar, tasks,
+              Gmail and Docs are back.
+            </p>
+          </Card>
+        </div>
+      )}
+
+      {googleOutcome === "partial" && (
+        <div className="pos-reveal" data-reveal>
+          <Card className="mb-2">
+            <p className="text-sm text-ember">
+              Google reconnected, but some permissions were declined
+              {missingScopes.length > 0 ? `: ${missingScopes.join(", ")}` : ""}.
+            </p>
+            <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
+              The features needing them will keep failing. Reconnect below and
+              approve everything.
+            </p>
+          </Card>
+        </div>
+      )}
 
       <div className="pos-reveal" data-reveal>
       <Card className="mb-2">

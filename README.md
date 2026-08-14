@@ -281,6 +281,18 @@ short version:
     dashboard. Note the other half: an update that matched **zero rows** is
     reported by PostgREST as an empty array and no error, so "did nothing" has
     to be checked for separately or a stale id looks like a success.
+25. **A Google OAuth app left in "Testing" issues refresh tokens that die after
+    exactly seven days.** Nothing in this repo is wrong when it happens: one
+    week after the last consent, every Google call — brief sources, tasks,
+    calendar, Gmail, Docs — starts failing with `invalid_grant` on the same
+    morning. `lib/google.js` proves the token before handing out a client, so
+    it fails once, in one place, with words a person can act on; it pushes at
+    most one "reconnect" notification a day; Settings → Diagnostics probes the
+    token live and carries the reconnect button. The cure is Cloud Console →
+    OAuth consent screen → **Publish app**: production tokens don't expire (an
+    unverified app is capped at 100 users, which is 99 more than this one has).
+    Until that's done, expect a weekly reconnect. `tests/google-auth-expiry.test.js`
+    pins the detection and the alert's claim-before-push order.
 
 ## Where to look next
 

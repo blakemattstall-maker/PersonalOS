@@ -531,7 +531,44 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
 
           <div className="mt-4 space-y-4 text-sm">
 
+            {/* First because when it breaks, nothing else on this page matters:
+                calendar, tasks, Gmail and Docs all ride this one token. The
+                verdict comes from a live refresh against Google, not from the
+                row existing — see googleConnection() in lib/diagnostics.js. */}
             <div>
+              <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">Google</div>
+              <p className={`mt-1 ${diag.google?.connected && !diag.google?.missingScopes?.length ? "text-ink" : "text-ember"}`}>
+                {diag.google?.verdict || "not checked"}
+              </p>
+              {(!diag.google?.connected || diag.google?.missingScopes?.length > 0) && (
+                <>
+                  {/* A real navigation, not a fetch — the consent flow must own
+                      the whole tab, and the owner cookie rides a same-site
+                      top-level GET. */}
+                  <a
+                    href="/api/auth/google/login"
+                    className="mt-2 inline-block rounded-md border border-ember px-3 py-1.5 text-xs font-medium text-ember"
+                  >
+                    Reconnect Google
+                  </a>
+                  <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+                    Google will show everything it&apos;s being asked for — approve all
+                    of it, or the declined pieces stay broken. You land back here when
+                    it&apos;s done.
+                  </p>
+                </>
+              )}
+              {diag.google?.expired && (
+                <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+                  If this happens every seven days, the Google Cloud project is still
+                  in Testing mode — its tokens are built to die weekly. Publish it to
+                  production (Cloud Console → OAuth consent screen → Publish app) and
+                  the next reconnect is the last one.
+                </p>
+              )}
+            </div>
+
+            <div className="border-t border-[var(--line)] pt-3">
               <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">Location</div>
               <p className="mt-1 text-ink">{diag.location.verdict}</p>
               <p className="mt-1 text-xs text-ink-soft">

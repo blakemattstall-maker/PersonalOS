@@ -2,6 +2,7 @@ import supabase from "./supabase.js";
 import { getSettings } from "./settings.js";
 import { checkMigrations } from "./schema.js";
 import { probeTable } from "./tableProbe.js";
+import { getGoogleClient, SCOPES } from "./google.js";
 
 
 // A single honest answer to "is this thing actually running".
@@ -51,9 +52,59 @@ function ageHours(iso) {
 }
 
 
+// A live probe, not a row check. The google_integrations row existing says
+// nothing — the row was sitting right there the morning every Google call in
+// the system started failing, because what dies is the token inside it.
+// getGoogleClient() proves the token against Google's own token endpoint (and
+// is the same choke point every tool goes through, so this page and the
+// failures can never disagree). Exactly the calendar/tasks/inbox outage this
+// panel exists for: "no data" and "broken" must not look identical.
+//
+// The scope comparison catches the quieter failure: a consent screen where one
+// box was unticked leaves a working token that 403s on a single feature weeks
+// later. The refresh response says what the token actually carries; older
+// grants that don't echo a scope list are left unjudged rather than accused.
+async function googleConnection() {
+
+  const short = (s) => s.replace("https://www.googleapis.com/auth/", "");
+
+  try {
+
+    const { auth } = await getGoogleClient();
+
+    const granted = String(auth.credentials?.scope || "").split(" ").filter(Boolean);
+    const missing = granted.length ? SCOPES.filter(s => !granted.includes(s)).map(short) : [];
+
+    return {
+      connected: true,
+      expired: false,
+      missingScopes: missing,
+      verdict: missing.length
+        ? `connected, but ${missing.length} permission${missing.length === 1 ? " was" : "s were"} declined at the last consent: ${missing.join(", ")}. Those features will fail until you reconnect and approve everything.`
+        : "connected — the stored token refreshed successfully just now"
+    };
+
+  } catch (error) {
+
+    const expired = error?.code === "GOOGLE_AUTH_EXPIRED";
+
+    return {
+      connected: false,
+      expired,
+      missingScopes: [],
+      verdict: expired
+        ? "expired — Google revoked the stored token, so calendar, tasks, Gmail and Docs are all down until you reconnect"
+        : `unreachable — ${error?.message || "unknown error"}`
+    };
+
+  }
+
+}
+
+
 export async function buildDiagnostics() {
 
-  const [counts, lastPoint, lastBrief, lastMetric, lastLog, lastLink, lastNews, lastIngest, pushSubs, settings, schema] =
+  const [counts, lastPoint, lastBrief, lastMetric, lastLog, lastLink, lastNews, lastIngest, pushSubs, settings, schema, googleStatus] =
     await Promise.all([
 
       Promise.all(TABLES.map(async t => [t, await countOf(t)])).then(Object.fromEntries),
@@ -95,7 +146,9 @@ export async function buildDiagnostics() {
       checkMigrations().catch(error => {
         console.error("SCHEMA CHECK FAILED:", error.message);
         return { verdict: "Could not determine migration state.", pending: [], applied: [], migrations: [] };
-      })
+      }),
+
+      googleConnection()
 
     ]);
 
@@ -148,6 +201,7 @@ export async function buildDiagnostics() {
   return {
     success: true,
     checkedAt: new Date().toISOString(),
+    google: googleStatus,
     location,
     push,
     jobs,

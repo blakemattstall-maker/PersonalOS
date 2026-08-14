@@ -118,7 +118,14 @@ export async function gatherBriefFacts({ tz } = {}) {
   // reach the calendar.
   const failed = new Set();
 
+  // "Unavailable" alone is the symptom; when the cause is the one he can fix
+  // in twenty seconds — the Google token died, so calendar, tasks AND inbox
+  // are all down together — the brief should say the cause and the fix, not
+  // three separate shrugs.
+  let googleAuthExpired = false;
+
   const settle = (name, promise, fallback) => promise.then(v => v).catch(error => {
+    if (error?.code === "GOOGLE_AUTH_EXPIRED") googleAuthExpired = true;
     console.error(`BRIEF source "${name}" unavailable — rendering it as unknown, not as a false zero:`, error?.message);
     failed.add(name);
     return fallback;
@@ -154,6 +161,7 @@ export async function gatherBriefFacts({ tz } = {}) {
     // rather than asserting an empty day the system never actually saw.
     calendarUnavailable: failed.has("calendar"),
     tasksUnavailable: failed.has("tasks"),
+    googleAuthExpired,
 
     overdue: overdueTasks(tasks.tasks, todayISO),
     dueToday: dueToday(tasks.tasks, todayISO),
@@ -184,6 +192,14 @@ function renderFacts(f) {
   const lines = [];
 
   lines.push(`TODAY: ${f.now.toFormat("cccc, d LLLL yyyy")}`);
+
+  if (f.googleAuthExpired) {
+    lines.push(
+      "SYSTEM (lead with this, one blunt sentence): The Google connection has expired, " +
+      "so calendar, tasks and inbox are all unreachable until he reconnects — " +
+      "Settings, Reconnect Google, about twenty seconds. Do not guess at what the day holds."
+    );
+  }
 
   if (f.calendarUnavailable) {
     lines.push("CALENDAR: unavailable — the calendar could not be reached. Do NOT say the day is free; you do not know what is on it.");

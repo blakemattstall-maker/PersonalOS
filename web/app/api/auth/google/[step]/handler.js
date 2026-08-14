@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import { supabase } from "../../../../../lib/supabase.js";
+import { SCOPES } from "../../../../../lib/google.js";
 
 
 // Both halves of the Google OAuth handshake in one function.
@@ -13,48 +14,9 @@ import { supabase } from "../../../../../lib/supabase.js";
 // Deliberately not behind requireAuth: this is a browser flow. The login step
 // only bounces to Google's own consent screen, and the callback is useless
 // without a valid one-time code issued to this client ID.
-
-
-// Adding a scope here does NOT retroactively grant it. Google issues a
-// refresh token scoped to whatever was consented to at the time, so the stored
-// token keeps working for exactly the old scopes and every call needing a new
-// one fails with "insufficient authentication scopes" until /api/auth/google/
-// login is visited again. `prompt: "consent"` below is what makes that revisit
-// actually re-issue a token rather than silently bouncing back with the old
-// grant — without it, re-authorising appears to succeed and changes nothing.
-export const SCOPES = [
-
-  "https://www.googleapis.com/auth/tasks",
-  "https://www.googleapis.com/auth/calendar",
-
-  // Drafts only. This scope technically also permits sending, because Google
-  // does not publish a compose-without-send scope — the guarantee that nothing
-  // is ever sent is enforced in code (tools/gmail.js touches drafts.create and
-  // nothing else) and locked down by a test that fails the build if any send
-  // call appears anywhere in the repo.
-  "https://www.googleapis.com/auth/gmail.compose",
-
-  // Reading the inbox. Verified against the live token that gmail.compose does
-  // NOT cover this — messages.list returns 403 "insufficient authentication
-  // scopes" — so this genuinely requires a fresh consent pass, unlike the Docs
-  // and Drive scopes which the pre-existing token turned out to already carry.
-  //
-  // readonly rather than gmail.metadata, and the difference is not incidental:
-  // the metadata scope returns headers but strips snippets, and a subject line
-  // with no snippet is rarely enough to tell a real commitment from a
-  // newsletter. This is broad — it can read everything — so tools/gmail.js
-  // deliberately requests format: "metadata" and never fetches message bodies.
-  "https://www.googleapis.com/auth/gmail.readonly",
-
-  // Creating and writing documents.
-  "https://www.googleapis.com/auth/documents",
-
-  // Deliberately drive.file and not drive: per-file access limited to files
-  // this app itself created. It cannot see, read, or touch anything else in
-  // Drive. Needed so an exported doc can be given a shareable link.
-  "https://www.googleapis.com/auth/drive.file"
-
-];
+//
+// SCOPES lives in lib/google.js now, so diagnostics can compare what the live
+// token carries against what the app needs without importing an app route.
 
 
 function client() {
@@ -141,7 +103,9 @@ async function callback(req, res) {
 
   const { tokens } = await client().getToken(code);
 
-  const { data, error } = await supabase
+  // No `.select()` — the row it would return carries the tokens themselves,
+  // which have no business round-tripping toward a browser.
+  const { error } = await supabase
     .from("google_integrations")
     .upsert(
       {
@@ -151,8 +115,7 @@ async function callback(req, res) {
         expires_at: new Date(tokens.expiry_date)
       },
       { onConflict: "provider" }
-    )
-    .select();
+    );
 
   if (error) {
     // Message only — the raw PostgREST error object leaks column and schema
@@ -164,17 +127,22 @@ async function callback(req, res) {
   // silently drops any scope the user unticks on the consent screen, and the
   // failure that causes shows up much later as a confusing 403 from an
   // unrelated feature — this makes a partial grant visible immediately.
+  //
+  // The report lands as a redirect back into Settings rather than a raw JSON
+  // body, because the person completing this flow is on a phone that just came
+  // back from Google's consent screen — a wall of JSON there reads as "did it
+  // work?". Settings renders the outcome and its Diagnostics panel re-probes
+  // the fresh token on the same load.
   const granted = (tokens.scope || "").split(" ").filter(Boolean);
   const missing = SCOPES.filter(s => !granted.includes(s));
 
-  return res.json({
-    message: missing.length === 0
-      ? "Google connected — all scopes granted."
-      : "Google connected, but some scopes were NOT granted. The features needing them will fail until you re-authorise and accept everything.",
-    granted,
-    missing,
-    data
-  });
+  if (missing.length === 0) {
+    return res.redirect(302, "/settings?google=connected");
+  }
+
+  const short = missing.map(s => s.replace("https://www.googleapis.com/auth/", ""));
+
+  return res.redirect(302, `/settings?google=partial&missing=${encodeURIComponent(short.join(","))}`);
 
 }
 
