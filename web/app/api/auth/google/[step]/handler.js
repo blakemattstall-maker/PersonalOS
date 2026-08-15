@@ -19,12 +19,47 @@ import { SCOPES } from "../../../../../lib/google.js";
 // token carries against what the app needs without importing an app route.
 
 
-function client() {
+// The redirect URI follows the host the request actually arrived on, not the
+// env var. GOOGLE_REDIRECT_URI was migrated into production still pointing at
+// http://localhost:3000 — and marked Sensitive in Vercel, so the value that
+// sent the phone's reconnect flow to a dev server that wasn't there could not
+// even be read back to be noticed (trap #26). The request already knows the
+// right answer: Google must return the browser to the same host that started
+// the flow, because that host is where the owner cookie lives.
+//
+// The env var still wins when its locality matches the request's — a real
+// value pinned for production, or localhost while actually developing on
+// localhost — so local consent flows keep working unchanged. Google's side
+// only ever honours a redirect URI that is registered on the OAuth client, so
+// a derived host that isn't registered fails loudly with redirect_uri_mismatch
+// rather than quietly landing somewhere wrong.
+//
+// Both halves of the handshake must agree: the token exchange in the callback
+// sends redirect_uri again, and Google rejects the code if it differs from the
+// one consent was granted under. Deriving from the request keeps them agreeing
+// by construction — the callback's own host IS the host Google redirected to.
+export function redirectUriFor(req) {
+
+  const configured = process.env.GOOGLE_REDIRECT_URI || "";
+
+  const host = req.headers?.["x-forwarded-host"] || req.headers?.host || "";
+
+  const requestIsLocal = /^(localhost|127\.)/.test(host);
+  const configuredIsLocal = configured.includes("localhost") || configured.includes("127.");
+
+  if (configured && requestIsLocal === configuredIsLocal) return configured;
+
+  return `${requestIsLocal ? "http" : "https"}://${host}/api/auth/google/callback`;
+
+}
+
+
+function client(req) {
 
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
+    redirectUriFor(req)
   );
 
 }
@@ -75,7 +110,7 @@ function login(req, res) {
     return res.status(403).json({ error: "Sign in first — the Google connection is the owner's only." });
   }
 
-  const url = client().generateAuthUrl({
+  const url = client(req).generateAuthUrl({
     access_type: "offline",
     scope: SCOPES,
     prompt: "consent"
@@ -101,7 +136,7 @@ async function callback(req, res) {
     return res.status(400).json({ error: "Missing authorization code." });
   }
 
-  const { tokens } = await client().getToken(code);
+  const { tokens } = await client(req).getToken(code);
 
   // No `.select()` — the row it would return carries the tokens themselves,
   // which have no business round-tripping toward a browser.

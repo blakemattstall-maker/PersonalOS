@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import { redirectUriFor } from "../web/app/api/auth/google/[step]/handler.js";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const read = (path) => readFileSync(join(root, path), "utf8");
@@ -56,5 +58,107 @@ test("the callback returns error.message, never the raw error object", () => {
   // browser; every other handler returns the message only.
   assert.match(oauthSource, /error: error\.message/);
   assert.doesNotMatch(oauthSource, /json\(\{ step: "supabase upsert", error \}\)/);
+
+});
+
+
+// ---------------------------------------------------------------------------
+// Trap #26: GOOGLE_REDIRECT_URI reached production still pointing at
+// localhost:3000, marked Sensitive so the value couldn't even be read back —
+// and the phone's reconnect flow bounced to a dev server that wasn't there.
+// The redirect URI must follow the host the request arrived on, because that
+// host is where the owner cookie lives and where Google must land the browser.
+// ---------------------------------------------------------------------------
+
+const onHost = (host) => ({ headers: { host } });
+
+const withEnv = (value, fn) => {
+  const before = process.env.GOOGLE_REDIRECT_URI;
+  if (value === undefined) delete process.env.GOOGLE_REDIRECT_URI;
+  else process.env.GOOGLE_REDIRECT_URI = value;
+  try { return fn(); }
+  finally {
+    if (before === undefined) delete process.env.GOOGLE_REDIRECT_URI;
+    else process.env.GOOGLE_REDIRECT_URI = before;
+  }
+};
+
+
+test("a dev redirect URI in the env cannot capture a production request", () => {
+
+  // The bug as it shipped: prod env carried the localhost value, the phone
+  // started the flow on the real domain, and Google sent it to localhost.
+  withEnv("http://localhost:3000/api/auth/google/callback", () => {
+    assert.equal(
+      redirectUriFor(onHost("www.getalmanac.xyz")),
+      "https://www.getalmanac.xyz/api/auth/google/callback"
+    );
+  });
+
+});
+
+
+test("local development keeps its localhost redirect", () => {
+
+  withEnv("http://localhost:3000/api/auth/google/callback", () => {
+    assert.equal(
+      redirectUriFor(onHost("localhost:3000")),
+      "http://localhost:3000/api/auth/google/callback"
+    );
+  });
+
+});
+
+
+test("an explicitly pinned production URI still wins on production", () => {
+
+  withEnv("https://www.getalmanac.xyz/api/auth/google/callback", () => {
+    assert.equal(
+      redirectUriFor(onHost("web-liart-two-12.vercel.app")),
+      "https://www.getalmanac.xyz/api/auth/google/callback"
+    );
+  });
+
+});
+
+
+test("no env var at all derives from the request, with the right scheme", () => {
+
+  withEnv(undefined, () => {
+    assert.equal(
+      redirectUriFor(onHost("www.getalmanac.xyz")),
+      "https://www.getalmanac.xyz/api/auth/google/callback"
+    );
+    assert.equal(
+      redirectUriFor(onHost("localhost:3000")),
+      "http://localhost:3000/api/auth/google/callback"
+    );
+  });
+
+});
+
+
+test("a forwarded host outranks the direct one", () => {
+
+  // Behind the old domain's /api/* rewrite the serving host is not the host
+  // the person is on; x-forwarded-host is.
+  withEnv(undefined, () => {
+    assert.equal(
+      redirectUriFor({ headers: { "x-forwarded-host": "www.getalmanac.xyz", host: "web-liart-two-12.vercel.app" } }),
+      "https://www.getalmanac.xyz/api/auth/google/callback"
+    );
+  });
+
+});
+
+
+test("both halves of the handshake build the client from the request", () => {
+
+  // The token exchange sends redirect_uri again and Google rejects the code if
+  // it differs from the one consent was granted under — so neither step may
+  // fall back to a bare client().
+  assert.match(oauthSource, /client\(req\)\.generateAuthUrl/);
+  assert.match(oauthSource, /client\(req\)\.getToken/);
+  assert.doesNotMatch(oauthSource, /client\(\)\./);
 
 });

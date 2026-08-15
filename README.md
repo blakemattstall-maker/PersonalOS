@@ -293,6 +293,16 @@ short version:
     unverified app is capped at 100 users, which is 99 more than this one has).
     Until that's done, expect a weekly reconnect. `tests/google-auth-expiry.test.js`
     pins the detection and the alert's claim-before-push order.
+26. **A "Sensitive" Vercel env var cannot be read back, so a wrong one hides
+    indefinitely.** `GOOGLE_REDIRECT_URI` was migrated into production still
+    pointing at `localhost:3000` and marked Sensitive — the phone's reconnect
+    flow bounced to a dev server that wasn't there, and no dashboard surface
+    could display the value that did it. The OAuth handler now derives the
+    redirect URI from the requesting host (`redirectUriFor` — the env var only
+    wins when its locality matches the request's), so every host registered on
+    the Google client works and local dev stays local. Each new production
+    host still needs adding to the OAuth client's Authorized redirect URIs in
+    Cloud Console. `tests/oauth-callback.test.js` pins the derivation.
 
 ## Where to look next
 
