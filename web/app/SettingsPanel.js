@@ -600,6 +600,12 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
               <ul className="mt-1 space-y-0.5 text-xs text-ink-soft">
                 <li>Morning brief — {diag.jobs.morningBrief.lastAt ? `${diag.jobs.morningBrief.ageHours}h ago` : "never run"}</li>
                 <li>Daily review — {diag.jobs.reviewIntentions.lastAt ? `${diag.jobs.reviewIntentions.ageHours}h ago` : "never run"}</li>
+                <li>
+                  Canvas sync — {diag.jobs.syncCanvas?.lastAt ? `${diag.jobs.syncCanvas.ageHours}h ago` : "no run recorded yet"}
+                  {diag.jobs.syncCanvas?.ok === false && (
+                    <span className="text-ember"> · last run had errors</span>
+                  )}
+                </li>
               </ul>
             </div>
 

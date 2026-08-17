@@ -2,6 +2,20 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "portfolio",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "/Users/blakestall/Portfolio-Site",
+        "--",
+        "--port",
+        "3020"
+      ],
+      "port": 3020
+    },
+    {
       "name": "web",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

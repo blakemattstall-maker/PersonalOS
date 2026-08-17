@@ -303,6 +303,16 @@ short version:
     the Google client works and local dev stays local. Each new production
     host still needs adding to the OAuth client's Authorized redirect URIs in
     Cloud Console. `tests/oauth-callback.test.js` pins the derivation.
+27. **A mirror row written before the remote create turns every remote failure
+    into a permanent skip.** `createTask` inserts its Supabase row, then the
+    Google task; the Canvas sync checked bare row existence, so when Google
+    started rejecting the inserts (node-ical returns `URL;VALUE=URI:` as a
+    `{params, val}` object, which 400s inside a string `notes` field), each
+    failure left a row that made every later run report "already up to date" —
+    for three weeks, only 2 of 42 assignments actually reached Google, with
+    `success: true` throughout. "Exists" is not "landed": prove the remote half
+    (`google_task_id`) or redo the create. `tests/canvas-sync.test.js` pins the
+    URL normalisation and the repair path.
 
 ## Where to look next
 

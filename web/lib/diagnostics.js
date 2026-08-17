@@ -104,7 +104,7 @@ async function googleConnection() {
 
 export async function buildDiagnostics() {
 
-  const [counts, lastPoint, lastBrief, lastMetric, lastLog, lastLink, lastNews, lastIngest, pushSubs, settings, schema, googleStatus] =
+  const [counts, lastPoint, lastBrief, lastMetric, lastLog, lastLink, lastNews, lastIngest, lastCanvas, pushSubs, settings, schema, googleStatus] =
     await Promise.all([
 
       Promise.all(TABLES.map(async t => [t, await countOf(t)])).then(Object.fromEntries),
@@ -129,6 +129,17 @@ export async function buildDiagnostics() {
         .order("created_at", { ascending: false })
         .limit(5)
         .then(r => r.data || []),
+
+      // The Canvas sync writes one of these per run (tools/canvas.js), errors
+      // included — before this, a morning where every createTask failed left
+      // the same trace as a morning with nothing new: none.
+      supabase
+        .from("activity_logs")
+        .select("created_at, success, output")
+        .eq("action", "canvas_sync")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .then(r => (r.data || [])[0] || null),
 
       supabase
         .from("push_subscriptions")
@@ -194,6 +205,12 @@ export async function buildDiagnostics() {
     // frozen graph or a dead feed looked exactly like a quiet week.
     connectIslands: { lastAt: lastLink, ageHours: ageHours(lastLink) },
     syncNews: { lastAt: lastNews, ageHours: ageHours(lastNews) },
+    syncCanvas: {
+      lastAt: lastCanvas?.created_at || null,
+      ageHours: ageHours(lastCanvas?.created_at),
+      ok: lastCanvas ? lastCanvas.success !== false : null,
+      detail: lastCanvas?.output || null
+    },
     anyActivity: { lastAt: lastLog, ageHours: ageHours(lastLog) }
   };
 

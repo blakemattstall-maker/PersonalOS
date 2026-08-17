@@ -181,9 +181,13 @@ export async function findTaskByCanvasId({
 }) {
 
 
+  // google_task_id rides along so the caller can tell a synced task from a
+  // half-create: createTask writes this mirror row BEFORE the Google insert,
+  // so a row existing proves only that a sync was attempted, not that it
+  // landed. The canvas sync treats null google_task_id as "redo this one".
   const { data, error } = await supabase
     .from("tasks")
-    .select("id")
+    .select("id, google_task_id")
     .eq("canvas_assignment_id", canvas_assignment_id)
     .limit(1);
 
@@ -1316,6 +1320,25 @@ export async function syncTaskByGoogleId(google_task_id, updates) {
 
   if (error) {
     console.error("TASK MIRROR UPDATE FAILED:", error.message);
+  }
+
+}
+
+
+// For rows that never got a google_task_id — the half-creates a failed Google
+// insert leaves behind. Deleting by the mirror's own id is the only handle
+// such a row has.
+export async function deleteTaskRowById(id) {
+
+  if (!id) return;
+
+  const { error } = await supabase
+    .from("tasks")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    console.error("TASK ORPHAN DELETE FAILED:", error.message);
   }
 
 }
