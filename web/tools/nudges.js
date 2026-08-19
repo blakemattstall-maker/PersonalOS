@@ -6,8 +6,11 @@ import { DateTime } from "luxon";
 import {
   getOpenIntentions,
   markIntentionSurfaced,
+  markIntentionExpired,
   createNudge
 } from "./database.js";
+import { getEvents } from "./googleCalendar.js";
+import { analyseDay } from "../lib/eventKind.js";
 import { mapWithConcurrency } from "../lib/async.js";
 import { MODELS } from "../lib/models.js";
 import { sendPush } from "../lib/push.js";
@@ -46,7 +49,7 @@ export const DELIVERY_WINDOWS = {
 };
 
 
-function nextDeliveryTime(window, tz) {
+export function nextDeliveryTime(window, tz) {
 
   const now = DateTime.now().setZone(tz);
 
@@ -62,9 +65,44 @@ function nextDeliveryTime(window, tz) {
 }
 
 
+// What today actually looks like, so "is today the moment?" is answerable.
+// Without this the evaluator judged every intention blind to the calendar: a
+// movie recommendation sat unsurfaced for two weeks of free evenings because
+// nothing could ever say "tonight is free". Computed in code, stated as fact.
+export async function describeTodayShape(tz) {
+
+  const now = DateTime.now().setZone(tz);
+
+  const todayISO = now.toFormat("yyyy-MM-dd");
+
+  const { events } = await getEvents({ startDate: todayISO, endDate: todayISO, maxResults: 50 });
+
+  const day = analyseDay(events || []);
+
+  if (!day.stretches.length) {
+    return "Today's calendar (already computed): completely free — nothing scheduled.";
+  }
+
+  const time = (iso) => DateTime.fromISO(iso).setZone(tz).toFormat("h:mma").toLowerCase();
+
+  const eveningStart = now.set({ hour: 18, minute: 0, second: 0, millisecond: 0 });
+
+  const eveningBusy = (events || []).some(e =>
+    !e.allDay && e.start && e.end && DateTime.fromISO(e.end).setZone(tz) > eveningStart
+  );
+
+  return (
+    `Today's calendar (already computed): ${day.committedHours}h committed across ` +
+    `${day.stretches.length} block(s); first begins ${time(day.firstStart)}, last ends ${time(day.lastEnd)}. ` +
+    `The evening after 6pm is ${eveningBusy ? "NOT free" : "free"}.`
+  );
+
+}
+
+
 // Exported so the date reasoning can be tested against a real stored intention
 // without waiting for a cron or bypassing the cooldown by hand.
-export async function evaluateIntention(intention, context, tz) {
+export async function evaluateIntention(intention, context, tz, dayShape = null) {
 
   const now = DateTime.now().setZone(tz);
 
@@ -95,6 +133,10 @@ You are deciding whether TODAY is genuinely the right moment to nudge
 the user about something they mentioned wanting to do.
 
 RIGHT NOW IT IS ${now.toFormat("cccc, d LLLL yyyy")} at ${now.toFormat("HH:mm")} (${tz}).
+You are usually run before dawn, planning the whole day ahead — judge whether
+SOME moment today is right, not whether this instant is, and choose the
+delivery window to match that moment.
+${dayShape ? `\n${dayShape}\n` : ""}
 
 This intention was captured on ${created.toFormat("cccc, d LLLL yyyy")}, which was
 ${daysSinceCreated} day(s) ago.
@@ -115,6 +157,12 @@ Default to silence. Most days, most intentions should NOT be surfaced — the
 user explicitly does not want frequent check-ins or a "20 notifications a week"
 experience. Only say yes when there is a real, specific reason today is the
 moment.
+
+One class of exception to that default: a queued want. A film someone
+recommended, a book, anything he said he wanted to do sometime — paired with a
+genuinely free evening on today's calendar — IS a real reason, delivered in
+the evening window. Weeks of a leisure intention sitting untouched while free
+evenings pass is exactly the failure this system exists to prevent.
 
 The user has explicitly told you: be blunt by nature, hold nothing back, and
 never soften something if softening it would corrupt the accuracy of what you
@@ -236,6 +284,14 @@ export async function reviewIntentionsForNudges({ deliverImmediately = false } =
 
   const all = await getOpenIntentions();
 
+  // Computed once for the whole batch — every evaluation shares one calendar
+  // read. Best-effort: a dead calendar removes the free-moment reasoning, not
+  // the day's nudges.
+  const dayShape = await describeTodayShape(tz).catch(error => {
+    console.error("NUDGE DAY-SHAPE UNAVAILABLE:", error.message);
+    return null;
+  });
+
   // The cooldown is applied before any model is called, so a recently nudged
   // intention costs nothing to skip.
   const now = DateTime.now().setZone(tz);
@@ -264,12 +320,14 @@ export async function reviewIntentionsForNudges({ deliverImmediately = false } =
 
     try {
 
-      const evaluation = await evaluateIntention(intention, context, tz);
+      const evaluation = await evaluateIntention(intention, context, tz, dayShape);
 
       if (evaluation.expired) {
         expired.push(intention.content);
-        // Stamped so a finished thing stops being reconsidered every morning.
-        await markIntentionSurfaced(intention.id);
+        // Out of the open pool for good. A surfaced-stamp alone only bought
+        // three days before the same dead intention was re-evaluated and
+        // re-expired, forever.
+        await markIntentionExpired(intention.id);
         return;
       }
 
@@ -287,6 +345,13 @@ export async function reviewIntentionsForNudges({ deliverImmediately = false } =
     }
 
   });
+
+
+  // Errors used to travel only in the cron's JSON response, which Vercel
+  // discards — an evaluation that failed every day for a week was invisible.
+  if (errors.length) {
+    console.error("NUDGE EVALUATION ERRORS:", JSON.stringify(errors));
+  }
 
 
   const selected = await chooseWhatToSend(candidates).catch(() => candidates.slice(0, MAX_NUDGES_PER_RUN));
@@ -325,7 +390,7 @@ export async function reviewIntentionsForNudges({ deliverImmediately = false } =
 }
 
 
-async function deliverNudge(nudge, message) {
+export async function deliverNudge(nudge, message) {
 
   if (!(await pushAllowed("nudge"))) return { sent: 0, skipped: "interruption level" };
 
@@ -353,12 +418,22 @@ export async function deliverScheduledNudges() {
 
   const { default: supabase } = await import("../lib/supabase.js");
 
+  // The lookahead is the fix for a real, observed failure. Delivery windows
+  // are local hours (8/12/16/19) while the cron slots are fixed UTC
+  // (12/16/20/23 — 7am/11am/3pm/6pm CDT), so every window landed just AFTER
+  // its nearest slot and waited for the next one — and the evening window
+  // (7pm = 00:00 UTC) missed the day's last slot entirely. The nudges of Aug
+  // 16 and 17 were written, shown on the dashboard, resolved there the next
+  // morning, and never once buzzed the phone. Delivering up to 2.5 hours
+  // early beats delivering tomorrow, every time.
+  const horizon = DateTime.utc().plus({ minutes: 150 }).toISO();
+
   const { data, error } = await supabase
     .from("nudges")
     .select("id, message, deliver_at, pushed_at, status")
     .is("pushed_at", null)
     .not("deliver_at", "is", null)
-    .lte("deliver_at", new Date().toISOString())
+    .lte("deliver_at", horizon)
     .eq("status", "pending_review")
     .order("deliver_at", { ascending: true })
     .limit(MAX_NUDGES_PER_RUN);

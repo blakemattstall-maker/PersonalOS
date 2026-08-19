@@ -376,8 +376,13 @@ export async function reviewInbox({ days = 7, limit = 40, question = null } = {}
           '  "summary": ""\n' +
           "}\n\n" +
           "Rules that matter:\n" +
-          "- needs_you means a real action or reply is required of them. Newsletters, receipts, " +
-          "notifications and marketing are never needs_you, no matter how urgent the sender writes.\n" +
+          "- needs_you means a specific person or institution is waiting on THEM to reply, decide " +
+          "or submit something. Newsletters, receipts, marketing, and ALL automated notifications — " +
+          "security alerts, vulnerability warnings, new sign-in or new-device notices, data-access " +
+          "and policy-change notices, delivery updates, grade postings — are never needs_you, no " +
+          "matter how urgent the sender writes. Machine mail is wallpaper: he can find it himself, " +
+          "and a brief that leads with it has wasted its lead. If one genuinely matters, give it " +
+          "one clause in summary, never a needs_you entry.\n" +
           "- Only record a deadline the message actually states. Never infer one from tone.\n" +
           "- people_facts must be durable facts about a person they know, not the contents of one " +
           "message. Only use names from the saved roster. If nothing qualifies, return an empty list.\n" +

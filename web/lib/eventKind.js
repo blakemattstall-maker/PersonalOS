@@ -13,14 +13,23 @@
 // would be no way to tell, whereas this is inspectable and testable. Trap #4:
 // don't ask a model for something that can be computed.
 
-export const EVENT_KINDS = ["meeting", "appointment", "block", "reminder", "travel"];
+export const EVENT_KINDS = ["class", "meeting", "appointment", "block", "reminder", "travel"];
 
 
 // Words that decide the kind on their own, checked before anything structural.
 // A "flight" with no attendees is not a focus block, and a "1:1" with no
 // attendee list is still a meeting — people routinely put those on their own
 // calendar without inviting anyone.
+//
+// The course-code pattern is first and deliberately case-sensitive: "HSC 206"
+// is unambiguous, "may 100" is a sentence. Classes existed before this as
+// "appointment" (a located hour) which is exactly wrong for a brief — five of
+// them a day is a fixture pattern, not five separate demands, and until they
+// had their own kind the brief described a Tuesday the way it would describe
+// five dentist visits.
 const TITLE_SIGNALS = [
+  [/\b[A-Z]{2,4} ?\d{3}[A-Z]?\b/, "class"],
+  [/\b(class|lecture|lab|seminar|recitation)\b/i, "class"],
   [/\b(flight|depart|arrival|drive to|train|airport|commute|travel)\b/i, "travel"],
   [/\b(1:1|one on one|standup|stand-up|sync|call with|zoom|meet with|meeting|interview|coffee with|catch up with)\b/i, "meeting"],
   [/\b(dentist|doctor|appointment|appt|haircut|dmv|checkup|clinic)\b/i, "appointment"],
@@ -33,6 +42,7 @@ const TITLE_SIGNALS = [
 // EVENT_COLORS table. Kept as one small map so changing an association is a
 // one-line edit rather than a change spread across files.
 export const KIND_COLOR = {
+  class: "graphite",
   meeting: "peacock",
   appointment: "banana",
   block: "basil",
@@ -89,6 +99,47 @@ export function durationMinutes(event = {}) {
 }
 
 
+// Consecutive commitments are one demand on the day, not several. Three
+// classes from 9 to 12 with ten-minute walks between them is "class till noon"
+// to any person describing their morning, and a brief that narrates each one
+// separately reads like a calendar export. The merge is computed here, in
+// code, so the model receives "one stretch of three" as fact instead of being
+// asked to notice the adjacency itself.
+export function clusterTimedEvents(events = [], { maxGapMinutes = 25 } = {}) {
+
+  const timed = events
+    .filter(e => !e.allDay && e.start && e.end)
+    .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  const stretches = [];
+
+  for (const event of timed) {
+
+    const last = stretches[stretches.length - 1];
+
+    const gapMs = last ? new Date(event.start) - new Date(last.end) : Infinity;
+
+    if (last && gapMs <= maxGapMinutes * 60000) {
+
+      last.events.push(event);
+
+      // Events are sorted by start, not by end — a long event can swallow a
+      // short one, so the stretch end is the furthest end seen, not the last.
+      if (new Date(event.end) > new Date(last.end)) last.end = event.end;
+
+    } else {
+
+      stretches.push({ start: event.start, end: event.end, events: [event] });
+
+    }
+
+  }
+
+  return stretches;
+
+}
+
+
 // How much of the day is actually spoken for, and where it collides. Both are
 // facts a brief should state rather than a model estimate — the overlap check
 // in particular is the sort of thing a model gets subtly wrong while sounding
@@ -109,7 +160,15 @@ export function analyseDay(events = []) {
     const next = timed[i + 1];
 
     if (new Date(next.start) < new Date(current.end)) {
-      overlaps.push({ first: current.title, second: next.title });
+      overlaps.push({
+        first: current.title,
+        second: next.title,
+        // Two recurring fixtures colliding is a standing fact of the semester,
+        // not news — the brief needs to know which kind of collision this is
+        // so it can stop announcing the same one every morning.
+        standing: (current.kind || classifyEvent(current)) === "class" &&
+                  (next.kind || classifyEvent(next)) === "class"
+      });
     }
 
   }
@@ -126,8 +185,12 @@ export function analyseDay(events = []) {
     committedHours: Math.round((committedMinutes / 60) * 10) / 10,
     overlaps,
     byKind,
+    stretches: clusterTimedEvents(events),
     firstStart: timed[0]?.start || null,
-    lastEnd: timed[timed.length - 1]?.end || null
+    // The last end is the furthest end, not the end of the last-starting
+    // event — same containment case the stretch merge handles.
+    lastEnd: timed.reduce((latest, e) =>
+      !latest || new Date(e.end) > new Date(latest) ? e.end : latest, null)
   };
 
 }

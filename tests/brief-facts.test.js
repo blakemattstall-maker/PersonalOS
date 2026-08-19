@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { DateTime } from "luxon";
 
-import { classifyEvent, analyseDay, durationMinutes } from "../web/lib/eventKind.js";
+import { classifyEvent, analyseDay, durationMinutes, clusterTimedEvents } from "../web/lib/eventKind.js";
 import { resolveRelativeDates } from "../web/lib/resolveDates.js";
 
 
@@ -95,4 +95,59 @@ test("the longer phrase wins over the shorter one inside it", () => {
 
   assert.match(out, /Saturday 8 August/);
   assert.doesNotMatch(out, /tomorrow/i);
+});
+
+
+// A semester is fixtures, not appointments. Course codes are the strongest
+// possible title signal and must win before anything structural — a located
+// 50-minute "HSC 206" used to come back as "appointment", which made a
+// Tuesday of five classes read like five dentist visits.
+test("a course code makes a class, case-sensitively", () => {
+  assert.equal(classifyEvent({ title: "HSC 206", start: at(8), end: at(8, 50), location: "Forker" }), "class");
+  assert.equal(classifyEvent({ title: "ACC 131 Lecture", start: at(14), end: at(15) }), "class");
+  // Lowercase letters next to digits are prose, not a course code.
+  assert.equal(classifyEvent({ title: "may 100 pushups", start: at(9), end: at(10) }), "block");
+  // The old signals still win where no course code exists.
+  assert.equal(classifyEvent({ title: "Flight to Chicago", start: at(9), end: at(13) }), "travel");
+});
+
+
+test("back-to-back events merge into one stretch; a gap breaks it", () => {
+  const stretches = clusterTimedEvents([
+    { title: "HSC 206", start: at(8), end: at(8, 50) },
+    { title: "ENG 128", start: at(9, 5), end: at(9, 55) },   // 15min walk — same stretch
+    { title: "MGT 100", start: at(10, 10), end: at(12, 10) }, // 15min walk — same stretch
+    { title: "Gym", start: at(16), end: at(17) }              // hours later — its own
+  ]);
+
+  assert.equal(stretches.length, 2);
+  assert.equal(stretches[0].events.length, 3);
+  assert.equal(stretches[0].start, at(8));
+  assert.equal(stretches[0].end, at(12, 10));
+  assert.equal(stretches[1].events.length, 1);
+});
+
+
+test("a long event does not lose the stretch its shorter neighbour ends inside", () => {
+  const stretches = clusterTimedEvents([
+    { title: "Work block", start: at(9), end: at(12) },
+    { title: "Quick call", start: at(9, 30), end: at(10) }
+  ]);
+
+  assert.equal(stretches.length, 1);
+  // The stretch ends when the LONG event ends, not when the last-starting one does.
+  assert.equal(stretches[0].end, at(12));
+});
+
+
+test("two classes colliding is a standing fact; anything else is news", () => {
+  const day = analyseDay([
+    { title: "HSC 206", start: at(8), end: at(9) },
+    { title: "ENG 128", start: at(8, 30), end: at(9, 30) },
+    { title: "Dentist", start: at(9, 15), end: at(10) }
+  ]);
+
+  assert.equal(day.overlaps.length, 2);
+  assert.equal(day.overlaps[0].standing, true);   // class into class
+  assert.equal(day.overlaps[1].standing, false);  // class into appointment
 });

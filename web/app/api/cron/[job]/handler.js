@@ -2,6 +2,7 @@ import { syncCanvasAssignments } from "../../../../tools/canvas.js";
 import { createBrief, getLatestUnreadBrief, getMostRecentBrief } from "../../../../tools/database.js";
 import { composeBrief } from "../../../../tools/brief.js";
 import { reviewIntentionsForNudges, deliverScheduledNudges } from "../../../../tools/nudges.js";
+import { reviewShortcomings } from "../../../../tools/accountability.js";
 import { syncTransactions, rebuildLinks, findInsights, deliverInsights } from "../../../../tools/islands.js";
 import { linkVisitsToEvents } from "../../../../tools/location.js";
 import { checkProjectDeadlines } from "../../../../tools/projectCheckup.js";
@@ -214,6 +215,27 @@ async function reviewIntentions() {
   ]);
 
 
+  // The accountability pass runs after intention review and shares its
+  // interruption budget: at most two app-initiated nudges a day, however they
+  // were found. Sequenced, not parallel, because the budget arithmetic needs
+  // the intention count first — and because both read the same rich context,
+  // which lib/context.js coalesces on the second call anyway.
+  let accountabilityResult = null;
+
+  try {
+
+    const intentionNudges = Array.isArray(nudgeResult?.data?.sent)
+      ? nudgeResult.data.sent.length
+      : 0;
+
+    accountabilityResult = await reviewShortcomings({ budget: 2 - intentionNudges });
+
+  } catch (error) {
+    console.error("ACCOUNTABILITY REVIEW FAILED:", error.message);
+    accountabilityResult = { success: false, error: error.message };
+  }
+
+
   // Weekly, not daily: the bio changes slowly and rewriting it is the one
   // destructive operation in this system.
   const tz = await getUserTimezone();
@@ -259,6 +281,7 @@ async function reviewIntentions() {
     metrics: metricsResult,
     observation: observationResult,
     nudges: nudgeResult,
+    accountability: accountabilityResult,
     projects: projectResult,
     relationships: relationshipResult,
     dateReminders: dateReminderResult,

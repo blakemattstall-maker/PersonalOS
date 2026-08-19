@@ -7,7 +7,7 @@ import { getEvents } from "./googleCalendar.js";
 import { getTasks, taskDueDate } from "./googleTasks.js";
 import { analyseDay } from "../lib/eventKind.js";
 import { getAllPeople } from "./people.js";
-import { getOpenIntentions, getProjectsWithDetails } from "./database.js";
+import { getOpenIntentions, getProjectsWithDetails, getRecentBriefs } from "./database.js";
 
 
 // The morning brief.
@@ -131,7 +131,7 @@ export async function gatherBriefFacts({ tz } = {}) {
     return fallback;
   });
 
-  const [events, tasks, context, people, intentions, projects, inbox] = await Promise.all([
+  const [events, tasks, context, people, intentions, projects, inbox, priorBriefs] = await Promise.all([
     settle("calendar", getEvents({ startDate: todayISO, endDate: todayISO, maxResults: 50 }), { events: [] }),
     settle("tasks", getTasks({ maxResults: 100 }), { tasks: [] }),
     settle("context", buildRichContext(), {}),
@@ -143,7 +143,11 @@ export async function gatherBriefFacts({ tz } = {}) {
     settle("inbox",
       import("./gmail.js").then(m => m.reviewInbox({ days: 3, limit: 25 })),
       { success: false }
-    )
+    ),
+    // Its own memory. The composer is told what the last few briefs said so
+    // that a critique made on Monday is not rediscovered fresh on Tuesday,
+    // Wednesday and Thursday.
+    settle("priorBriefs", getRecentBriefs({ limit: 3 }), [])
   ]);
 
   const dayEvents = events.events || [];
@@ -174,6 +178,8 @@ export async function gatherBriefFacts({ tz } = {}) {
     projects: (projects || []).map(p => ({ name: p.name, next: p.next_action })),
 
     inbox: inbox?.success ? (inbox.data?.needs_you || []) : null,
+
+    priorBriefs: priorBriefs || [],
 
     bio: context.bio || null,
     insights: context.insights || null,
@@ -206,15 +212,51 @@ function renderFacts(f) {
   } else if (f.events.length === 0) {
     lines.push("CALENDAR: nothing scheduled.");
   } else {
+
     lines.push(`CALENDAR (${f.day.committedHours}h committed across ${f.events.length}):`);
-    for (const e of f.events) {
-      const when = e.allDay ? "all day" : `${time(e.start)}-${time(e.end)}`;
-      const who = e.attendees?.length ? ` with ${e.attendees.join(", ")}` : "";
-      lines.push(`  [${e.kind}] ${when} ${e.title}${who}${e.location ? ` @ ${e.location}` : ""}`);
+
+    // Consecutive commitments arrive as one unit. A stretch of three classes
+    // is rendered as a single block with its members named in parentheses, so
+    // the model cannot narrate them one by one — the adjacency has already
+    // been decided as fact, the same way the arithmetic has.
+    for (const stretch of f.day.stretches) {
+
+      if (stretch.events.length === 1) {
+        const e = stretch.events[0];
+        const who = e.attendees?.length ? ` with ${e.attendees.join(", ")}` : "";
+        lines.push(`  [${e.kind}] ${time(e.start)}-${time(e.end)} ${e.title}${who}${e.location ? ` @ ${e.location}` : ""}`);
+        continue;
+      }
+
+      const kinds = [...new Set(stretch.events.map(e => e.kind))];
+
+      const label = kinds.length === 1 && kinds[0] === "class"
+        ? `${stretch.events.length} classes back-to-back`
+        : `${stretch.events.length} back-to-back`;
+
+      lines.push(
+        `  [BLOCK — one unit, do not enumerate] ${time(stretch.start)}-${time(stretch.end)} ` +
+        `${label} (${stretch.events.map(e => e.title).join(", ")})`
+      );
+
     }
-    if (f.day.overlaps.length) {
-      lines.push(`  OVERLAPS (already checked, state as fact): ${f.day.overlaps.map(o => `"${o.first}" runs into "${o.second}"`).join("; ")}`);
+
+    // All-day entries mark the day rather than occupying it; stretches only
+    // cover timed events, so these still need their own lines.
+    for (const e of f.events.filter(e => e.allDay)) {
+      lines.push(`  [${e.kind}] all day ${e.title}`);
     }
+
+    // A collision between two recurring fixtures is a standing fact of the
+    // semester; only collisions with something movable in them are today's
+    // news. The standing ones are withheld entirely — the reader has a
+    // registration portal for those.
+    const newOverlaps = f.day.overlaps.filter(o => !o.standing);
+
+    if (newOverlaps.length) {
+      lines.push(`  OVERLAPS (already checked; mention only if one side can actually move today): ${newOverlaps.map(o => `"${o.first}" runs into "${o.second}"`).join("; ")}`);
+    }
+
   }
 
   if (f.tasksUnavailable) {
@@ -238,7 +280,17 @@ function renderFacts(f) {
   }
 
   if (f.inbox?.length) {
-    lines.push(`INBOX NEEDS A REPLY: ${f.inbox.map(i => `${i.subject} (from ${i.from}${i.deadline ? `, states ${i.deadline}` : ""})`).join("; ")}`);
+
+    // Second line of defence behind the classifier in gmail.js: anything that
+    // still looks like machine mail is tagged so the composer can weigh it as
+    // wallpaper rather than as a person waiting. Security-alert emails led the
+    // brief four days out of seven before this existed.
+    const automated = /security alert|vulnerab|sign.?in|new device|new ip|data access|verify|password|suspicious/i;
+
+    lines.push(`INBOX (context, not the story): ${f.inbox.map(i =>
+      `${i.subject} (from ${i.from}${i.deadline ? `, states ${i.deadline}` : ""})${automated.test(`${i.subject} ${i.from}`) ? " [automated — FYI at most]" : ""}`
+    ).join("; ")}`);
+
   }
 
   if (f.projects.length) {
@@ -272,26 +324,45 @@ export async function composeBrief({ tz } = {}) {
         role: "system",
         content: `
 You write one person's morning brief. You are not a summariser and you are not
-an assistant reading a list back to them — you are the person who has already
-looked at everything and decided what actually matters today.
+an assistant reading a list back to them — you are a chief of staff who has
+already read everything, decided what actually matters today, and is telling
+him the two or three things worth his attention.
 
 Voice: blunt, specific, no hedging, no cheerleading. He has explicitly asked
 never to have things softened, and never to be congratulated for existing. Do
 not open with a greeting, do not use his name, do not say "here's your brief".
-Start with the thing that matters most.
+Start with the single most consequential thing about today.
 
 Hard rules:
 - Every figure below is already calculated. Use them as given. Do NOT do
   arithmetic of your own and do not recompute times, totals or day counts.
-- Do not list the calendar back in order. Anyone can read a calendar. Say what
-  the shape of the day is, what will actually be hard about it, and what is
-  worth protecting or moving.
-- Distinguish what kind of thing each entry is. A meeting with other people, an
-  appointment, an hour he set aside for himself and a bare reminder are not the
-  same and must not be described as if they were.
+- Do not list the calendar back in order. Anyone can read a calendar. A
+  back-to-back stretch is handed to you as ONE unit — say "classes till 12:10",
+  never three sentences. Name an individual entry inside a stretch only when it
+  needs something special today: something due, something to bring, someone to
+  talk to. Say what the shape of the day is, what will actually be hard about
+  it, and what is worth protecting or moving.
+- Email is context, not the story. Automated mail — security alerts,
+  vulnerability notices, sign-in warnings, bank or data notifications,
+  receipts — is never the lead and rarely worth a sentence. Only a named human
+  waiting on him, or a stated deadline with real consequences, can put email at
+  the top of a brief.
+- You also wrote the previous briefs, quoted below the facts. Never repeat an
+  observation, warning or critique from them unless the underlying number or
+  state has materially changed — he already read it. A standing pattern
+  (spending, weight) earns at most one mention a week, and only with a new
+  figure. Finding what is NEW about today is the entire job.
+- Distinguish what kind of thing each entry is. A class, a meeting with other
+  people, an appointment, an hour he set aside for himself and a bare reminder
+  are not the same and must not be described as if they were.
 - Only mention money, relationships, projects or email when there is something
   genuinely worth saying. Silence on a domain is correct and expected.
-- If two things collide, say so plainly and say which one should move.
+- If two things collide and one of them can actually move, say so plainly and
+  say which one should move. A standing collision between fixtures is not news.
+- End with one sentence that is not an obligation: the best use of today's
+  slack — a free window worth spending deliberately, something he queued and
+  actually wants to do, a prep that would quietly pay off soon. Skip it only if
+  the day genuinely has no room.
 - No markdown, no headings, no bullet characters. Flowing prose in short
   paragraphs, the way a sharp person would actually tell you.
 - Three short paragraphs at most. Being complete is worth less than being read.
@@ -302,7 +373,13 @@ Hard rules:
         role: "user",
         content:
           `${facts.bio ? `Who he is:\n${facts.bio}\n\n` : ""}` +
-          `Today's facts:\n${renderFacts(facts)}`
+          `Today's facts:\n${renderFacts(facts)}` +
+          (facts.priorBriefs?.length
+            ? `\n\nWHAT THE LAST ${facts.priorBriefs.length} BRIEFS ALREADY SAID — already read, do not say any of it again without a material change:\n` +
+              facts.priorBriefs.map(b =>
+                `--- ${DateTime.fromISO(b.created_at).setZone(facts.zone).toFormat("cccc d LLLL")} ---\n${b.content}`
+              ).join("\n")
+            : "")
       }
 
     ]

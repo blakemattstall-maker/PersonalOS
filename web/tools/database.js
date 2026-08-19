@@ -581,6 +581,31 @@ export async function deleteIntention(id) {
 
 
 
+// What the brief has already told him. Passed back into composition so today's
+// brief knows what yesterday's said — without this the model rediscovered the
+// same spending critique and the same standing overlap every single morning,
+// each time as if for the first time.
+export async function getRecentBriefs({ limit = 3 } = {}) {
+
+
+  const { data, error } = await supabase
+    .from("briefs")
+    .select("content, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+
+  return data || [];
+
+}
+
+
+
 export async function getMostRecentBrief() {
 
 
@@ -739,6 +764,29 @@ export async function markIntentionSurfaced(id) {
   const { error } = await supabase
     .from("intentions")
     .update({ last_surfaced_at: new Date().toISOString() })
+    .eq("id", id);
+
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+}
+
+
+
+// An intention whose moment has passed leaves the "open" pool for good.
+// Stamping last_surfaced_at alone — the old behaviour — only bought three
+// days of cooldown, after which the same dead intention was re-evaluated,
+// re-judged expired, and re-stamped, forever: one pointless model call every
+// three days per finished thing, and a pool of "open" intentions that was
+// mostly history.
+export async function markIntentionExpired(id) {
+
+
+  const { error } = await supabase
+    .from("intentions")
+    .update({ status: "expired", last_surfaced_at: new Date().toISOString() })
     .eq("id", id);
 
 
