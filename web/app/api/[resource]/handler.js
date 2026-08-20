@@ -26,6 +26,10 @@ import { queryFinances } from "../../../tools/finances.js";
 import { pendingInsights, resolveInsight } from "../../../tools/islands.js";
 import { fullGraph } from "../../../lib/links.js";
 import { enforceLimit } from "../../../lib/ratelimit.js";
+import { getEvents } from "../../../tools/googleCalendar.js";
+import { analyseDay } from "../../../lib/eventKind.js";
+import { getUserTimezone } from "../../../lib/profile.js";
+import { DateTime } from "luxon";
 
 
 // Every read/write endpoint the dashboard uses, behind ONE serverless function.
@@ -186,6 +190,141 @@ async function nudges(req, res) {
     await resolveNudge(id);
 
     return res.status(200).json({ success: true });
+
+  }
+
+  return res.status(405).json({ error: "Method not allowed" });
+
+}
+
+
+// The desk device's whole diet, in one small response.
+//
+// A microcontroller on the desk polls this once a minute over dorm WiFi. It
+// is deliberately a single round trip: the device has kilobytes of RAM for a
+// response and a battery of exactly zero patience for chatty APIs. Everything
+// it renders — the ember/clear state, the countdown, the one nudge worth
+// showing — arrives together, already decided.
+//
+// The calendar degrades alone, same rule as the brief: a dead Google token
+// must cost the countdown, not the whole poll, and it must arrive as
+// calendar:null ("unreachable"), never as an empty day the server never saw.
+async function desk(req, res) {
+
+  if (req.method === "GET") {
+
+    const tz = await getUserTimezone();
+
+    const now = DateTime.now().setZone(tz);
+
+    const todayISO = now.toFormat("yyyy-MM-dd");
+
+    const [nudges, prompts, insights, brief, calendar] = await Promise.all([
+
+      getPendingNudges().catch(() => []),
+
+      supabase
+        .from("prompts")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending")
+        .then(r => r.count || 0)
+        .catch(() => 0),
+
+      pendingInsights({ limit: 10 }).catch(() => []),
+
+      getMostRecentBrief().catch(() => null),
+
+      getEvents({ startDate: todayISO, endDate: todayISO, maxResults: 50 })
+        .then(r => r.events || [])
+        .catch(() => null)
+
+    ]);
+
+
+    const time = (iso) => DateTime.fromISO(iso).setZone(tz).toFormat("h:mma").toLowerCase();
+
+    let calendarOut = null;
+
+    if (calendar) {
+
+      const day = analyseDay(calendar);
+
+      const upcoming = calendar
+        .filter(e => !e.allDay && e.start && DateTime.fromISO(e.start).setZone(tz) > now)
+        .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+      const next = upcoming[0] || null;
+
+      const eveningStart = now.set({ hour: 18, minute: 0, second: 0, millisecond: 0 });
+
+      calendarOut = {
+
+        next: next ? {
+          title: next.title,
+          kind: next.kind,
+          at: time(next.start),
+          startsInMin: Math.max(0, Math.round(DateTime.fromISO(next.start).diff(now, "minutes").minutes))
+        } : null,
+
+        remaining: upcoming.length,
+
+        lastEnd: day.lastEnd ? time(day.lastEnd) : null,
+
+        eveningFree: !calendar.some(e =>
+          !e.allDay && e.end && DateTime.fromISO(e.end).setZone(tz) > eveningStart
+        )
+
+      };
+
+    }
+
+
+    // The ember rule, as a number. Anything the app raised that is still
+    // waiting on him counts; zero means the ring rests moss.
+    const attentionCount = nudges.length + prompts + insights.length;
+
+    // The brief's opening sentence is written to be the one that matters —
+    // same split briefPush uses for the phone notification.
+    const lead = brief?.content ? (brief.content.split(/(?<=[.!?])\s/)[0] || null) : null;
+
+    return res.status(200).json({
+
+      success: true,
+
+      ts: now.toISO(),
+      tz,
+
+      attention: {
+        count: attentionCount,
+        nudge: nudges[0] ? { id: nudges[0].id, message: nudges[0].message } : null
+      },
+
+      calendar: calendarOut,
+
+      brief: brief ? { lead, unread: Boolean(brief.unread) } : null
+
+    });
+
+  }
+
+
+  if (req.method === "POST") {
+
+    const { action, id } = req.body || {};
+
+    // The knob's press, closing the loop the dashboard's Resolve button
+    // closes — one physical press marks the shown nudge handled everywhere.
+    if (action === "ack") {
+
+      if (!id) return res.status(400).json({ error: "Missing id" });
+
+      await resolveNudge(id);
+
+      return res.status(200).json({ success: true });
+
+    }
+
+    return res.status(400).json({ error: `Unknown action: ${action}` });
 
   }
 
@@ -694,7 +833,7 @@ async function graph(req, res) {
 }
 
 
-const RESOURCES = { data, history, nudges, projects, deepThoughts, brief, settings, diag, practice, people, news, finance, graph };
+const RESOURCES = { data, history, nudges, desk, projects, deepThoughts, brief, settings, diag, practice, people, news, finance, graph };
 
 
 export default async function handler(req, res) {
