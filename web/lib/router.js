@@ -18,6 +18,7 @@ import { researchQuery } from "../tools/research.js";
 import { savePerson, queryPeople, recordContact } from "../tools/people.js";
 import { draftEmail, reviewInbox } from "../tools/gmail.js";
 import { exportToDoc } from "../tools/googleDocs.js";
+import { answerDiningQuestion, planMeals, logMeal, updateDiningPrefs } from "../tools/mealPlan.js";
 
 
 // Logging must never mask a real error.
@@ -327,6 +328,58 @@ export async function executeTool(data, originalText = null) {
           request: data.request,
           title: data.title ?? null,
           research: data.research === true
+        });
+
+        break;
+
+
+
+      case "query_dining":
+
+        result = await answerDiningQuestion({
+          question: data.question || originalText,
+          date: data.date ?? null
+        });
+
+        break;
+
+
+
+      case "plan_meals":
+
+        result = await planMeals({
+          date: data.date ?? null,
+          meals: data.meals ?? null,
+          note: data.note ?? null
+        });
+
+        break;
+
+
+
+      case "log_meal":
+
+        result = await logMeal({
+          description: data.description || originalText,
+          meal: data.meal ?? null,
+          date: data.date ?? null
+        });
+
+        break;
+
+
+
+      case "set_food_preference":
+
+        result = await updateDiningPrefs({
+          dislike: data.dislike ?? null,
+          like: data.like ?? null,
+          remove: data.remove ?? null,
+          calorie_target: data.calorie_target ?? null,
+          protein_target: data.protein_target ?? null,
+          meal: data.meal ?? null,
+          window_start: data.window_start ?? null,
+          window_end: data.window_end ?? null
         });
 
         break;

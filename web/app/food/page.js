@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { DateTime } from "luxon";
 import { backendGet } from "../backend.js";
-import DiningMenu from "../DiningMenu.js";
+import FoodView from "../FoodView.js";
 import DiningSyncButton from "../DiningSyncButton.js";
 import Reveal from "../Reveal.js";
 import { Page, PageHeader, Empty, Meta } from "../ui.js";
 
 
 export const dynamic = "force-dynamic";
-// The Sync button's server action runs under this segment's config, and a
-// sync slice works a 35s budget — the default duration would cut it off.
+// The Plan button and the Sync button both run long server actions under this
+// segment's config — planning is a judgment-model call plus calendar writes,
+// and a sync slice works a 35s budget. The default duration would cut both off.
 export const maxDuration = 60;
 
 
@@ -71,7 +72,13 @@ export default async function Food({ searchParams }) {
 
   const query = /^\d{4}-\d{2}-\d{2}$/.test(params?.date || "") ? `?date=${params.date}` : "";
 
-  const data = await safeGet(`/api/dining${query}`, { success: false, dates: [], meals: [] });
+  // The menu and the day's log are independent reads with independent failure
+  // modes — the log table arriving by a later migration than the menus is the
+  // expected state for a while, and the page must degrade per-pane, not whole.
+  const [data, log] = await Promise.all([
+    safeGet(`/api/dining${query}`, { success: false, dates: [], meals: [] }),
+    safeGet(`/api/dining?log=1${query ? `&date=${params.date}` : ""}`, { success: false, configured: false, eaten: [], planned: [], totals: {}, targets: {} })
+  ]);
 
   const synced = data.lastSynced
     ? DateTime.fromISO(data.lastSynced).toRelative()
@@ -84,8 +91,8 @@ export default async function Food({ searchParams }) {
 
         <div className="pos-reveal" data-reveal>
           <PageHeader title="Dining">
-            Every station's menu with full nutrition, straight from the dining
-            hall — published about two weeks out.
+            Plan meals, track what you ate, and query the menu — every station,
+            about two weeks out.
           </PageHeader>
         </div>
 
@@ -117,15 +124,22 @@ export default async function Food({ searchParams }) {
             </div>
 
             <div className="pos-reveal" data-reveal>
-              <DiningMenu
+              <FoodView
                 key={data.date}
+                date={data.date}
+                today={data.today}
                 meals={data.meals}
                 suggestedMeal={data.suggestedMeal}
+                log={log}
               />
             </div>
 
             <div className="pos-reveal mt-6 flex flex-wrap items-center justify-between gap-3" data-reveal>
-              <Meta>{synced ? `Synced ${synced}.` : "Not synced yet."}</Meta>
+              <Meta>
+                {synced ? `Menu synced ${synced}.` : "Menu not synced yet."}
+                {" "}Capture works too: &ldquo;plan my dinner&rdquo;, &ldquo;I had
+                the beef tips&rdquo;, &ldquo;never suggest tilapia&rdquo;.
+              </Meta>
               <DiningSyncButton />
             </div>
 

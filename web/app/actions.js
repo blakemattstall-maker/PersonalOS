@@ -290,6 +290,49 @@ export async function syncDiningAction() {
 }
 
 
+// The ask box, the Plan button and the Track buttons on /food. Each runs the
+// same engine its capture tool runs (tools/mealPlan.js) — one implementation,
+// two mouths.
+export async function askDiningAction(question, date) {
+
+  return backendPost("/api/dining", { action: "ask", question, date });
+
+}
+
+
+export async function planMealsAction(date, meals = null) {
+
+  const result = await backendPost("/api/dining", { action: "plan", date, meals });
+
+  revalidatePath("/food");
+
+  return result;
+
+}
+
+
+export async function trackMealAction({ items, meal, date, station }) {
+
+  const result = await backendPost("/api/dining", { action: "track", items, meal, date, station });
+
+  revalidatePath("/food");
+
+  return result;
+
+}
+
+
+export async function untrackMealAction(id) {
+
+  const result = await backendPost("/api/dining", { action: "untrack", id });
+
+  revalidatePath("/food");
+
+  return result;
+
+}
+
+
 export async function savePersonAction(person) {
 
   const result = await backendPost("/api/people", person);

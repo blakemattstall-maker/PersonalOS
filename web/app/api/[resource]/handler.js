@@ -26,6 +26,7 @@ import { queryFinances } from "../../../tools/finances.js";
 import { pendingInsights, resolveInsight } from "../../../tools/islands.js";
 import { fullGraph } from "../../../lib/links.js";
 import { getDiningDay, syncDiningMenus } from "../../../tools/dining.js";
+import { getDiningLog, logMealItems, removeLogEntry, answerDiningQuestion, planMeals } from "../../../tools/mealPlan.js";
 import { enforceLimit } from "../../../lib/ratelimit.js";
 import { getEvents } from "../../../tools/googleCalendar.js";
 import { analyseDay } from "../../../lib/eventKind.js";
@@ -703,7 +704,14 @@ async function people(req, res) {
 async function dining(req, res) {
 
   if (req.method === "GET") {
+
+    // The Plan tab's read: the day's log (planned + eaten + totals + targets).
+    if (req.query.log) {
+      return res.status(200).json(await getDiningLog({ date: req.query.date || null }));
+    }
+
     return res.status(200).json(await getDiningDay({ date: req.query.date || null }));
+
   }
 
   if (req.method === "POST") {
@@ -717,6 +725,57 @@ async function dining(req, res) {
     // full slice safely inside the route's 60s ceiling.
     if (action === "sync") {
       return res.status(200).json(await syncDiningMenus({ budgetMs: 35_000 }));
+    }
+
+    // The ask box and the Plan button run the same engines capture does —
+    // one implementation, two mouths, so the phone and the page can never
+    // drift into answering differently.
+    if (action === "ask") {
+
+      const question = String(req.body?.question || "").trim();
+
+      if (!question) {
+        return res.status(400).json({ success: false, error: "Ask it something first." });
+      }
+
+      return res.status(200).json(await answerDiningQuestion({
+        question,
+        date: req.body?.date || null
+      }));
+
+    }
+
+    if (action === "plan") {
+      return res.status(200).json(await planMeals({
+        date: req.body?.date || null,
+        meals: req.body?.meals || null,
+        note: req.body?.note || null
+      }));
+    }
+
+    // The Track button: exact items, no model in the path.
+    if (action === "track") {
+
+      const result = await logMealItems({
+        items: req.body?.items,
+        meal: req.body?.meal || null,
+        date: req.body?.date || null,
+        station: req.body?.station || null,
+        source: "app"
+      });
+
+      return res.status(200).json(result);
+
+    }
+
+    if (action === "untrack") {
+
+      if (!req.body?.id) {
+        return res.status(400).json({ error: "Missing id" });
+      }
+
+      return res.status(200).json(await removeLogEntry({ id: req.body.id }));
+
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` });

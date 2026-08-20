@@ -575,6 +575,122 @@ export const TOOLS = [
       }
 
     }
+  },
+
+
+  {
+    type: "function",
+    function: {
+
+      name: "query_dining",
+      description: "Answer a question about the campus dining hall menu — what's being served, what has the best macros, what fits a diet, what to eat: 'what's for dinner', 'is there good protein at lunch tomorrow', 'anything vegan tonight?'. Read-only. If the user wants meals SCHEDULED or a plan made, that is plan_meals; if they're reporting food already eaten, that is log_meal.",
+
+      parameters: {
+        type: "object",
+        properties: {
+          question: {
+            type: "string",
+            description: "The food question in the user's own words."
+          },
+          date: {
+            type: "string",
+            description: "YYYY-MM-DD, only when they asked about a specific day ('tomorrow', 'Friday'). Omit for today."
+          }
+        },
+        required: ["question"]
+      }
+
+    }
+  },
+
+
+  {
+    type: "function",
+    function: {
+
+      name: "plan_meals",
+      description: "Build a meal plan from the dining hall menu and put the meals on the calendar: picks what to eat per meal from real menu items (honoring the user's dislikes and macro targets), finds an open time slot inside each meal window, and creates the events. 'Plan my meals today', 'figure out dinner', 'plan tomorrow's food around my classes'. Re-planning a meal replaces the old plan for it.",
+
+      parameters: {
+        type: "object",
+        properties: {
+          date: {
+            type: "string",
+            description: "YYYY-MM-DD. Omit for today."
+          },
+          meals: {
+            type: "array",
+            items: { type: "string", enum: ["Breakfast", "Lunch", "Dinner"] },
+            description: "Only the meals they asked about ('plan dinner' -> [\"Dinner\"]). Omit to plan every meal still ahead."
+          },
+          note: {
+            type: "string",
+            description: "Any extra steer they gave ('something light', 'high protein, I lifted today'). Omit otherwise."
+          }
+        }
+      }
+
+    }
+  },
+
+
+  {
+    type: "function",
+    function: {
+
+      name: "log_meal",
+      description: "Record what the user actually ATE — matches their words against the dining hall menu and logs calories and protein: 'I had the beef tips and mashed potatoes', 'two slices of pepperoni and a salad for lunch', 'just finished breakfast, eggs and oatmeal'. Past tense about food = this tool. Questions about food are query_dining; future food is plan_meals.",
+
+      parameters: {
+        type: "object",
+        properties: {
+          description: {
+            type: "string",
+            description: "What they ate, in their own words, food words only."
+          },
+          meal: {
+            type: "string",
+            enum: ["Breakfast", "Lunch", "Dinner", "Snack"],
+            description: "Only when they named the meal. Omit to infer from the time of day."
+          },
+          date: {
+            type: "string",
+            description: "YYYY-MM-DD, only when it wasn't today ('yesterday I had...'). Omit for today."
+          }
+        },
+        required: ["description"]
+      }
+
+    }
+  },
+
+
+  {
+    type: "function",
+    function: {
+
+      name: "set_food_preference",
+      description: "Save a durable food preference that meal planning must respect: a food they dislike or refuse ('I don't like the pulled pork', 'never suggest tilapia'), something they love, a daily calorie or protein target ('aim for 140g of protein'), or a meal window ('I eat dinner between 5 and 7'). Use this instead of save_memory for anything about food, eating times, or nutrition targets — the meal planner reads THESE, not memories.",
+
+      parameters: {
+        type: "object",
+        properties: {
+          dislike: { type: "string", description: "A food/ingredient to never suggest." },
+          like: { type: "string", description: "A food they enjoy." },
+          remove: { type: "string", description: "A previously saved like/dislike to clear ('actually the pork is fine now')." },
+          calorie_target: { type: "integer", description: "Daily calorie target." },
+          protein_target: { type: "integer", description: "Daily protein target in grams." },
+          meal: {
+            type: "string",
+            enum: ["Breakfast", "Lunch", "Dinner"],
+            description: "Together with window_start/window_end when they gave eating hours."
+          },
+          window_start: { type: "string", description: "HH:mm, 24-hour." },
+          window_end: { type: "string", description: "HH:mm, 24-hour." }
+        }
+      }
+
+    }
   }
 
 ];

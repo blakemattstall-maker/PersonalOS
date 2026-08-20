@@ -48,7 +48,7 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
   // written right. The old code caught these into empty arrays with no log and
   // no flag, so an outage silently rewrote a week of the longitudinal record as
   // false zeros. Now each failure is loud and lands as null.
-  const [finance, completions, tasks, events, weights, points] = await Promise.all([
+  const [finance, completions, tasks, events, weights, points, meals] = await Promise.all([
 
     loadMoney({ days: days + 2 }).catch(error => {
       console.error("METRICS money source FAILED — spend/income written null:", error.message);
@@ -78,7 +78,15 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
 
     supabase.from("location_points")
       .select("recorded_at, place_id")
-      .gte("recorded_at", today.minus({ days }).toISO())
+      .gte("recorded_at", today.minus({ days }).toISO()),
+
+    // What was eaten, from the meal log. The table may not exist yet
+    // (docs/schema-dining-log.sql is a manual paste) — that reads as a failed
+    // source, so the columns stay null rather than becoming fabricated zeros.
+    supabase.from("dining_log")
+      .select("date, calories, protein_g")
+      .eq("status", "eaten")
+      .gte("date", today.minus({ days }).toFormat("yyyy-MM-dd"))
 
   ]);
 
@@ -99,6 +107,14 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
   const tasksFailed = Boolean(tasks.error);
   const weightsFailed = Boolean(weights.error);
   const pointsFailed = Boolean(points.error);
+
+  // Quiet when the table simply isn't there yet — that's a pending migration,
+  // not an outage worth a nightly error line. Loud for anything else.
+  const mealsFailed = Boolean(meals.error);
+
+  if (meals.error && meals.error.code !== "PGRST205") {
+    console.error("METRICS dining source FAILED — calories/protein written null:", meals.error.message);
+  }
 
 
   // Visits, not points. `minutes_at_gym` has been hardcoded null since this
@@ -166,6 +182,15 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
       .filter(v => looksLikeGym(v))
       .reduce((total, v) => total + v.minutes, 0);
 
+    // Eaten rows only — a planned dinner is an intention, not intake. A day
+    // with no rows stays null: "didn't track" and "ate nothing" are different
+    // facts and the trend engine must never see the second when the first is
+    // what happened.
+    const dayMeals = onDay(meals.data || []).filter(m => m.date === key);
+
+    const dayCalories = dayMeals.map(m => m.calories).filter(v => v != null);
+    const dayProtein = dayMeals.map(m => m.protein_g).filter(v => v != null);
+
     // Overdue is a snapshot of now, not of that day — the historical value
     // can't be reconstructed, so only today's row gets it.
     const overdueNow = (tasks.data || []).filter(
@@ -198,15 +223,36 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
       // go", which is a real zero, but only once there is location for that
       // day to prove it. A day with no data must not read as a day at home.
       minutes_at_gym: pointsFailed || !hadLocation ? null : gymMinutes,
+      calories_eaten: mealsFailed || dayCalories.length === 0
+        ? null
+        : Math.round(dayCalories.reduce((s, v) => s + Number(v), 0)),
+      protein_eaten: mealsFailed || dayProtein.length === 0
+        ? null
+        : Math.round(dayProtein.reduce((s, v) => s + Number(v), 0)),
       computed_at: new Date().toISOString()
     });
 
   }
 
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from("daily_metrics")
     .upsert(rows, { onConflict: "day" });
+
+  // The nutrition columns arrive by manual paste (docs/schema-dining-log.sql),
+  // and a pending migration must cost the two new columns, not the night's
+  // whole rollup — PGRST204 is PostgREST's "unknown column".
+  if (error && error.code === "PGRST204") {
+
+    console.warn("METRICS: daily_metrics has no nutrition columns yet — run docs/schema-dining-log.sql. Writing the rest.");
+
+    const trimmed = rows.map(({ calories_eaten, protein_eaten, ...rest }) => rest);
+
+    ({ error } = await supabase
+      .from("daily_metrics")
+      .upsert(trimmed, { onConflict: "day" }));
+
+  }
 
   if (error) throw new Error(error.message);
 

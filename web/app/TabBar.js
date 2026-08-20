@@ -31,22 +31,16 @@ const TABS = [
   {
     href: "/news",
     label: "News",
+    // Practice lives under News now — reachable from the standing link at the
+    // bottom of the news feed rather than owning a nav slot. `also` keeps this
+    // tab lit while you're in there, so the bar never shows six unlit tabs on
+    // a page you plainly reached from one of them.
+    also: ["/practice"],
     icon: (
       <>
         <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H16a1 1 0 0 1 1 1v11a2 2 0 0 0 2 2H6a3 3 0 0 1-3-3z" />
         <path d="M17 9h2.5A1.5 1.5 0 0 1 21 10.5V17a2 2 0 0 1-2 2" />
         <path d="M7 9h6M7 12.5h6M7 16h3.5" />
-      </>
-    )
-  },
-  {
-    href: "/practice",
-    label: "Practice",
-    icon: (
-      <>
-        <rect x="9" y="3" width="6" height="10" rx="3" />
-        <path d="M5 11a7 7 0 0 0 14 0" />
-        <path d="M12 18v3" />
       </>
     )
   },
@@ -155,10 +149,12 @@ export default function TabBar() {
 
           // Every other tab is a section root, so a prefix match keeps the tab
           // lit on nested routes like /practice/[id]. "/" would match
-          // everything under that rule, hence the exact check.
+          // everything under that rule, hence the exact check. `also` lists
+          // sections a tab covers without owning (News covers Practice).
           const active = tab.href === "/"
             ? pathname === "/"
-            : pathname.startsWith(tab.href);
+            : pathname.startsWith(tab.href)
+              || (tab.also || []).some(prefix => pathname.startsWith(prefix));
 
           return (
             <Link

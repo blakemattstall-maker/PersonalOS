@@ -296,6 +296,20 @@ const MIGRATIONS = [
       return { ok: true, detail: `${menus.count} station-meal menu(s) stored.` };
 
     }
+  },
+
+  {
+    file: "docs/schema-dining-log.sql",
+    purpose: "meal plans and calorie tracking on top of the dining menus",
+    tables: ["dining_log"],
+    columns: [
+      ["daily_metrics", "calories_eaten"],
+      ["daily_metrics", "protein_eaten"]
+    ],
+    breaksWithout:
+      "The Plan tab on /food, the Track buttons, and the plan_meals / log_meal " +
+      "capture tools — each says so plainly. The menu browser keeps working; " +
+      "the daily rollup simply never learns nutrition."
   }
 
 ];

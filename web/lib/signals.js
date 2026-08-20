@@ -351,6 +351,9 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     relationshipSignal(tz),
     projectSignal(tz),
     presenceSignal(tz),
+    // What was eaten against the targets — null until meals are tracked, so
+    // the food line only exists once there is food data to stand on.
+    import("../tools/mealPlan.js").then(m => m.nutritionSignal()),
     // Phase 3 — the one line that says what CHANGED, not just what is. Returns
     // null (no line) until there is enough non-null history to compare, so on
     // today's data it costs a signal slot and adds nothing; the moment two real
@@ -359,7 +362,7 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     trendSignal()
   ]);
 
-  const [finance, completions, overdue, intentions, relationships, projects, presence, trends] =
+  const [finance, completions, overdue, intentions, relationships, projects, presence, nutrition, trends] =
     results.map(r => (r.status === "fulfilled" ? r.value : null));
 
   // A rejected signal is a bug, not a quiet week — allSettled keeps it from
@@ -379,6 +382,7 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     relationships && `Relationships: ${relationships}`,
     projects && `Projects: ${projects}`,
     presence && `Where he has been: ${presence}`,
+    nutrition && `Food: ${nutrition}`,
     trends && `Trends: ${trends}`
   ].filter(Boolean);
 

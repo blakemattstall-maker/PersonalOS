@@ -44,7 +44,31 @@ export const DEFAULTS = {
   // default and this only ever holds the kinds actually overridden — a
   // half-filled object here would otherwise silently freeze the rest of the
   // defaults at whatever they were the day it was written.
-  event_colors: {}
+  event_colors: {},
+
+  // Food preferences and the meal windows the planner schedules inside.
+  // Windows are a preference rather than scraped fact deliberately: the
+  // dining site's hours-of-operation endpoint returns "Closed" for every day
+  // (never populated), so the honest source is the person who eats there —
+  // "dinner window is 5 to 7" through capture updates this. The anchor is
+  // where the planner tries to put the event before hunting for a free slot.
+  //
+  // NOTE: stored settings shallow-replace defaults key-by-key, so anything
+  // reading this must go through getDiningPrefs() in tools/mealPlan.js, which
+  // deep-merges — otherwise a saved {dislikes:[...]} would silently erase the
+  // meal windows.
+  dining: {
+    dislikes: [],
+    likes: [],
+    calorie_target: null,
+    protein_target: null,
+    meal_minutes: 45,
+    meal_windows: {
+      Breakfast: { start: "07:00", end: "10:30", anchor: "08:00" },
+      Lunch: { start: "11:00", end: "15:00", anchor: "12:00" },
+      Dinner: { start: "16:30", end: "20:00", anchor: "17:00" }
+    }
+  }
 };
 
 

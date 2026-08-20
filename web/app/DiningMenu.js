@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Card, Empty } from "./ui.js";
 
 
@@ -156,7 +156,52 @@ function NutritionLabel({ item }) {
 }
 
 
-function MenuItem({ item }) {
+// The Track affordance: one quiet "+" per row that flips to a check the
+// moment the log has it. Kept deliberately smaller than the calorie reading —
+// tracking is frequent but the number is what the row is FOR.
+function TrackButton({ onTrack }) {
+
+  const [state, setState] = useState("idle");
+  const timer = useRef(null);
+
+  const track = async () => {
+
+    if (state === "busy") return;
+
+    setState("busy");
+
+    const result = await onTrack().catch(() => null);
+
+    setState(result?.success ? "done" : "failed");
+
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState("idle"), 1800);
+
+  };
+
+  const label = state === "done" ? "✓" : state === "failed" ? "!" : "+";
+
+  return (
+    <button
+      type="button"
+      onClick={track}
+      disabled={state === "busy"}
+      aria-label="Track this item as eaten"
+      title="Track this item as eaten"
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[0.9rem] leading-none transition-colors ${
+        state === "done"
+          ? "border-moss text-moss"
+          : "border-[var(--line)] text-ink-soft hover:border-ink hover:text-ink"
+      } disabled:opacity-40`}
+    >
+      {state === "busy" ? "…" : label}
+    </button>
+  );
+
+}
+
+
+function MenuItem({ item, onTrack }) {
 
   const [open, setOpen] = useState(false);
 
@@ -167,23 +212,29 @@ function MenuItem({ item }) {
   return (
     <li className="border-t border-[var(--line)] first:border-t-0">
 
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        aria-expanded={open}
-        className="flex w-full items-baseline justify-between gap-3 py-2.5 text-left"
-      >
-        <span className="min-w-0">
-          <span className="block text-[0.88rem] leading-snug text-ink">{item.name}</span>
-          {meta && (
-            <span className="mt-0.5 block text-[0.72rem] text-ink-soft">{meta}</span>
-          )}
-        </span>
-        <span className="pos-data shrink-0 text-[0.85rem] text-ink">
-          {item.nutrition?.calories == null ? dash : Math.round(item.nutrition.calories)}
-          <span className="ml-1 text-[0.62rem] text-ink-soft">cal</span>
-        </span>
-      </button>
+      <div className="flex items-center gap-2">
+
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-baseline justify-between gap-3 py-2.5 text-left"
+        >
+          <span className="min-w-0">
+            <span className="block text-[0.88rem] leading-snug text-ink">{item.name}</span>
+            {meta && (
+              <span className="mt-0.5 block text-[0.72rem] text-ink-soft">{meta}</span>
+            )}
+          </span>
+          <span className="pos-data shrink-0 text-[0.85rem] text-ink">
+            {item.nutrition?.calories == null ? dash : Math.round(item.nutrition.calories)}
+            <span className="ml-1 text-[0.62rem] text-ink-soft">cal</span>
+          </span>
+        </button>
+
+        {onTrack && <TrackButton onTrack={onTrack} />}
+
+      </div>
 
       {open && <NutritionLabel item={item} />}
 
@@ -193,7 +244,7 @@ function MenuItem({ item }) {
 }
 
 
-function StationCard({ station }) {
+function StationCard({ station, onTrack }) {
 
   // Items arrive course-grouped from the sync (Entrees, Sides, Soup…). The
   // eyebrow only appears when a station actually has more than one course —
@@ -231,7 +282,11 @@ function StationCard({ station }) {
           )}
           <ul>
             {group.items.map(item => (
-              <MenuItem key={`${item.recipe || item.name}|${item.serving}`} item={item} />
+              <MenuItem
+                key={`${item.recipe || item.name}|${item.serving}`}
+                item={item}
+                onTrack={onTrack ? () => onTrack(item, station.station) : null}
+              />
             ))}
           </ul>
         </div>
@@ -243,7 +298,7 @@ function StationCard({ station }) {
 }
 
 
-export default function DiningMenu({ meals, suggestedMeal }) {
+export default function DiningMenu({ meals, suggestedMeal, onTrack = null }) {
 
   const [active, setActive] = useState(
     meals.some(m => m.meal === suggestedMeal) ? suggestedMeal : meals[0]?.meal
@@ -266,7 +321,11 @@ export default function DiningMenu({ meals, suggestedMeal }) {
       <MealSwitcher meals={meals} active={active} onPick={setActive} />
 
       {current.stations.map(station => (
-        <StationCard key={station.station} station={station} />
+        <StationCard
+          key={station.station}
+          station={station}
+          onTrack={onTrack ? (item, stationName) => onTrack(item, current.meal, stationName) : null}
+        />
       ))}
 
     </div>

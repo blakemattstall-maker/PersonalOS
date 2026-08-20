@@ -438,6 +438,51 @@ function diningFixture(path) {
 
   const wanted = (path.match(/date=(\d{4}-\d{2}-\d{2})/) || [])[1] || daysAhead(0);
 
+  // The Plan tab's read — a believable mid-day: breakfast tracked, dinner
+  // planned, targets set, so totals, both lists and the remove affordances
+  // can all be judged locally.
+  if (/[?&]log=1/.test(path)) {
+    return {
+      success: true,
+      configured: true,
+      date: wanted,
+      eaten: [
+        {
+          id: "fx-log-1",
+          date: wanted,
+          meal: "Breakfast",
+          status: "eaten",
+          station: "Homestyle",
+          items: [
+            { name: "Scrambled Eggs", serving: "#12 Scoop", station: "Homestyle", quantity: 2, calories: 140, protein_g: 7.5, carbs_g: 1, fat_g: 10 },
+            { name: "Turkey Sausage Links", serving: "2 Links", station: "Homestyle", quantity: 1, calories: 130, protein_g: 13, carbs_g: 2, fat_g: 8 }
+          ],
+          calories: 410, protein_g: 28, carbs_g: 4, fat_g: 28,
+          source: "app", event_id: null, note: null
+        }
+      ],
+      planned: [
+        {
+          id: "fx-log-2",
+          date: wanted,
+          meal: "Dinner",
+          status: "planned",
+          station: "Homestyle",
+          items: [
+            { name: "Braised Beef Tips", serving: "6 Oz. Spoodle", station: "Homestyle", quantity: 1, calories: 310, protein_g: 34, carbs_g: 6, fat_g: 16 },
+            { name: "Roasted Root Vegetables", serving: "1/2 Cup", station: "Homestyle", quantity: 1, calories: 90, protein_g: 2, carbs_g: 15, fat_g: 3 },
+            { name: "Herbed Quinoa", serving: "1/2 Cup", station: "Greens & Grains", quantity: 1, calories: 130, protein_g: 5, carbs_g: 22, fat_g: 3 }
+          ],
+          calories: 530, protein_g: 41, carbs_g: 43, fat_g: 22,
+          source: "planner", event_id: "fx-event-1",
+          note: "5:00 PM · best protein-to-calorie plate tonight"
+        }
+      ],
+      totals: { calories: 410, protein_g: 28, carbs_g: 4, fat_g: 28 },
+      targets: { calories: 2400, protein_g: 150 }
+    };
+  }
+
   const label = (calories, protein, fat, carbs, sodium) => ({
     calories, calories_from_fat: Math.round(fat * 9),
     fat_g: fat, fat_dv: Math.round(fat / 0.78),

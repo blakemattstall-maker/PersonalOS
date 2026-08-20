@@ -25,7 +25,11 @@ export async function createEvent({
   // A word from RECURRENCE_PATTERNS ("weekly", "yearly", …), not a raw RRULE —
   // see lib/recurrence.js for why the model is not allowed to write the rule.
   recurrence = null,
-  recurrenceCount = null
+  recurrenceCount = null,
+  // Body text on the Google event only (the meal planner puts the picked
+  // plate here). Not mirrored to Supabase — the mirror exists to find and
+  // reconcile events, not to duplicate their contents.
+  description = null
 }) {
 
 
@@ -136,6 +140,8 @@ export async function createEvent({
   const requestBody = {
 
     summary: title,
+
+    ...(description ? { description } : {}),
 
     colorId,
 
