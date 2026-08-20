@@ -119,13 +119,13 @@ function chunk(text) {
 }
 
 
-async function synthesize({ input, voice, speed, model }) {
+async function synthesize({ input, voice, speed, model, format = "mp3" }) {
 
   const body = {
     model,
     voice,
     input,
-    response_format: "mp3",
+    response_format: format,
     speed
   };
 
@@ -199,6 +199,12 @@ export async function POST(request) {
   // unintelligible for a long brief, so it is clamped rather than trusted.
   const speed = Math.min(1.6, Math.max(0.7, Number(payload?.speed) || 1));
 
+  // WAV exists for the desk device. A microcontroller can pipe raw PCM
+  // straight to its speaker, and forcing it to decode MP3 would mean a whole
+  // decoder library on 512KB of RAM for no listener benefit. Browsers keep
+  // getting MP3 — it is a tenth the bytes over the network.
+  const format = payload?.format === "wav" ? "wav" : "mp3";
+
   const parts = chunk(text);
 
   let model = PRIMARY_MODEL;
@@ -211,7 +217,7 @@ export async function POST(request) {
 
       try {
 
-        buffers.push(await synthesize({ input: part, voice, speed, model }));
+        buffers.push(await synthesize({ input: part, voice, speed, model, format }));
 
       } catch (error) {
 
@@ -219,7 +225,7 @@ export async function POST(request) {
         // isn't available to this account it will fail identically every time.
         if (model === PRIMARY_MODEL && (error.status === 400 || error.status === 404)) {
           model = FALLBACK_MODEL;
-          buffers.push(await synthesize({ input: part, voice, speed, model }));
+          buffers.push(await synthesize({ input: part, voice, speed, model, format }));
         } else {
           throw error;
         }
@@ -229,12 +235,18 @@ export async function POST(request) {
     }
 
     // MP3 frames are self-describing, so concatenating separately-generated
-    // files plays as one continuous track without a container rewrite.
-    const audio = Buffer.concat(buffers);
+    // files plays as one continuous track without a container rewrite. WAV is
+    // not: every chunk after the first must lose its 44-byte RIFF header or
+    // the headers play as clicks. Same PCM format throughout (one voice, one
+    // sample rate), so headerless concatenation is valid — and the device
+    // scans for the "data" marker rather than trusting offset 44 anyway.
+    const audio = format === "wav" && buffers.length > 1
+      ? Buffer.concat(buffers.map((b, i) => (i === 0 ? b : b.subarray(44))))
+      : Buffer.concat(buffers);
 
     return new Response(audio, {
       headers: {
-        "Content-Type": "audio/mpeg",
+        "Content-Type": format === "wav" ? "audio/wav" : "audio/mpeg",
         "Content-Length": String(audio.length),
         "Cache-Control": "private, max-age=3600",
         "X-TTS-Model": model,

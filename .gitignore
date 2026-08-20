@@ -5,3 +5,6 @@ node_modules
 .DS_Store
 .claude/settings.local.json
 .next
+
+# Device firmware credentials — never in a public repo
+firmware/**/secrets.h
