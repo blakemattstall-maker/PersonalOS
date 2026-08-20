@@ -104,7 +104,7 @@ async function googleConnection() {
 
 export async function buildDiagnostics() {
 
-  const [counts, lastPoint, lastBrief, lastMetric, lastLog, lastLink, lastNews, lastIngest, lastCanvas, pushSubs, settings, schema, googleStatus] =
+  const [counts, lastPoint, lastBrief, lastMetric, lastLog, lastLink, lastNews, lastIngest, lastCanvas, lastDining, pushSubs, settings, schema, googleStatus] =
     await Promise.all([
 
       Promise.all(TABLES.map(async t => [t, await countOf(t)])).then(Object.fromEntries),
@@ -137,6 +137,16 @@ export async function buildDiagnostics() {
         .from("activity_logs")
         .select("created_at, success, output")
         .eq("action", "canvas_sync")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .then(r => (r.data || [])[0] || null),
+
+      // Same trace for the dining sync (tools/dining.js): it shares Canvas's
+      // cron slot, and "no menus" must be tellable apart from "sync failing".
+      supabase
+        .from("activity_logs")
+        .select("created_at, success, output")
+        .eq("action", "dining_sync")
         .order("created_at", { ascending: false })
         .limit(1)
         .then(r => (r.data || [])[0] || null),
@@ -210,6 +220,12 @@ export async function buildDiagnostics() {
       ageHours: ageHours(lastCanvas?.created_at),
       ok: lastCanvas ? lastCanvas.success !== false : null,
       detail: lastCanvas?.output || null
+    },
+    syncDining: {
+      lastAt: lastDining?.created_at || null,
+      ageHours: ageHours(lastDining?.created_at),
+      ok: lastDining ? lastDining.success !== false : null,
+      detail: lastDining?.output || null
     },
     anyActivity: { lastAt: lastLog, ageHours: ageHours(lastLog) }
   };

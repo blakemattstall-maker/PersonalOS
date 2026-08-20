@@ -277,6 +277,19 @@ export async function syncNewsAction() {
 }
 
 
+// One budgeted slice of the dining sync. The button on /food calls this in a
+// loop until `remaining` hits zero — see DiningSyncButton.js.
+export async function syncDiningAction() {
+
+  const result = await backendPost("/api/dining", { action: "sync" });
+
+  revalidatePath("/food");
+
+  return result;
+
+}
+
+
 export async function savePersonAction(person) {
 
   const result = await backendPost("/api/people", person);

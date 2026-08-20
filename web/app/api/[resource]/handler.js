@@ -25,6 +25,7 @@ import { summarise, findRecurring, FINANCE_RANGES } from "../../../lib/categoriz
 import { queryFinances } from "../../../tools/finances.js";
 import { pendingInsights, resolveInsight } from "../../../tools/islands.js";
 import { fullGraph } from "../../../lib/links.js";
+import { getDiningDay, syncDiningMenus } from "../../../tools/dining.js";
 import { enforceLimit } from "../../../lib/ratelimit.js";
 import { getEvents } from "../../../tools/googleCalendar.js";
 import { analyseDay } from "../../../lib/eventKind.js";
@@ -699,6 +700,34 @@ async function people(req, res) {
 }
 
 
+async function dining(req, res) {
+
+  if (req.method === "GET") {
+    return res.status(200).json(await getDiningDay({ date: req.query.date || null }));
+  }
+
+  if (req.method === "POST") {
+
+    const { action } = req.body || {};
+
+    // Manual sync — the same function the nightly cron calls. It works a
+    // fixed time budget and reports what's left, so the page's Sync button
+    // can simply call it again until `remaining` reaches zero; that loop IS
+    // the first big fill, no separate backfill path to maintain. 35s keeps a
+    // full slice safely inside the route's 60s ceiling.
+    if (action === "sync") {
+      return res.status(200).json(await syncDiningMenus({ budgetMs: 35_000 }));
+    }
+
+    return res.status(400).json({ error: `Unknown action: ${action}` });
+
+  }
+
+  return res.status(405).json({ error: "Method not allowed" });
+
+}
+
+
 async function finance(req, res) {
 
   // The in-app "ask it a financial question" box and the Shortcut's
@@ -833,7 +862,7 @@ async function graph(req, res) {
 }
 
 
-const RESOURCES = { data, history, nudges, desk, projects, deepThoughts, brief, settings, diag, practice, people, news, finance, graph };
+const RESOURCES = { data, history, nudges, desk, projects, deepThoughts, brief, settings, diag, practice, people, news, finance, graph, dining };
 
 
 export default async function handler(req, res) {

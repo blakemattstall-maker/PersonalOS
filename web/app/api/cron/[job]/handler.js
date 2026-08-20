@@ -1,4 +1,5 @@
 import { syncCanvasAssignments } from "../../../../tools/canvas.js";
+import { syncDiningMenus } from "../../../../tools/dining.js";
 import { createBrief, getLatestUnreadBrief, getMostRecentBrief } from "../../../../tools/database.js";
 import { composeBrief } from "../../../../tools/brief.js";
 import { reviewIntentionsForNudges, deliverScheduledNudges } from "../../../../tools/nudges.js";
@@ -140,7 +141,26 @@ async function briefPush() {
 
 async function syncCanvas() {
 
-  return syncCanvasAssignments();
+  // The dining sync rides Canvas's 8:00 UTC slot rather than getting its own
+  // cron entry — same reasoning as the debate deck riding syncNews: every
+  // added schedule is another thing that can drift, and neither of these is
+  // time-critical beyond "once a night". They run concurrently because they
+  // talk to different servers entirely (Canvas's ICS feed, the dining site),
+  // and each is best-effort so a bad night for one never costs the other.
+  //
+  // Dining's 40s budget is the pace-setter under the route's 60s ceiling: the
+  // sync stops itself at the budget and reports what's left, and the next
+  // night (or a Sync tap on /food) continues from the diff. On a normal night
+  // the new day's menus fit with room to spare.
+  const [canvas, dining] = await Promise.allSettled([
+    syncCanvasAssignments(),
+    syncDiningMenus({ budgetMs: 40_000 })
+  ]);
+
+  return {
+    canvas: canvas.status === "fulfilled" ? canvas.value : { success: false, error: canvas.reason?.message },
+    dining: dining.status === "fulfilled" ? dining.value : { success: false, error: dining.reason?.message }
+  };
 
 }
 

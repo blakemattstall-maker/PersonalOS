@@ -74,6 +74,18 @@ const TABS = [
     )
   },
   {
+    href: "/food",
+    label: "Food",
+    icon: (
+      <>
+        <path d="M4.5 15.5a7.5 7.5 0 0 1 15 0" />
+        <path d="M3 15.5h18" />
+        <path d="M12 8V6.2" />
+        <path d="M7.5 18.8h9" />
+      </>
+    )
+  },
+  {
     href: "/settings",
     label: "Settings",
     icon: (

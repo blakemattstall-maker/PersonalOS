@@ -432,6 +432,96 @@ const PEOPLE = {
 };
 
 
+// A believable dining day — station names and recipes are invented, numbers
+// are plausible. Shaped exactly like tools/dining.js getDiningDay().
+function diningFixture(path) {
+
+  const wanted = (path.match(/date=(\d{4}-\d{2}-\d{2})/) || [])[1] || daysAhead(0);
+
+  const label = (calories, protein, fat, carbs, sodium) => ({
+    calories, calories_from_fat: Math.round(fat * 9),
+    fat_g: fat, fat_dv: Math.round(fat / 0.78),
+    sat_fat_g: Math.round(fat * 0.3 * 10) / 10, sat_fat_dv: Math.round(fat * 1.5),
+    trans_fat_g: null,
+    cholesterol_mg: Math.round(protein * 2.5), cholesterol_dv: Math.round(protein / 1.2),
+    sodium_mg: sodium, sodium_dv: Math.round(sodium / 23),
+    carbs_g: carbs, carbs_dv: Math.round(carbs / 2.75),
+    fiber_g: carbs > 10 ? Math.round(carbs / 8) : null, fiber_dv: null,
+    sugars_g: null,
+    protein_g: protein, protein_dv: Math.round(protein * 2),
+    vitamin_a_dv: 4, vitamin_c_dv: 10, calcium_dv: 6, iron_dv: 8
+  });
+
+  const item = (name, serving, course, traits, nutrition, allergens = []) =>
+    ({ name, serving, course, traits, allergens, nutrition, ingredients: null, recipe: name.toLowerCase() });
+
+  // All-day stations (salad bar, beverages) ride along under every meal.
+  const saladBar = {
+    station: "Greens & Grains",
+    allDay: true,
+    items: [
+      item("Spinach & Feta Salad", "1 Cup", "Salads", ["Vegetarian"], label(110, 5, 7, 8, 320), ["Milk"]),
+      item("Herbed Quinoa", "1/2 Cup", "Grains", ["Vegan", "Vegetarian"], label(130, 5, 3, 22, 180))
+    ]
+  };
+
+  return {
+    success: true,
+    configured: true,
+    date: wanted,
+    today: daysAhead(0),
+    dates: [0, 1, 2, 3, 4, 5, 6].map(daysAhead),
+    suggestedMeal: "Dinner",
+    lastSynced: hoursAgo(5),
+    meals: [
+      {
+        meal: "Lunch",
+        stations: [
+          {
+            station: "Homestyle",
+            items: [
+              item("Herb Roasted Chicken", "1/4 Chicken", "Entrees", ["Halal"], label(280, 32, 14, 2, 480)),
+              item("Garlic Mashed Potatoes", "1/2 Cup", "Sides", ["Vegetarian"], label(160, 3, 6, 24, 310), ["Milk"]),
+              item("Green Beans", "1/2 Cup", "Sides", ["Vegan", "Vegetarian"], label(45, 2, 1, 8, 190))
+            ]
+          },
+          {
+            station: "Fire Kitchen",
+            items: [
+              item("Chana Masala", "8 Oz. Ladle", "Entrees", ["Vegan", "Vegetarian"], label(240, 11, 7, 34, 620)),
+              item("Basmati Rice", "1/2 Cup", "Sides", ["Vegan"], label(150, 3, 0.5, 33, 5))
+            ]
+          },
+          saladBar
+        ]
+      },
+      {
+        meal: "Dinner",
+        stations: [
+          {
+            station: "Homestyle",
+            items: [
+              item("Braised Beef Tips", "6 Oz. Spoodle", "Entrees", ["Halal"], label(310, 34, 16, 6, 540)),
+              item("Buttered Egg Noodles", "1/2 Cup", "Sides", ["Vegetarian"], label(190, 6, 7, 26, 220), ["Eggs", "Wheat"]),
+              item("Roasted Root Vegetables", "1/2 Cup", "Sides", ["Vegan", "Vegetarian"], label(90, 2, 3, 15, 240))
+            ]
+          },
+          {
+            station: "Noodle Bar",
+            items: [
+              item("Miso Ramen", "12 Oz. Bowl", "Entrees", ["Vegetarian"], label(380, 14, 11, 55, 980), ["Soy", "Wheat"]),
+              item("Chili Crisp Tofu", "4 Oz.", "Toppings", ["Vegan"], label(140, 12, 9, 4, 330), ["Soy"])
+            ]
+          },
+          saladBar
+        ]
+      }
+    ]
+  };
+
+}
+
+
 const FIXTURES = {
   "/api/brief/latest?peek=true": BRIEF,
   "/api/people": PEOPLE,
@@ -449,6 +539,8 @@ export function fixtureFor(path) {
   if (path.startsWith("/api/finance")) return financeFixture();
 
   if (path.startsWith("/api/graph")) return GRAPH;
+
+  if (path.startsWith("/api/dining")) return diningFixture(path);
 
   return FIXTURES[path] || null;
 

@@ -263,6 +263,39 @@ const MIGRATIONS = [
       "The waitlist form on the welcome tour degrades to a friendly 'try again' — the " +
       "insert fails because the table isn't there, so no email is captured, but the " +
       "page never errors."
+  },
+
+  {
+    file: "docs/schema-dining.sql",
+    purpose: "dining hall menus — two weeks of meals per station, with nutrition labels",
+    tables: ["dining_menus", "dining_recipes"],
+    breaksWithout:
+      "The /food page and the nightly dining sync. Both say so plainly — the page " +
+      "shows the migration hint and the sync logs it — but no menu can be stored " +
+      "until this runs.",
+
+    // Applied-but-inert is the certain first state here: the tables are created
+    // empty and stay empty until a sync runs (the nightly cron, or the Sync
+    // button on /food doing the first big fill).
+    readiness: async () => {
+
+      const menus = await probeTable("dining_menus");
+
+      if (menus.error) return null;
+
+      if ((menus.count ?? 0) === 0) {
+        return {
+          ok: false,
+          detail:
+            "Applied, but dining_menus is empty — no sync has completed. Tap Sync on " +
+            "/food (it continues where it left off; the first fill takes a few passes) " +
+            "or wait for the nightly cron."
+        };
+      }
+
+      return { ok: true, detail: `${menus.count} station-meal menu(s) stored.` };
+
+    }
   }
 
 ];
