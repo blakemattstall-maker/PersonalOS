@@ -207,7 +207,11 @@ export default async function Home() {
   const needsYou = [
     ...pendingThoughts.map(t => ({ ...t, kind: "thought" })),
     ...pendingNudges.map(n => ({ ...n, kind: "nudge" })),
-    ...raised.prompts.map(p => ({ ...p, kind: "prompt" })),
+    // kind is overwritten for card dispatch, so the row's OWN kind must ride
+    // along under another name — PromptCard branches on it. Before this,
+    // HEADINGS[item.kind] silently never resolved and label_place survived
+    // only via its payload.place_id fallback.
+    ...raised.prompts.map(p => ({ ...p, kind: "prompt", promptKind: p.kind })),
     // Insights had no surface at all before this: they existed only as a push,
     // so at any interruption level below "everything" — which is every level
     // they are tiered above — the finding was written and then unreachable.

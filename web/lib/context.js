@@ -22,6 +22,29 @@ function formatBodyweightTrend(logs, timezone) {
 }
 
 
+// The memories object rendered as prompt-ready dated lines.
+//
+// Four surfaces (news ranking, the email drafter, the inbox reviewer, the doc
+// writer) used to build their user context as `[bio, memories].join(...)` —
+// and since memories is an object, every one of them interpolated the literal
+// text "[object Object]" where the user's memories should have been, silently,
+// for weeks. One renderer here, used by every string-shaped call site, makes
+// that class of bug impossible to reintroduce quietly.
+function formatMemoriesText(grouped) {
+
+  const lines = [];
+
+  for (const [type, items] of Object.entries(grouped || {})) {
+    for (const m of items) {
+      lines.push(`- [${type}${m.noted ? `, noted ${m.noted}` : ""}] ${m.content}`);
+    }
+  }
+
+  return lines.length ? lines.join("\n") : null;
+
+}
+
+
 
 // For synthesis tools that reason/judge rather than just route — includes the
 // full profile bio and recent bodyweight trend. The router in capture.js
@@ -42,7 +65,15 @@ export async function buildRichContext({ query } = {}) {
   const [memories, bio, bodyweightLogs, signals, insights, connections] = await Promise.all([
     getFormattedMemories({ query }),
     getProfileBio(),
-    getRecentBodyweightLogs({ limit: 10 }),
+    // Caught, unlike before: this sat uncaught in the Promise.all, so one
+    // failed weigh-in read rejected the ENTIRE rich context and crashed
+    // whichever tool asked — the brief survived only because gatherBriefFacts
+    // wraps this call in its own settle(). An empty trend degrades one prompt
+    // section; a thrown one took down the whole answer.
+    getRecentBodyweightLogs({ limit: 10 }).catch(error => {
+      console.error("CONTEXT bodyweight read failed — trend absent, not fatal:", error.message);
+      return [];
+    }),
     buildSignals({ tz }).catch(() => null),
     // What walking the entity graph noticed. Carried here rather than pushed
     // and forgotten: an insight raised last week should be context for a deep
@@ -70,6 +101,10 @@ export async function buildRichContext({ query } = {}) {
   return {
 
     memories,
+
+    // The same memories as prompt-ready dated text. Any call site that wants
+    // a string interpolates THIS, never the object above.
+    memoriesText: formatMemoriesText(memories),
 
     bio,
 

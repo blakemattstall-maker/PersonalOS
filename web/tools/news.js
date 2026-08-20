@@ -309,7 +309,10 @@ export async function syncNewsDigest() {
   // One context build for the whole run, not one per story.
   const context = await buildRichContext({ query: "current events and news" }).catch(() => null);
 
-  const userContext = context && [context.bio, context.memories].filter(Boolean).join("\n\n");
+  // memoriesText, not memories: the object interpolated here as the literal
+  // string "[object Object]" for weeks — news ranking ran on bio alone while
+  // claiming to know his memories.
+  const userContext = context && [context.bio, context.memoriesText].filter(Boolean).join("\n\n");
 
   const ranked = await rankAgainstUser(fresh, userContext).catch(() => fresh);
 

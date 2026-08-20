@@ -68,6 +68,16 @@ export const ENTITIES = {
 export const LINKABLE = Object.keys(ENTITIES);
 
 
+// table -> canonical type, inverted from the registry above rather than
+// derived by chopping a trailing "s": "memories" chopped that way yields
+// "memorie", which link() accepts (from_type is unconstrained text), no reader
+// ever resolves, and pruneDangling never collects because it only prunes types
+// it recognises — permanent orphan edges from one plausible-looking line.
+export const TYPE_BY_TABLE = Object.fromEntries(
+  Object.entries(ENTITIES).map(([type, spec]) => [spec.table, type])
+);
+
+
 function missing(error) {
   return error?.code === "PGRST205" || /schema cache|does not exist/i.test(error?.message || "");
 }

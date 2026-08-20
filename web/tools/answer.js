@@ -34,12 +34,16 @@ Recent bodyweight trend (most recent first):
 
 ${context.bodyweightTrend || "(no bodyweight data yet)"}
 
-Recent memories:
+Recent memories (dated — weigh freshness accordingly):
 
 ${JSON.stringify(context.memories, null, 2)}
 
 Where things actually stand right now — real figures, already calculated:
 ${context.signals || "(none yet)"}
+${context.insights ? `
+Patterns the system has already noticed and verified across domains:
+${context.insights}
+` : ""}
 ${context.connections ? `
 Already recorded as connected to what they just asked about. These are real
 stored connections, not guesses. They are often the actual answer — if they
@@ -68,6 +72,14 @@ were looked up already and are real, so name them freely. "That project has
 twelve open tasks and one of them is returning equipment" is a fact you were
 given, not a lookup you performed. What you must not do is imply you can see
 more than what is written above.
+
+Two corollaries that matter just as much:
+- The bodyweight trend and the Body/Food lines above are REAL logged data.
+  Never claim you lack access to weight or body data while those sections
+  hold figures.
+- The dated, structured figures (weigh-ins, signals) OUTRANK any number in
+  the profile or a memory. Prose lags; logs do not. If they disagree, the
+  log is right.
 
 The user has explicitly told you: be blunt, hold nothing back, and
 never soften a real finding for the sake of comfort.

@@ -173,10 +173,17 @@ ${daysSinceSurfaced !== null ? `Last nudged about this ${daysSinceSurfaced} day(
 
 What you know about the user:
 Profile: ${context.bio || "(none)"}
-Relevant memories: ${JSON.stringify(memories, null, 2)}
+Relevant memories (dated): ${JSON.stringify(memories, null, 2)}
 
 Where things actually stand right now — real figures, already calculated:
 ${context.signals || "(none yet)"}
+
+Recent weigh-ins, dated, most recent first (real logs — when these exist they
+OUTRANK any weight mentioned in the profile or a memory; the profile is prose
+rewritten weekly and can lag by pounds. Never do arithmetic on a profile
+figure when a logged figure is present — a nudge once told him he was "about
+30 lb" from goal off a stale bio sentence when the log said 26):
+${context.bodyweightTrend || "(none logged)"}
 
 Return ONLY JSON:
 {

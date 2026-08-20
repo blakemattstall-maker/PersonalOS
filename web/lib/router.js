@@ -9,6 +9,7 @@ import { queryTasks } from "../tools/taskQuery.js";
 import { saveNote, queryNotes } from "../tools/notes.js";
 import { startDeepThinking } from "../tools/deepThinking.js";
 import { logBodyweight } from "../tools/bodyweight.js";
+import { answerHealthQuestion } from "../tools/health.js";
 import { syncCanvasAssignments } from "../tools/canvas.js";
 import { saveIntention } from "../tools/intentions.js";
 import { queryProjects } from "../tools/projects.js";
@@ -176,6 +177,16 @@ export async function executeTool(data, originalText = null) {
         result = await logBodyweight({
           weight: data.weight,
           unit: data.unit
+        });
+
+        break;
+
+
+
+      case "query_health":
+
+        result = await answerHealthQuestion({
+          question: originalText || data.question
         });
 
         break;

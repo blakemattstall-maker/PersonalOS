@@ -138,6 +138,14 @@ async function data(req, res) {
         }));
       }
 
+      // The staleness sweep raised its hand about a stored claim; the user
+      // just ruled on it. update/retire/keep — applied in tools/staleness.js,
+      // which is the only code allowed to touch the underlying row.
+      if (prompt?.kind === "stale_review") {
+        const { resolveStaleReview } = await import("../../../tools/staleness.js");
+        return res.status(200).json(await resolveStaleReview({ prompt_id: id, answer }));
+      }
+
       await supabase
         .from("prompts")
         .update({ status: "answered", answer: answer || "dismissed", answered_at: new Date().toISOString() })

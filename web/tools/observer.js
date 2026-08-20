@@ -40,6 +40,7 @@ function describeMetrics(metrics) {
     m.tasks_completed ? `${m.tasks_completed} done${m.tasks_completed_late ? ` (${m.tasks_completed_late} late)` : ""}` : null,
     m.calendar_busy_minutes ? `${Math.round(m.calendar_busy_minutes / 60)}h booked` : null,
     m.weight != null ? `${m.weight}lb` : null,
+    m.calories_eaten != null ? `${m.calories_eaten} cal${m.protein_eaten != null ? ` / ${m.protein_eaten}g protein` : ""}` : null,
     m.places_visited != null ? `${m.places_visited} place(s)` : null
   ].filter(Boolean).join(", ");
 

@@ -16,7 +16,8 @@ const HEADINGS = {
   label_place: "What is this place?",
   digest: "Something worth noticing",
   relationship_checkin: "Time to check in",
-  general_question: "You asked"
+  general_question: "You asked",
+  stale_review: "This looks out of date"
 };
 
 
@@ -27,12 +28,18 @@ export default function PromptCard({ item }) {
   const [answer, setAnswer] = useState("");
   const [isPending, startTransition] = useTransition();
 
+  // The dashboard overwrites item.kind with "prompt" for card dispatch and
+  // carries the row's own kind as promptKind — read THAT, or every branch
+  // below is dead code. (item.kind stays as a fallback for any caller that
+  // passes a raw row.)
+  const promptKind = item.promptKind || item.kind;
+
   // Kind is the real signal, but payload shape is checked too: raiseLabelPrompt
   // in tools/location.js always sets kind correctly, but there's no database
   // constraint guaranteeing that stays true forever, and a place-labelling
   // prompt with no way to actually label it is a dead end, not a degraded
   // experience. If it carries a place to name, it gets the input.
-  const needsAnswer = item.kind === "label_place" || !!item.payload?.place_id;
+  const needsAnswer = promptKind === "label_place" || !!item.payload?.place_id;
 
   const submit = (value) => {
     startTransition(async () => {
@@ -43,14 +50,53 @@ export default function PromptCard({ item }) {
 
 
   return (
-    <ItemCard kind="prompt" title={item.title || HEADINGS[item.kind]}>
+    <ItemCard kind="prompt" title={item.title || HEADINGS[promptKind]}>
 
       <div className="mt-2 flex items-start justify-between gap-3">
         <p className="leading-relaxed text-ink">{item.body}</p>
-        <ReadAloud text={item.body} title={item.title || HEADINGS[item.kind]} />
+        <ReadAloud text={item.body} title={item.title || HEADINGS[promptKind]} />
       </div>
 
-      {needsAnswer ? (
+      {promptKind === "stale_review" ? (
+
+        // The staleness sweep found a stored claim the measurements contradict.
+        // Three verdicts, none default: update rewrites the row (the bio
+        // regenerates instead), retire deletes it, keep leaves it standing.
+        <>
+          {item.payload?.suggested && (
+            <p className="mt-3 rounded-item bg-[var(--sunken)] px-3.5 py-2.5 text-[0.85rem] leading-relaxed text-ink-soft">
+              Would become: <span className="text-ink">{item.payload.suggested}</span>
+            </p>
+          )}
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={() => submit("update")}
+              disabled={isPending}
+              className={btn("ember", "md")}
+            >
+              {isPending ? "Working…" : item.payload?.table === "profiles" ? "Regenerate bio" : "Update it"}
+            </button>
+            {item.payload?.table !== "profiles" && (
+              <button
+                onClick={() => submit("retire")}
+                disabled={isPending}
+                className={btn("quiet")}
+              >
+                Retire it
+              </button>
+            )}
+            <button
+              onClick={() => submit("keep")}
+              disabled={isPending}
+              className={btn("quiet")}
+            >
+              Keep as is
+            </button>
+          </div>
+        </>
+
+      ) : needsAnswer ? (
 
         // The answer is the point of this card, so it comes before the map
         // link rather than after it — a secondary link sitting above the one

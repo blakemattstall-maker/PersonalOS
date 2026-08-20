@@ -313,6 +313,23 @@ short version:
     `success: true` throughout. "Exists" is not "landed": prove the remote half
     (`google_task_id`) or redo the create. `tests/canvas-sync.test.js` pins the
     URL normalisation and the repair path.
+28. **Fetching context is not the same as handing it to the model — and prose
+    goes stale while logs don't.** A cut-analysis capture was answered by the
+    FINANCE tool ("no access to a weigh-in trend") while nineteen dated
+    weigh-ins sat readable; a nudge did arithmetic on the bio's stale
+    "approximately 220 lbs" because the evaluator's prompt never interpolated
+    the trend `buildRichContext` had already fetched — and four surfaces
+    interpolated the memories *object* as the literal text `[object Object]`
+    for weeks. The cures, all pinned by `tests/freshness.test.js` and
+    `tests/vitals.test.js`: computed body vitals ride in `buildSignals` (the
+    one block every reasoning surface renders); `query_health` gives the
+    router somewhere correct to send body questions; every memory a model
+    reads carries its date; string call sites interpolate
+    `context.memoriesText`, never `context.memories`; the weekly bio rewrite
+    folds in measured vitals (structured beats prose); and the nightly
+    staleness sweep files `stale_review` prompts instead of letting bad facts
+    live forever. When adding a reasoning surface: render `context.signals`,
+    and interpolate rendered strings, never objects.
 
 ## Where to look next
 

@@ -4,6 +4,7 @@ import { getMemories } from "./memory.js";
 import { logActivity } from "./activityLog.js";
 import supabase from "../lib/supabase.js";
 import { MODELS } from "../lib/models.js";
+import { computeBodyVitals, vitalsSignalLine } from "../lib/vitals.js";
 
 
 // The bio is the single richest thing the system knows about the user, and it
@@ -13,14 +14,19 @@ import { MODELS } from "../lib/models.js";
 //
 // Rewriting the user's own self-description is the most destructive thing in
 // this codebase, so: the previous version is written to activity_logs first
-// (nothing else records it, and there's no updated_at on profiles to recover
-// from), and the prompt is heavily biased toward preserving what's already
-// there rather than producing a tidier summary.
+// (nothing else records the full old text), updated_at is stamped so "how
+// stale is this bio" is answerable, and the prompt is heavily biased toward
+// preserving what's already there rather than producing a tidier summary.
 export async function regenerateBio() {
 
-  const [profile, memories] = await Promise.all([
+  const [profile, memories, vitals] = await Promise.all([
     getProfile(),
-    getMemories(100)
+    getMemories(100),
+    // The bio said "approximately 220 lbs" for weeks while the scale said
+    // 216.2, because this rewrite read only memories and no memory carries a
+    // weight — the one number a fitness bio leads with was structurally
+    // unable to heal. The measured figures now ride into every rewrite.
+    computeBodyVitals().catch(() => null)
   ]);
 
 
@@ -33,9 +39,15 @@ export async function regenerateBio() {
   }
 
 
+  // Dated. The prompt used to claim these were "newest first" when getMemories
+  // orders by importance — so the model arbitrated bio-vs-memory conflicts on
+  // a recency that was never true. Now each line carries its real date and the
+  // prompt makes no ordering claim.
   const formatted = memories
-    .map(m => `- [${m.type}] ${m.content}`)
+    .map(m => `- [${m.type}${m.created_at ? `, noted ${String(m.created_at).slice(0, 10)}` : ""}] ${m.content}`)
     .join("\n");
+
+  const measuredLine = vitals ? vitalsSignalLine(vitals) : null;
 
 
   const response = await openai.chat.completions.create({
@@ -52,16 +64,24 @@ export async function regenerateBio() {
 Their current profile:
 ${profile.bio}
 
-Everything the system has learned about them since, newest first:
+Everything the system has learned about them, each entry dated (order carries
+no meaning — judge freshness by the dates):
 ${formatted}
-
+${measuredLine ? `
+Live measured data (structured logs, computed today — these outrank both the
+profile and any memory when they disagree):
+Bodyweight: ${measuredLine}
+` : ""}
 Produce an updated profile.
 
 RULES — the first is the most important:
 - Never lose a concrete fact. Every name, number, date, place, institution,
   relationship and commitment in the current profile must survive verbatim
-  unless a memory directly contradicts it, in which case take the memory and
-  keep the change visible.
+  unless a memory directly contradicts it, in which case take the newer-dated
+  statement and keep the change visible.
+- A measured figure beats prose everywhere. If the profile states a weight or
+  other number the live measured data contradicts, replace it with the
+  measured value (goals and targets are not measurements — keep those).
 - Only add things genuinely supported by the memories above. Invent nothing,
   and do not infer personality from thin evidence.
 - Memories are often coarser than the profile. Where one restates something
@@ -109,7 +129,7 @@ Return the profile text only — no preamble, no headings, no commentary.`
 
   const { error } = await supabase
     .from("profiles")
-    .update({ bio: updated })
+    .update({ bio: updated, updated_at: new Date().toISOString() })
     .eq("id", profile.id);
 
 

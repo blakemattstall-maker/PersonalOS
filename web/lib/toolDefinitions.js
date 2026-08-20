@@ -368,8 +368,34 @@ export const TOOLS = [
     type: "function",
     function: {
 
+      name: "query_health",
+      description: "Answer anything about the user's body, weight, cut or bulk progress, training, or diet — 'how's my cut going', 'what's my weight trend', 'am I on pace for my goal weight', 'analyze my progress'. Reads the FULL weigh-in history (start weight, current, pace), calorie log status, and stated goals. Always use this — never query_finances, query_notes or general_question — when the question concerns body composition, weight, or fitness progress. If the user is REPORTING a weigh-in ('I'm 216 today'), that is log_bodyweight instead.",
+
+      parameters: {
+        type: "object",
+        properties: {
+          question: {
+            type: "string",
+            description: "The health/body question, in the user's own words."
+          }
+        },
+        required: ["question"]
+      }
+
+    }
+  },
+
+
+  {
+    type: "function",
+    function: {
+
       name: "general_question",
-      description: "Answer a general question that is not about the calendar or tasks, using memory/context only.",
+      // "using memory/context only" used to read as "has no data": the router
+      // once rephrased a cut-analysis question into "...if I don't have the
+      // user's exact stats?", and the answerer obediently disclaimed stats it
+      // was holding. Say what the answerer actually has.
+      description: "Answer a general question that no more specific query tool covers. The answerer already holds the user's profile, dated memories, live weigh-in trend, and cross-domain signals (money, follow-through, body, food, projects) — never assume its data is missing, and never rephrase the question to assert that. Body/fitness analysis goes to query_health, not here.",
 
       parameters: {
         type: "object",

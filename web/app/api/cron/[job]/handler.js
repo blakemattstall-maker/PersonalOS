@@ -293,6 +293,20 @@ async function reviewIntentions() {
     observationResult = { success: false, error: error.message };
   }
 
+  // After the observer, same nightly slot: compare stored prose claims
+  // against the day's measured figures and file "this looks out of date"
+  // review prompts. Best-effort — a failed sweep costs one night of
+  // staleness detection, never the observation.
+  let stalenessResult = null;
+
+  try {
+    const { sweepStaleFacts } = await import("../../../../tools/staleness.js");
+    stalenessResult = await sweepStaleFacts();
+  } catch (error) {
+    console.error("STALENESS SWEEP FAILED:", error.message);
+    stalenessResult = { success: false, error: error.message };
+  }
+
 
   return {
     success: true,
@@ -300,6 +314,7 @@ async function reviewIntentions() {
     deletedInGoogle: { tasks: taskReconcile, events: eventReconcile },
     metrics: metricsResult,
     observation: observationResult,
+    staleness: stalenessResult,
     nudges: nudgeResult,
     accountability: accountabilityResult,
     projects: projectResult,

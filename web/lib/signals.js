@@ -351,6 +351,13 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     relationshipSignal(tz),
     projectSignal(tz),
     presenceSignal(tz),
+    // The live weigh-in figures — start, current, pace — computed in
+    // lib/vitals.js. Rides here rather than as a separate context field
+    // because signals is the one block every reasoning surface renders: a
+    // morning nudge once did arithmetic on the bio's stale "approximately
+    // 220 lbs" while the real trend sat in a context field its prompt never
+    // interpolated.
+    import("../lib/vitals.js").then(m => m.bodySignal()),
     // What was eaten against the targets — null until meals are tracked, so
     // the food line only exists once there is food data to stand on.
     import("../tools/mealPlan.js").then(m => m.nutritionSignal()),
@@ -362,7 +369,7 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     trendSignal()
   ]);
 
-  const [finance, completions, overdue, intentions, relationships, projects, presence, nutrition, trends] =
+  const [finance, completions, overdue, intentions, relationships, projects, presence, body, nutrition, trends] =
     results.map(r => (r.status === "fulfilled" ? r.value : null));
 
   // A rejected signal is a bug, not a quiet week — allSettled keeps it from
@@ -382,6 +389,7 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     relationships && `Relationships: ${relationships}`,
     projects && `Projects: ${projects}`,
     presence && `Where he has been: ${presence}`,
+    body && `Body: ${body}`,
     nutrition && `Food: ${nutrition}`,
     trends && `Trends: ${trends}`
   ].filter(Boolean);

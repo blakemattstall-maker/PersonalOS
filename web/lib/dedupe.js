@@ -94,8 +94,12 @@ async function fetchCandidates(table) {
 
 async function classify({ content, candidates, kind }) {
 
+  // Dated: "update" and "conflict" are both judgements about which statement
+  // is current, and the classifier used to make them blind — two contradictory
+  // facts read identically whether the old one was written yesterday or in
+  // June. created_at is already fetched by every candidate source.
   const list = candidates
-    .map((c, i) => `${i}. ${c.content}`)
+    .map((c, i) => `${i}. [noted ${c.created_at ? String(c.created_at).slice(0, 10) : "date unknown"}] ${c.content}`)
     .join("\n");
 
   const response = await openai.chat.completions.create({

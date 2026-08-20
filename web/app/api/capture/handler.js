@@ -263,9 +263,18 @@ Call every tool needed to satisfy the request — if one message asks for two th
 
       try {
 
+        // Scoped questions for scoped tools — but the catch-all reasoner and
+        // the health tool always get the user's verbatim words. On a
+        // multi-tool turn the router once rephrased "analysis of my cut so
+        // far" into "...if I don't have the user's exact stats?" for
+        // general_question, and the answerer obediently disclaimed data it
+        // was holding. A rephrase must never be able to assert facts about
+        // what the system knows.
+        const wantsVerbatim = toolName === "general_question" || toolName === "query_health";
+
         const result = await executeTool(
           { tool: toolName, ...args },
-          isMultiAction ? null : text
+          isMultiAction && !wantsVerbatim ? null : text
         );
 
         results.push({ tool: toolName, result });

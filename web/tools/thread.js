@@ -75,7 +75,11 @@ The user just said: "${message}"
 
 What you know about the user:
 Profile: ${context.bio || "(none)"}
-Recent memories: ${JSON.stringify(context.memories, null, 2)}
+Recent memories (dated): ${JSON.stringify(context.memories, null, 2)}
+
+Where things actually stand right now — real figures, already calculated
+(these outrank any number in the profile or a memory when they disagree):
+${context.signals || "(none yet)"}
 
 The user has told you to be blunt, hold nothing back, and never soften
 a finding for the sake of comfort. No topic is off-limits.
@@ -365,7 +369,11 @@ Today's date: ${today.toFormat("yyyy-MM-dd")}
 
 What you know about the user:
 Profile: ${context.bio || "(none)"}
-Recent memories: ${JSON.stringify(context.memories, null, 2)}
+Recent memories (dated): ${JSON.stringify(context.memories, null, 2)}
+
+Where things actually stand right now — real figures, already calculated
+(these outrank any number in the profile or a memory when they disagree):
+${context.signals || "(none yet)"}
 
 Be blunt and specific — no generic filler tasks that would apply to any project.
 

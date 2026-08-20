@@ -335,7 +335,9 @@ export async function exportToDoc({ request, title, research = false, markdown }
     const written = await writeDocument({
       request,
       research,
-      context: context && [context.bio, context.memories].filter(Boolean).join("\n\n")
+      // memoriesText, not memories — the object stringified to
+      // "[object Object]" here, so documents drew on the bio alone.
+      context: context && [context.bio, context.memoriesText].filter(Boolean).join("\n\n")
     });
 
     body = written.markdown;

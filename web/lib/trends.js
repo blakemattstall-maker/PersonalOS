@@ -67,7 +67,12 @@ const METRIC_SPECS = [
   { key: "calendar_busy_minutes", label: "time booked",    kind: "flow",  unit: "h",  digits: 1, scale: 1 / 60 },
   { key: "minutes_at_gym",       label: "gym time",        kind: "flow",  unit: "h",  digits: 1, scale: 1 / 60 },
   { key: "places_visited",       label: "places visited",  kind: "flow",  unit: "",   digits: 1 },
-  { key: "weight",               label: "weight",          kind: "level", unit: "lb", digits: 1 }
+  { key: "weight",               label: "weight",          kind: "level", unit: "lb", digits: 1 },
+  // Written by the dining rollup (tools/metrics.js) once meals get logged.
+  // Absent from this list, calorie movement could never trend no matter how
+  // faithfully intake was tracked — the columns existed with no reader.
+  { key: "calories_eaten",       label: "calories eaten",  kind: "flow",  unit: " cal", digits: 0 },
+  { key: "protein_eaten",        label: "protein eaten",   kind: "flow",  unit: "g",  digits: 0 }
 ];
 
 

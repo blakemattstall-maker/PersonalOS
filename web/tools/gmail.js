@@ -155,7 +155,9 @@ export async function draftEmail({ about, to, tone }) {
     about,
     recipientName: to || null,
     tone,
-    context: context && [context.bio, context.memories].filter(Boolean).join("\n\n")
+    // memoriesText, not memories — the object stringified to "[object Object]"
+    // here, so drafts were written from the bio alone.
+    context: context && [context.bio, context.memoriesText].filter(Boolean).join("\n\n")
   });
 
   const raw = buildRawMessage({
@@ -344,9 +346,16 @@ export async function reviewInbox({ days = 7, limit = 40, question = null } = {}
 
 
   const [context, { data: people }] = await Promise.all([
-    buildRichContext().catch(() => ""),
+    buildRichContext().catch(() => null),
     supabase.from("people").select("name, relationship")
   ]);
+
+  // Rendered fields, never the object: the "Who they are" line used to
+  // interpolate the ENTIRE context object as "[object Object]" — this surface
+  // ran with no bio and no memories at all while looking fully wired.
+  const who = context
+    ? [context.bio, context.memoriesText].filter(Boolean).join("\n\n")
+    : "";
 
   const roster = (people || []).map(p => `${p.name} (${p.relationship || "?"})`).join(", ");
 
@@ -392,7 +401,7 @@ export async function reviewInbox({ days = 7, limit = 40, question = null } = {}
       {
         role: "user",
         content:
-          (context ? `Who they are:\n${context}\n\n` : "") +
+          (who ? `Who they are:\n${who}\n\n` : "") +
           (roster ? `People they have saved: ${roster}\n\n` : "") +
           (question ? `They specifically asked: ${question}\n\n` : "") +
           `Inbox, last ${days} days:\n\n${lines}`

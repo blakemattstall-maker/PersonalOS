@@ -299,7 +299,12 @@ export async function getFormattedMemories({ query, limit = 20 } = {}) {
 
     grouped[memory.type].push({
       content: memory.content,
-      importance: memory.importance
+      importance: memory.importance,
+      // Dated, so a model can weigh freshness. Every surface used to see
+      // memories undated, which made staleness illegible system-wide — a
+      // fact from three weeks ago and one from this morning read as equally
+      // current, and the older one sometimes won.
+      ...(memory.created_at ? { noted: memory.created_at.slice(0, 10) } : {})
     });
 
   });

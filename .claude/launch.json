@@ -45,6 +45,18 @@
         "3011"
       ],
       "port": 3011
+    },
+    {
+      "name": "vathos-preview",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4173",
+        "--directory",
+        "/Users/blakestall/Vathos"
+      ],
+      "port": 4173
     }
   ]
 }
