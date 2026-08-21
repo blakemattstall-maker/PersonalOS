@@ -296,3 +296,26 @@ test("the feed hides the same requisition posted per-location", () => {
   assert.match(read("web/tools/jobs.js"), /seenTitles/);
 
 });
+
+
+test("a scheduler that stops firing is visible, not silent", () => {
+
+  // The failure that motivated this: GitHub Actions registered the schedule,
+  // reported it active, and then never ran it for over an hour. Nothing in the
+  // app would have said so — a dead clock and a quiet hiring market look
+  // identical from the feed.
+  const view = read("web/app/JobsView.js");
+
+  assert.match(view, /2 \* 60 \* 60 \* 1000/, "two hours is four missed polls");
+  assert.match(view, /No poll has completed in over two hours/);
+
+  // And there is a scheduler that actually keeps time, alongside the flaky one.
+  const cron = read("docs/cron-jobs.sql");
+  assert.match(cron, /pg_cron/);
+  assert.match(cron, /\*\/15 \* \* \* \*/);
+  assert.match(cron, /api\/cron\/checkJobs/);
+
+  // The secret must never be committed — the file ships a placeholder.
+  assert.match(cron, /PUT_YOUR_CRON_SECRET_HERE/);
+
+});

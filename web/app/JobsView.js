@@ -160,6 +160,11 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt, lo
     });
   };
 
+  // Two hours is four missed polls: past that, something is wrong with the
+  // clock rather than with the market.
+  const stale = !lastCheckedAt ||
+    (Date.now() - new Date(lastCheckedAt).getTime()) > 2 * 60 * 60 * 1000;
+
   const chosen = filter === "all"
     ? postings
     : postings.filter(p => p.status === filter);
@@ -274,6 +279,17 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt, lo
           Watching {watching} company board{watching === 1 ? "" : "s"}
           {lastCheckedAt ? ` · last checked ${when(lastCheckedAt)}` : " · never checked yet"}.
         </Meta>
+
+        {/* A scheduler that stops firing looks exactly like a quiet hiring
+            market — which is precisely what happened when GitHub Actions
+            silently never ran the schedule for over an hour. The page has to
+            say so, or the first sign of trouble is a missed posting. */}
+        {stale && (
+          <p className="mt-1.5 text-[0.75rem] leading-relaxed text-ember">
+            No poll has completed in over two hours. The schedule may have
+            stopped — new postings are not being caught right now.
+          </p>
+        )}
         {/* A board that has started failing must be visible. A renamed company
             slug returns 404 forever and looks exactly like a quiet hiring
             market. */}
