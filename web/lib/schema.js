@@ -31,6 +31,14 @@ import { probeTable } from "./tableProbe.js";
 const MIGRATIONS = [
 
   {
+    file: "docs/schema-jobs-pipeline.sql",
+    purpose: "application outcomes — the events a pipeline chart is built from",
+    tables: ["job_events"],
+    columns: [["job_postings", "stage"]],
+    breaksWithout: "The Pipeline page and every stage button; the feed and alerts are unaffected."
+  },
+
+  {
     file: "docs/schema-jobs-track.sql",
     purpose: "internship deadlines and follow-ups",
     columns: [["job_postings", "deadline"], ["job_postings", "applied_at"], ["job_postings", "last_nudged_at"]],

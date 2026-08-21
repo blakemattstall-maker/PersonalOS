@@ -10,7 +10,8 @@ import { usePathname } from "next/navigation";
 // would bury whichever came second.
 const SECTIONS = [
   { href: "/career/money", label: "Money" },
-  { href: "/career/jobs", label: "Jobs" }
+  { href: "/career/jobs", label: "Jobs" },
+  { href: "/career/pipeline", label: "Pipeline" }
 ];
 
 

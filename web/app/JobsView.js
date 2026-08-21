@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DateTime } from "luxon";
-import { setJobStatusAction, saveSettingsAction } from "./actions.js";
+import { setJobStatusAction, saveSettingsAction, recordStageAction } from "./actions.js";
 import { Card, SectionTitle, Empty, Meta, btn } from "./ui.js";
 
 
@@ -191,7 +191,10 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt, lo
 
   const onStatus = (id, status) => {
     startTransition(async () => {
-      await setJobStatusAction(id, status);
+      // Applying opens a pipeline: the event is what the flow chart is built
+      // from, and it sets the status too. Everything else is just a status.
+      if (status === "applied") await recordStageAction(id, "applied");
+      else await setJobStatusAction(id, status);
       router.refresh();
     });
   };

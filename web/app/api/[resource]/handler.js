@@ -720,6 +720,11 @@ async function jobs(req, res) {
 
   if (req.method === "GET") {
 
+    if (req.query.pipeline) {
+      const { getPipeline } = await import("../../../tools/jobs.js");
+      return res.status(200).json(await getPipeline());
+    }
+
     // A one-line summary for the dashboard: enough to decide whether to tap,
     // and nothing more to serialise into the page.
     if (req.query.headline) {
@@ -748,6 +753,13 @@ async function jobs(req, res) {
   if (req.method === "POST") {
 
     const { action, id, status } = req.body || {};
+
+    if (action === "recordStage") {
+      const { posting_id, stage } = req.body || {};
+      if (!posting_id || !stage) return res.status(400).json({ error: "Missing posting_id or stage" });
+      const { recordJobEvent } = await import("../../../tools/jobs.js");
+      return res.status(200).json(await recordJobEvent({ posting_id, stage }));
+    }
 
     if (action === "setStatus") {
       if (!id || !status) return res.status(400).json({ error: "Missing id or status" });

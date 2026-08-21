@@ -358,6 +358,18 @@ export async function setJobStatusAction(id, status) {
 }
 
 
+export async function recordStageAction(posting_id, stage) {
+
+  const result = await backendPost("/api/jobs", { action: "recordStage", posting_id, stage });
+
+  revalidatePath("/career/pipeline");
+  revalidatePath("/career/jobs");
+
+  return result;
+
+}
+
+
 export async function pollJobsAction() {
 
   const result = await backendPost("/api/jobs", { action: "poll" });

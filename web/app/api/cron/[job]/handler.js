@@ -1,5 +1,5 @@
 import { syncCanvasAssignments } from "../../../../tools/canvas.js";
-import { checkForNewJobs, enrichJobDetails, reviewJobDeadlines } from "../../../../tools/jobs.js";
+import { checkForNewJobs, enrichJobDetails, reviewJobDeadlines, weeklyJobDigest } from "../../../../tools/jobs.js";
 import { syncDiningMenus } from "../../../../tools/dining.js";
 import { createBrief, getLatestUnreadBrief, getMostRecentBrief } from "../../../../tools/database.js";
 import { composeBrief } from "../../../../tools/brief.js";
@@ -401,7 +401,16 @@ async function enrichJobs() {
       return { success: false, error: error.message };
     });
 
-  return { enriched, reminders };
+  // Sundays only, and it decides that for itself — riding this hourly slot
+  // rather than owning a schedule, because one more clock is one more thing
+  // that can stop without anyone noticing.
+  const digest = await weeklyJobDigest()
+    .catch(error => {
+      console.error("WEEKLY DIGEST FAILED:", error.message);
+      return { success: false, error: error.message };
+    });
+
+  return { enriched, reminders, digest };
 
 }
 

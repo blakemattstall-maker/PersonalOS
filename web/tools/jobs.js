@@ -620,6 +620,34 @@ export function scorePosting({ title, location }, { locationPriority = true } = 
 }
 
 
+// Burst protection, not a daily cap.
+//
+// Blake's own framing, and it is the right one: twenty postings spread across
+// a day is good news — it means more to apply to. Ten notifications inside a
+// few minutes is what makes an app get muted. So the limit is on RATE, and
+// nothing is ever dropped: a batch that would exceed it simply is not claimed,
+// so those postings roll into the next poll and go out together.
+const PUSH_WINDOW_MINUTES = 45;
+const PUSH_BUDGET = 2;
+
+async function pushBudgetRemaining() {
+
+  const since = new Date(Date.now() - PUSH_WINDOW_MINUTES * 60000).toISOString();
+
+  const { data, error } = await supabase
+    .from("activity_logs")
+    .select("created_at")
+    .eq("action", "job_alert")
+    .gte("created_at", since);
+
+  // A failed read must not silence the alert this feature exists for.
+  if (error) return PUSH_BUDGET;
+
+  return PUSH_BUDGET - (data || []).length;
+
+}
+
+
 // The bar for buzzing his phone. An internship in one of his fields clears it;
 // a barista internship or an ML PhD internship does not.
 const NOTIFY_SCORE = 3;
@@ -829,6 +857,32 @@ export async function checkForNewJobs() {
 
   }
 
+  // Rate check BEFORE the claim, deliberately. Claiming first and then
+  // declining to send would mark these as announced when they never were, and
+  // they would never be mentioned again.
+  const budget = await pushBudgetRemaining();
+
+  if (budget <= 0) {
+
+    await logActivity({
+      action: "job_check",
+      input: null,
+      output: {
+        checked: result.checked,
+        failed: result.failed,
+        new: result.fresh.length,
+        deferred: result.fresh.length,
+        enriched: opportunistic.enriched || 0
+      },
+      success: true,
+      source: "cron"
+    }).catch(() => {});
+
+    // Unclaimed, so the next poll picks them up and sends one batch.
+    return { ...result, notified: 0, deferred: result.fresh.length, enriched: opportunistic.enriched || 0 };
+
+  }
+
   // Claim the notification BEFORE sending it: the same claim-then-send order
   // the Google auth alert uses, so a push failure costs one missed buzz
   // rather than a buzz per poll until it succeeds.
@@ -865,6 +919,16 @@ export async function checkForNewJobs() {
       url: "/career/jobs",
       tag: `jobs-${Date.now()}`
     }).catch(error => console.error("JOB PUSH FAILED:", error.message));
+
+    // What the rate limiter counts. Logged after the send so a failed push
+    // does not spend the budget.
+    await logActivity({
+      action: "job_alert",
+      input: null,
+      output: { postings: ranked.length, companies: [...new Set(ranked.map(j => j.company))] },
+      success: true,
+      source: "cron"
+    }).catch(() => {});
 
     // And a prompt, so a swiped notification does not lose the listing. The
     // full set is written out because a push body holds one line.
@@ -1265,6 +1329,241 @@ export async function briefJobFacts({ hours = 24 } = {}) {
     })),
     openApplications
   };
+
+}
+
+
+// Record a stage change, and keep the denormalised copy on the posting in
+// step. The event table is the source of truth — it is what the flow chart is
+// built from — and job_postings.stage exists only so the feed can filter
+// without a join.
+export async function recordJobEvent({ posting_id, stage, note = null, occurred_at = null }) {
+
+  const { STAGES } = await import("../lib/pipeline.js");
+
+  if (!STAGES[stage] || stage === "ghosted") {
+    // Ghosting is derived from silence, never recorded — see lib/pipeline.js.
+    throw new Error(`Not a recordable stage: ${stage}`);
+  }
+
+  const when = occurred_at || new Date().toISOString();
+
+  const { error } = await supabase
+    .from("job_events")
+    .insert([{ posting_id, stage, note, occurred_at: when }]);
+
+  if (error) {
+    if (/schema cache|does not exist/i.test(error.message)) {
+      return { success: false, configured: false, message: "Run docs/schema-jobs-pipeline.sql in Supabase." };
+    }
+    throw new Error(error.message);
+  }
+
+  // status and stage answer different questions — status is "is this in my
+  // feed", stage is "how far did it get" — so applying sets both.
+  const patch = { stage, stage_at: when };
+
+  if (stage === "applied") {
+    patch.status = "applied";
+    patch.applied_at = when;
+  }
+
+  await supabase.from("job_postings").update(patch).eq("id", posting_id);
+
+  return { success: true, stage };
+
+}
+
+
+// Everything needed to draw the chart, plus the applications behind it.
+export async function getPipeline() {
+
+  const { data: events, error } = await supabase
+    .from("job_events")
+    .select("posting_id, stage, note, occurred_at")
+    .order("occurred_at", { ascending: true })
+    .limit(5000);
+
+  if (error) {
+    if (/schema cache|does not exist/i.test(error.message)) {
+      return { success: false, configured: false };
+    }
+    throw new Error(error.message);
+  }
+
+  const byPosting = new Map();
+
+  for (const e of events || []) {
+    if (!byPosting.has(e.posting_id)) byPosting.set(e.posting_id, []);
+    byPosting.get(e.posting_id).push(e);
+  }
+
+  const { buildPipeline, pipelineSummary, pathFor } = await import("../lib/pipeline.js");
+
+  const pipeline = buildPipeline(byPosting);
+
+  // The applications themselves, so the page can list what is still live
+  // rather than only charting it.
+  const ids = [...byPosting.keys()];
+
+  const { data: postings } = ids.length
+    ? await supabase
+        .from("job_postings")
+        .select("id, company, title, location, url, stage, stage_at, applied_at")
+        .in("id", ids)
+    : { data: [] };
+
+  const enriched = (postings || []).map(p => {
+    const { current, silentDays, derived } = pathFor(byPosting.get(p.id) || []);
+    return { ...p, currentStage: current, silentDays, ghosted: derived };
+  }).sort((a, b) => new Date(b.stage_at || 0) - new Date(a.stage_at || 0));
+
+  // buildPipeline's own `applications` is a COUNT; the caller wants the list.
+  // Spreading one over the other silently clobbered the count — it survives in
+  // summary.applications, but naming two different things the same way is how
+  // that becomes a bug later.
+  return {
+    success: true,
+    configured: true,
+    nodes: pipeline.nodes,
+    flows: pipeline.flows,
+    summary: pipelineSummary(pipeline),
+    applications: enriched
+  };
+
+}
+
+
+// The Sunday summary.
+//
+// Rides the nightly job rather than getting its own schedule — one more clock
+// is one more thing that can silently stop, and this codebase has already
+// learned that lesson once. It only does anything on a Sunday.
+//
+// Everything in it is counted in code. The point of a digest is to be trusted
+// at a glance, and a model narrating numbers it derived itself is how a digest
+// starts being wrong quietly.
+export async function weeklyJobDigest({ force = false, tz = "America/Chicago" } = {}) {
+
+  const { DateTime } = await import("luxon");
+
+  const now = DateTime.now().setZone(tz);
+
+  if (!force && now.weekday !== 7) return { success: true, skipped: "not Sunday" };
+
+  const weekAgo = now.minus({ days: 7 }).toISO();
+
+  const [{ data: postings }, { data: events }, { data: sources }] = await Promise.all([
+    supabase
+      .from("job_postings")
+      .select("company, title, first_seen_at, deadline, status, match_score, term, grad_fit, field")
+      .eq("is_internship", true)
+      .gte("match_score", 1)
+      .gte("first_seen_at", weekAgo),
+    supabase
+      .from("job_events")
+      .select("stage, occurred_at")
+      .gte("occurred_at", weekAgo),
+    supabase
+      .from("job_sources")
+      .select("company, consecutive_failures, active")
+  ]);
+
+  const relevant = (postings || []).filter(p =>
+    (p.term == null || p.term === "summer_2027" || p.term === "unspecified") &&
+    p.grad_fit !== "blocked" &&
+    NOTIFY_FIELDS.has(p.field)
+  );
+
+  const applied = (events || []).filter(e => e.stage === "applied").length;
+  const advanced = (events || []).filter(e => ["first_round", "second_round", "final_round"].includes(e.stage)).length;
+  const offers = (events || []).filter(e => e.stage === "offer").length;
+  const rejected = (events || []).filter(e => e.stage === "rejected").length;
+
+  const soon = now.plus({ days: 10 }).toISODate();
+
+  const { data: closing } = await supabase
+    .from("job_postings")
+    .select("company, title, deadline")
+    .eq("is_internship", true)
+    .gte("match_score", 3)
+    .in("status", ["new", "saved"])
+    .not("deadline", "is", null)
+    .gte("deadline", now.toISODate())
+    .lte("deadline", soon)
+    .order("deadline", { ascending: true })
+    .limit(5);
+
+  const broken = (sources || []).filter(s => s.active && s.consecutive_failures >= 3);
+
+  const lines = [];
+
+  lines.push(relevant.length > 0
+    ? `${relevant.length} internship${relevant.length === 1 ? "" : "s"} worth a look posted this week.`
+    : "Nothing new posted in your fields this week.");
+
+  if (relevant.length > 0) {
+    for (const p of relevant.slice(0, 6)) {
+      lines.push(`• ${p.company} — ${p.title}`);
+    }
+  }
+
+  if (applied > 0 || advanced > 0 || offers > 0 || rejected > 0) {
+    lines.push("");
+    lines.push(
+      `You applied to ${applied} this week` +
+      (advanced ? `, advanced ${advanced}` : "") +
+      (offers ? `, and got ${offers} offer${offers === 1 ? "" : "s"}` : "") +
+      (rejected ? `. ${rejected} came back no.` : ".")
+    );
+  } else if (relevant.length > 0) {
+    // The one thing a digest should say plainly when it is true.
+    lines.push("");
+    lines.push("You logged no applications this week.");
+  }
+
+  if (closing?.length) {
+    lines.push("");
+    lines.push("Closing in the next ten days:");
+    for (const c of closing) lines.push(`• ${c.company} — ${c.title} (${c.deadline})`);
+  }
+
+  if (broken.length) {
+    lines.push("");
+    lines.push(`Not responding: ${broken.map(b => b.company).join(", ")}.`);
+  }
+
+  lines.push("");
+  lines.push("The manual list on the Jobs tab is the other half — the giants and the Chicago studios no feed reaches.");
+
+  const body = lines.join("\n");
+
+  await supabase.from("prompts").insert([{
+    kind: "digest",
+    title: "Your week in the search",
+    body,
+    status: "pending",
+    pushed_at: new Date().toISOString()
+  }]);
+
+  const { sendPush } = await import("../lib/push.js");
+
+  await sendPush({
+    title: "Your week in the search",
+    body: lines[0],
+    url: "/career/jobs",
+    tag: "jobs-weekly"
+  }).catch(error => console.error("WEEKLY DIGEST PUSH FAILED:", error.message));
+
+  await logActivity({
+    action: "jobs_weekly_digest",
+    input: null,
+    output: { posted: relevant.length, applied, advanced, offers, rejected, closing: closing?.length || 0 },
+    success: true,
+    source: "cron"
+  }).catch(() => {});
+
+  return { success: true, posted: relevant.length, applied, advanced, offers };
 
 }
 
