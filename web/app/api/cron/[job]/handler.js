@@ -1,5 +1,5 @@
 import { syncCanvasAssignments } from "../../../../tools/canvas.js";
-import { checkForNewJobs } from "../../../../tools/jobs.js";
+import { checkForNewJobs, enrichJobDetails } from "../../../../tools/jobs.js";
 import { syncDiningMenus } from "../../../../tools/dining.js";
 import { createBrief, getLatestUnreadBrief, getMostRecentBrief } from "../../../../tools/database.js";
 import { composeBrief } from "../../../../tools/brief.js";
@@ -385,9 +385,20 @@ async function checkJobs() {
 }
 
 
+// Reading descriptions is the slow half — one fetch per requisition — so it
+// gets its own path the poller can call without holding up an alert. Runs a
+// larger slice than the poll's own opportunistic pass.
+async function enrichJobs() {
+
+  return enrichJobDetails({ limit: 120 });
+
+}
+
+
 const JOBS = {
   morningBrief,
   checkJobs,
+  enrichJobs,
   briefPush,
   syncCanvas,
   reviewIntentions,

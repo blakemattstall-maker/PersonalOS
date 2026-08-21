@@ -31,6 +31,13 @@ import { probeTable } from "./tableProbe.js";
 const MIGRATIONS = [
 
   {
+    file: "docs/schema-jobs-detail.sql",
+    purpose: "internship filtering — term, graduation-year fit, pay, discipline",
+    columns: [["job_postings", "term"], ["job_postings", "grad_fit"], ["job_postings", "pay_min"]],
+    breaksWithout: "The Jobs tab cannot narrow to Summer 2027, rule out postings that require a graduation year he does not have, or sort by pay."
+  },
+
+  {
     file: "docs/schema-jobs.sql",
     purpose: "the internship monitor — company watchlist and everything ever posted",
     tables: ["job_sources", "job_postings"],

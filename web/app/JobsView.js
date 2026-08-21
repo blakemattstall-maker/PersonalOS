@@ -19,6 +19,36 @@ const FILTERS = [
   { key: "all", label: "All" }
 ];
 
+// Four ways to read the same list, because "what should I open next" has four
+// different right answers depending on the day.
+const SORTS = [
+  { key: "recent", label: "Newest" },
+  { key: "nearby", label: "Nearby" },
+  { key: "pay", label: "Pay" },
+  { key: "match", label: "Best fit" }
+];
+
+const NEARBY = /\b(chicago|illinois|\bil\b|evanston|bloomington|normal|naperville|schaumburg|deerfield|mettawa|milwaukee|indianapolis|st\.? louis)\b/i;
+
+const isNearby = (p) => NEARBY.test(p.location || "");
+
+// Hourly, so an hourly rate and a salary can share one sorted list.
+const payRank = (p) => {
+  if (p.pay_min == null) return -1;
+  return p.pay_period === "year" ? Number(p.pay_min) / 2080 : Number(p.pay_min);
+};
+
+function payLabel(p) {
+  if (p.pay_min == null) return null;
+  const unit = p.pay_period === "year" ? "/yr" : "/hr";
+  const fmt = (v) => p.pay_period === "year"
+    ? `$${Math.round(Number(v) / 1000)}k`
+    : `$${Number(v).toFixed(0)}`;
+  return p.pay_max && Number(p.pay_max) !== Number(p.pay_min)
+    ? `${fmt(p.pay_min)}–${fmt(p.pay_max)}${unit}`
+    : `${fmt(p.pay_min)}${unit}`;
+}
+
 
 function when(iso) {
 
@@ -56,6 +86,8 @@ function Posting({ posting, onStatus, busy }) {
           <span className="mt-0.5 block text-[0.78rem] text-ink-soft">
             {posting.company}
             {posting.location ? ` · ${posting.location}` : ""}
+            {payLabel(posting) ? ` · ${payLabel(posting)}` : ""}
+            {posting.term === "summer_2027" ? " · Summer 2027" : ""}
           </span>
         </span>
         {seen && (
@@ -105,6 +137,7 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt, lo
   const router = useRouter();
 
   const [filter, setFilter] = useState("new");
+  const [sort, setSort] = useState("recent");
   const [nearby, setNearby] = useState(locationPriority);
   const [isPending, startTransition] = useTransition();
 
@@ -127,9 +160,34 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt, lo
     });
   };
 
-  const shown = filter === "all"
+  const chosen = filter === "all"
     ? postings
     : postings.filter(p => p.status === filter);
+
+  // Sorted in the client because the whole list is already here — 120 rows at
+  // most — and a re-sort should not cost a round trip.
+  const shown = [...chosen].sort((a, b) => {
+
+    if (sort === "nearby") {
+      const diff = Number(isNearby(b)) - Number(isNearby(a));
+      if (diff !== 0) return diff;
+    }
+
+    if (sort === "pay") {
+      const diff = payRank(b) - payRank(a);
+      if (diff !== 0) return diff;
+    }
+
+    if (sort === "match") {
+      const diff = (b.match_score || 0) - (a.match_score || 0);
+      if (diff !== 0) return diff;
+    }
+
+    // Newest is the tiebreaker for every mode: of two equally good roles, the
+    // one posted an hour ago is the one still worth applying to first.
+    return new Date(b.first_seen_at) - new Date(a.first_seen_at);
+
+  });
 
   return (
     <>
@@ -146,6 +204,23 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt, lo
             }`}
           >
             {f.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="text-[0.7rem] uppercase tracking-[0.08em] text-ink-soft">Sort</span>
+        {SORTS.map(o => (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => setSort(o.key)}
+            aria-pressed={sort === o.key}
+            className={`rounded-[var(--r-pill)] border px-3 py-1 text-[0.75rem] transition-colors ${
+              sort === o.key ? "border-ink text-ink" : "border-[var(--line)] text-ink-soft hover:border-ink"
+            }`}
+          >
+            {o.label}
           </button>
         ))}
       </div>

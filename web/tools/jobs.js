@@ -1,6 +1,10 @@
 import supabase from "../lib/supabase.js";
 import { mapWithConcurrency } from "../lib/async.js";
 import { logActivity } from "./activityLog.js";
+import {
+  classifyTerm, classifyGradFit, classifyField, parsePay,
+  HIDDEN_FIELDS, isOtherCampusProgram
+} from "../lib/jobFilters.js";
 
 
 // The internship monitor.
@@ -301,6 +305,87 @@ async function fetchPhenom(source) {
 }
 
 
+// The description, fetched only for postings that already look like his kind
+// of internship — about 260 of the 11,000 seen. Greenhouse, Lever and Ashby
+// can hand it over in the board listing; Workday needs one request per job,
+// which is affordable at that count and is why this is a separate pass rather
+// than part of the poll.
+async function fetchDescription(source, posting) {
+
+  try {
+
+    if (source.ats === "workday") {
+      const parts = workdayParts(source.token);
+      const res = await fetch(
+        `https://${parts.tenant}.${parts.dc}.myworkdayjobs.com/wday/cxs/${parts.tenant}/${parts.site}${posting.external_id}`,
+        { headers: { accept: "application/json" }, signal: AbortSignal.timeout(15_000) }
+      );
+      if (!res.ok) return null;
+      const body = await res.json();
+      return stripHtml(body.jobPostingInfo?.jobDescription || "");
+    }
+
+    if (source.ats === "greenhouse") {
+      const res = await fetch(`https://boards-api.greenhouse.io/v1/boards/${source.token}/jobs/${posting.external_id}`, {
+        headers: { accept: "application/json" }, signal: AbortSignal.timeout(15_000)
+      });
+      if (!res.ok) return null;
+      const body = await res.json();
+      return stripHtml(body.content || "");
+    }
+
+    if (source.ats === "lever") {
+      const res = await fetch(`https://api.lever.co/v0/postings/${source.token}/${posting.external_id}?mode=json`, {
+        headers: { accept: "application/json" }, signal: AbortSignal.timeout(15_000)
+      });
+      if (!res.ok) return null;
+      const body = await res.json();
+      return stripHtml(body.descriptionPlain || body.description || "");
+    }
+
+    if (source.ats === "ashby") {
+      const res = await fetch(`https://api.ashbyhq.com/posting-api/job-board/${source.token}?includeCompensation=true`, {
+        headers: { accept: "application/json" }, signal: AbortSignal.timeout(15_000)
+      });
+      if (!res.ok) return null;
+      const body = await res.json();
+      const job = (body.jobs || []).find(j => String(j.id) === String(posting.external_id));
+      return stripHtml(job?.descriptionPlain || job?.descriptionHtml || "");
+    }
+
+    if (source.ats === "radancy") {
+      const res = await fetch(`https://${source.token}/api/jobs?keywords=intern&limit=100`, {
+        headers: { accept: "application/json" }, signal: AbortSignal.timeout(15_000)
+      });
+      if (!res.ok) return null;
+      const body = await res.json();
+      const job = (body.jobs || []).map(e => e.data || e)
+        .find(j => String(j.slug || j.req_id) === String(posting.external_id));
+      return stripHtml(job?.description || "");
+    }
+
+    // Phenom hands back a teaser in the listing and nothing deeper without a
+    // second widget call; the teaser is usually enough to carry a term.
+    return null;
+
+  } catch (error) {
+    return null;
+  }
+
+}
+
+
+function stripHtml(html) {
+  return String(html || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&#\d+;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
 // What counts as an internship. Deliberately generous on the way IN — a
 // missed posting is the failure this exists to prevent — and the exclusions
 // below are what keep it from being noise.
@@ -357,7 +442,16 @@ export function scorePosting({ title, location }, { locationPriority = true } = 
 
   const isInternship = INTERN_PATTERN.test(text) && !NOT_FOR_HIM.test(text);
 
-  const excluded = NO_CHANCE.test(text) && !CLEARLY_HIS.test(text);
+  // Whole disciplines he asked to cut — finance, supply chain, legal,
+  // engineering — plus internships tied to a campus that is not his. These are
+  // stored but never shown or announced.
+  const field = classifyField(text);
+
+  const wrongField = HIDDEN_FIELDS.has(field) && !CLEARLY_HIS.test(text);
+
+  const excluded = wrongField
+    || isOtherCampusProgram(text)
+    || (NO_CHANCE.test(text) && !CLEARLY_HIS.test(text));
 
   let score = 0;
   const matched = [];
@@ -372,7 +466,7 @@ export function scorePosting({ title, location }, { locationPriority = true } = 
 
   // Well below any notify bar, and below the feed's default floor, so an
   // excluded role is collected but never shown or announced.
-  if (excluded) return { isInternship, score: -99, matched, excluded: true };
+  if (excluded) return { isInternship, score: -99, matched, excluded: true, field };
 
   if (location) {
 
@@ -388,7 +482,7 @@ export function scorePosting({ title, location }, { locationPriority = true } = 
 
   }
 
-  return { isInternship, score, matched, excluded: false };
+  return { isInternship, score, matched, excluded: false, field };
 
 }
 
@@ -483,7 +577,7 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
     const rows = postings
       .filter(p => p.external_id && p.title && p.url)
       .map(p => {
-        const { isInternship, score, matched } = scorePosting(p, { locationPriority });
+        const { isInternship, score, matched, field } = scorePosting(p, { locationPriority });
         return {
           source_id: source.id,
           external_id: p.external_id,
@@ -494,7 +588,11 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
           posted_at: p.posted_at,
           is_internship: isInternship,
           match_score: score,
-          matched_terms: matched
+          matched_terms: matched,
+          field,
+          // From the title alone for now; the enrichment pass refines it once
+          // the description is in hand.
+          term: classifyTerm({ title: p.title })
         };
       });
 
@@ -527,7 +625,13 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
 
     if (!firstEverPoll) {
       for (const row of rows) {
-        if (!seen.has(row.external_id) && row.is_internship && row.match_score >= NOTIFY_SCORE) {
+        // Term is title-only at this point; a posting that names a term he has
+        // ruled out never buzzes, and one that names none still can — it is
+        // usually an early listing that has not decided yet.
+        if (!seen.has(row.external_id) &&
+            row.is_internship &&
+            row.match_score >= NOTIFY_SCORE &&
+            row.term !== "other") {
           fresh.push(row);
         }
       }
@@ -619,6 +723,14 @@ export async function checkForNewJobs() {
 
   }
 
+  // Read the descriptions of anything new enough to still be unclassified.
+  // Best-effort and capped, so a slow company page never eats the poll.
+  const enriched = await enrichJobDetails({ limit: 40 })
+    .catch(error => {
+      console.error("ENRICH FAILED:", error.message);
+      return { enriched: 0 };
+    });
+
   await logActivity({
     action: "job_check",
     input: null,
@@ -626,23 +738,99 @@ export async function checkForNewJobs() {
       checked: result.checked,
       failed: result.failed,
       new: toTell.length,
+      enriched: enriched.enriched || 0,
       companies: [...new Set(toTell.map(j => j.company))]
     },
     success: true,
     source: "cron"
   }).catch(() => {});
 
-  return { ...result, notified: toTell.length };
+  return { ...result, notified: toTell.length, enriched: enriched.enriched || 0 };
+
+}
+
+
+// Read the descriptions of postings that look like his, and decide the three
+// things only a description can answer: which term it is for, whether its
+// stated eligibility admits the class of 2029, and what it pays.
+//
+// Deliberately a separate, resumable pass rather than part of the poll. The
+// poll must stay fast enough to run every fifteen minutes; this walks a few
+// dozen postings at a time and remembers where it stopped, so it costs one
+// fetch per requisition for the life of that requisition.
+export async function enrichJobDetails({ limit = 60 } = {}) {
+
+  const { data: pending, error } = await supabase
+    .from("job_postings")
+    .select("id, source_id, external_id, title, url")
+    .eq("is_internship", true)
+    .gte("match_score", 0)
+    .is("detail_fetched_at", null)
+    .order("first_seen_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    // The detail columns arrive by a later migration than the table itself.
+    if (/column|schema cache/i.test(error.message)) {
+      return { success: false, configured: false, message: "Run docs/schema-jobs-detail.sql in Supabase." };
+    }
+    throw new Error(error.message);
+  }
+
+  if (!pending?.length) return { success: true, enriched: 0 };
+
+  const sourceIds = [...new Set(pending.map(p => p.source_id))];
+
+  const { data: sources } = await supabase
+    .from("job_sources")
+    .select("id, company, ats, token")
+    .in("id", sourceIds);
+
+  const byId = new Map((sources || []).map(s => [s.id, s]));
+
+  let enriched = 0;
+
+  await mapWithConcurrency(pending, async (posting) => {
+
+    const source = byId.get(posting.source_id);
+
+    if (!source) return;
+
+    const description = await fetchDescription(source, posting);
+
+    const term = classifyTerm({ title: posting.title, description: description || "" });
+    const gradFit = classifyGradFit(description || "");
+    const pay = parsePay(description || "");
+
+    const { error: writeError } = await supabase
+      .from("job_postings")
+      .update({
+        // Trimmed: the classifiers only ever read the first several thousand
+        // characters, and the raw HTML of 260 postings is not worth the rows.
+        description: description ? description.slice(0, 8000) : null,
+        term,
+        grad_fit: gradFit,
+        ...pay,
+        detail_fetched_at: new Date().toISOString()
+      })
+      .eq("id", posting.id);
+
+    if (writeError) console.error("ENRICH WRITE FAILED:", writeError.message);
+    else enriched += 1;
+
+  }, 6);
+
+  return { success: true, enriched, remaining: pending.length === limit };
 
 }
 
 
 // What the Jobs page reads.
-export async function getJobFeed({ limit = 60, onlyInternships = true, minScore = 1 } = {}) {
+export async function getJobFeed({ limit = 120, onlyInternships = true, minScore = 1 } = {}) {
 
   let query = supabase
     .from("job_postings")
-    .select("id, company, title, location, url, posted_at, first_seen_at, match_score, is_internship, status, notified_at")
+    .select("id, company, title, location, url, posted_at, first_seen_at, match_score, is_internship, status, notified_at, term, grad_fit, pay_min, pay_max, pay_period, field")
     .neq("status", "dismissed")
     .order("first_seen_at", { ascending: false })
     .limit(limit);
@@ -655,17 +843,52 @@ export async function getJobFeed({ limit = 60, onlyInternships = true, minScore 
 
   const { getSettings } = await import("../lib/settings.js");
 
-  const [{ data: postings, error }, { data: sources }, settings] = await Promise.all([
+  let [{ data: postings, error }, { data: sources }, settings] = await Promise.all([
     query,
     supabase.from("job_sources").select("company, ats, active, last_ok_at, last_error, consecutive_failures"),
     getSettings().catch(() => ({}))
   ]);
+
+  // The detail columns arrive by a later migration; without them the feed
+  // still works, it just cannot narrow by term or eligibility.
+  let detailed = true;
+
+  if (error && /column|schema cache/i.test(error.message)) {
+
+    detailed = false;
+
+    const fallback = await supabase
+      .from("job_postings")
+      .select("id, company, title, location, url, posted_at, first_seen_at, match_score, is_internship, status, notified_at")
+      .neq("status", "dismissed")
+      .eq("is_internship", true)
+      .gte("match_score", minScore)
+      .order("first_seen_at", { ascending: false })
+      .limit(limit);
+
+    if (fallback.error && /schema cache|does not exist/i.test(fallback.error.message)) {
+      return { success: false, configured: false, postings: [], sources: [] };
+    }
+
+    postings = fallback.data || [];
+    error = null;
+
+  }
 
   if (error) {
     if (/schema cache|does not exist/i.test(error.message)) {
       return { success: false, configured: false, postings: [], sources: [] };
     }
     throw new Error(error.message);
+  }
+
+  // Summer 2027 or not yet stated — never a term he has ruled out, and never a
+  // posting whose own eligibility rules him out.
+  if (detailed) {
+    postings = (postings || []).filter(p =>
+      (p.term == null || p.term === "summer_2027" || p.term === "unspecified") &&
+      p.grad_fit !== "blocked"
+    );
   }
 
   // Companies post the same requisition once per location, so a feed sorted by
@@ -692,6 +915,7 @@ export async function getJobFeed({ limit = 60, onlyInternships = true, minScore 
     success: true,
     configured: true,
     postings: deduped,
+    detailed,
     watching: (sources || []).filter(s => s.active).length,
     locationPriority: settings.jobs_location_priority !== false,
     broken: broken.map(s => s.company),
