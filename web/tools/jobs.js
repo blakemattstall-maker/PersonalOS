@@ -620,30 +620,44 @@ export function scorePosting({ title, location }, { locationPriority = true } = 
 }
 
 
-// Burst protection, not a daily cap.
+// Burst protection that costs no latency, because delaying an alert defeats
+// the entire feature.
 //
-// Blake's own framing, and it is the right one: twenty postings spread across
-// a day is good news — it means more to apply to. Ten notifications inside a
-// few minutes is what makes an app get muted. So the limit is on RATE, and
-// nothing is ever dropped: a batch that would exceed it simply is not claimed,
-// so those postings roll into the next poll and go out together.
-const PUSH_WINDOW_MINUTES = 45;
-const PUSH_BUDGET = 2;
+// The first version deferred a batch when too many pushes had gone out
+// recently. That was wrong twice over. First, it was solving a problem that
+// cannot happen: one poll produces at most one push and polls are fifteen
+// minutes apart, so "ten notifications in a few minutes" is structurally
+// impossible — four an hour is the ceiling by construction. Second, the cost
+// landed exactly where the value is. A posting found at 2:30 that waits until
+// 2:45 has spent a third of its head start being polite.
+//
+// What actually stacks up is the LOCK SCREEN on a heavy day: fifteen separate
+// entries over eight hours, each still sitting there. So nothing is ever
+// delayed or dropped — a busy stretch switches to a stable notification tag,
+// and the service worker replaces the previous alert instead of piling on
+// (renotify keeps the buzz; see public/sw.js). He is told just as fast; the
+// history simply does not accumulate.
+const BURST_WINDOW_MINUTES = 60;
+const BURST_AFTER = 3;
 
-async function pushBudgetRemaining() {
+async function recentAlerts() {
 
-  const since = new Date(Date.now() - PUSH_WINDOW_MINUTES * 60000).toISOString();
+  const since = new Date(Date.now() - BURST_WINDOW_MINUTES * 60000).toISOString();
 
   const { data, error } = await supabase
     .from("activity_logs")
-    .select("created_at")
+    .select("output")
     .eq("action", "job_alert")
     .gte("created_at", since);
 
-  // A failed read must not silence the alert this feature exists for.
-  if (error) return PUSH_BUDGET;
+  // A failed read must never silence the alert this feature exists for, so it
+  // degrades to "not a burst" — the noisier, safer direction.
+  if (error) return { alerts: 0, postings: 0 };
 
-  return PUSH_BUDGET - (data || []).length;
+  return {
+    alerts: (data || []).length,
+    postings: (data || []).reduce((sum, r) => sum + (Number(r.output?.postings) || 0), 0)
+  };
 
 }
 
@@ -857,31 +871,7 @@ export async function checkForNewJobs() {
 
   }
 
-  // Rate check BEFORE the claim, deliberately. Claiming first and then
-  // declining to send would mark these as announced when they never were, and
-  // they would never be mentioned again.
-  const budget = await pushBudgetRemaining();
-
-  if (budget <= 0) {
-
-    await logActivity({
-      action: "job_check",
-      input: null,
-      output: {
-        checked: result.checked,
-        failed: result.failed,
-        new: result.fresh.length,
-        deferred: result.fresh.length,
-        enriched: opportunistic.enriched || 0
-      },
-      success: true,
-      source: "cron"
-    }).catch(() => {});
-
-    // Unclaimed, so the next poll picks them up and sends one batch.
-    return { ...result, notified: 0, deferred: result.fresh.length, enriched: opportunistic.enriched || 0 };
-
-  }
+  const burst = await recentAlerts();
 
   // Claim the notification BEFORE sending it: the same claim-then-send order
   // the Google auth alert uses, so a push failure costs one missed buzz
@@ -913,11 +903,23 @@ export async function checkForNewJobs() {
 
     // Deliberately NOT behind pushAllowed(): this is the one alert whose whole
     // value is arriving within the hour, and he asked for it explicitly.
+    // On a quiet day every alert is its own notification. Once this is the
+    // fourth in an hour, they start replacing each other instead — same
+    // speed, same buzz, one entry on the lock screen — and the body carries
+    // the running total so replacing loses nothing.
+    const bursting = burst.alerts >= BURST_AFTER;
+
+    const runningTotal = burst.postings + toTell.length;
+
     await sendPush({
-      title: ranked.length === 1 ? "New internship posted" : `${ranked.length} new internships`,
-      body,
+      title: bursting
+        ? `${runningTotal} new internships in the last hour`
+        : (ranked.length === 1 ? "New internship posted" : `${ranked.length} new internships`),
+      body: bursting
+        ? `Latest: ${lead.company} — ${lead.title}. Tap for all ${runningTotal}.`
+        : body,
       url: "/career/jobs",
-      tag: `jobs-${Date.now()}`
+      tag: bursting ? "jobs-burst" : `jobs-${Date.now()}`
     }).catch(error => console.error("JOB PUSH FAILED:", error.message));
 
     // What the rate limiter counts. Logged after the send so a failed push

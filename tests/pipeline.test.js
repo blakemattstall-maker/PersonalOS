@@ -138,24 +138,30 @@ test("ghosted is derived, so it can never be recorded by hand", () => {
 });
 
 
-test("notifications are rate-limited, and nothing is ever dropped", () => {
+test("a busy day coalesces notifications instead of delaying them", () => {
 
   const jobs = read("web/tools/jobs.js");
 
-  // Blake's framing: twenty postings across a day is good news; ten in five
-  // minutes is what gets an app muted. So the limit is on rate.
-  assert.match(jobs, /PUSH_WINDOW_MINUTES/);
-  assert.match(jobs, /PUSH_BUDGET/);
+  // The whole feature is latency: a posting found at 2:30 that waits until
+  // 2:45 to be mentioned has spent a third of its head start being polite.
+  // So nothing is ever deferred or dropped.
+  assert.doesNotMatch(jobs, /deferred:/, "an alert must never be held back");
+  assert.doesNotMatch(jobs, /pushBudgetRemaining/, "the blocking throttle is gone");
 
-  // The rate check must come BEFORE the claim. Claiming and then declining to
-  // send marks postings as announced when they never were.
-  const check = jobs.slice(jobs.indexOf("export async function checkForNewJobs"));
-  const budget = check.indexOf("pushBudgetRemaining()");
-  const claim = check.indexOf("notified_at: new Date().toISOString()");
-  assert.ok(budget > 0 && budget < claim, "rate must be checked before notified_at is claimed");
+  // What changes on a heavy day is the TAG: a stable one replaces the
+  // previous alert rather than stacking, and the service worker's renotify
+  // keeps the buzz.
+  assert.match(jobs, /BURST_AFTER/);
+  assert.match(jobs, /tag: bursting \? "jobs-burst"/);
+  assert.match(read("web/public/sw.js"), /renotify: true/);
 
-  // Deferred, not dropped.
-  assert.match(check, /deferred: result\.fresh\.length/);
+  // And replacing must not lose information — the body carries the running
+  // total for the window.
+  assert.match(jobs, /runningTotal/);
+
+  // A failed budget read degrades to "not a burst", which is the noisier and
+  // therefore safer direction.
+  assert.match(jobs, /if \(error\) return \{ alerts: 0, postings: 0 \}/);
 
 });
 
