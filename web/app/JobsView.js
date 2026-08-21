@@ -1,0 +1,181 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { DateTime } from "luxon";
+import { setJobStatusAction } from "./actions.js";
+import { Card, SectionTitle, Empty, Meta, btn } from "./ui.js";
+
+
+// The feed. Ordered by when WE first saw it rather than by the company's own
+// posted date: the whole promise of this page is "you are seeing this early",
+// and first_seen_at is the only column that never lies about that (an ATS
+// backdates, leaves the field null, or re-publishes an old req at will).
+
+const FILTERS = [
+  { key: "new", label: "New" },
+  { key: "saved", label: "Saved" },
+  { key: "applied", label: "Applied" },
+  { key: "all", label: "All" }
+];
+
+
+function when(iso) {
+
+  if (!iso) return null;
+
+  const then = DateTime.fromISO(iso);
+
+  if (!then.isValid) return null;
+
+  const hours = DateTime.now().diff(then, "hours").hours;
+
+  // Inside a day, the exact hour is the point — it is the difference between
+  // "apply now" and "you are already late".
+  if (hours < 1) return "just now";
+  if (hours < 24) return `${Math.floor(hours)}h ago`;
+
+  return then.toRelative();
+
+}
+
+
+function Posting({ posting, onStatus, busy }) {
+
+  const seen = when(posting.first_seen_at);
+
+  const hot = posting.first_seen_at &&
+    DateTime.now().diff(DateTime.fromISO(posting.first_seen_at), "hours").hours < 24;
+
+  return (
+    <li className="border-t border-[var(--line)] py-3.5 first:border-t-0">
+
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block text-[0.9rem] font-medium leading-snug text-ink">{posting.title}</span>
+          <span className="mt-0.5 block text-[0.78rem] text-ink-soft">
+            {posting.company}
+            {posting.location ? ` · ${posting.location}` : ""}
+          </span>
+        </span>
+        {seen && (
+          <span className={`shrink-0 text-[0.7rem] ${hot ? "text-ember" : "text-ink-soft"}`}>{seen}</span>
+        )}
+      </div>
+
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+
+        {/* The point of the whole feature: one tap from notification to
+            application form. */}
+        <a
+          href={posting.url}
+          target="_blank"
+          rel="noreferrer"
+          className={btn("ember", "md")}
+        >
+          Open posting
+        </a>
+
+        {posting.status !== "applied" && (
+          <button onClick={() => onStatus(posting.id, "applied")} disabled={busy} className={btn("quiet")}>
+            Applied
+          </button>
+        )}
+
+        {posting.status !== "saved" && posting.status !== "applied" && (
+          <button onClick={() => onStatus(posting.id, "saved")} disabled={busy} className={btn("quiet")}>
+            Save
+          </button>
+        )}
+
+        <button onClick={() => onStatus(posting.id, "dismissed")} disabled={busy} className={btn("quiet")}>
+          Not for me
+        </button>
+
+      </div>
+
+    </li>
+  );
+
+}
+
+
+export default function JobsView({ postings, watching, broken, lastCheckedAt }) {
+
+  const router = useRouter();
+
+  const [filter, setFilter] = useState("new");
+  const [isPending, startTransition] = useTransition();
+
+  const onStatus = (id, status) => {
+    startTransition(async () => {
+      await setJobStatusAction(id, status);
+      router.refresh();
+    });
+  };
+
+  const shown = filter === "all"
+    ? postings
+    : postings.filter(p => p.status === filter);
+
+  return (
+    <>
+
+      <div className="mb-4 flex gap-1 self-start rounded-[var(--r-pill)] border border-[var(--line)] p-1">
+        {FILTERS.map(f => (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => setFilter(f.key)}
+            aria-pressed={filter === f.key}
+            className={`rounded-[var(--r-pill)] px-3.5 py-1.5 text-[0.78rem] font-medium transition-colors ${
+              filter === f.key ? "bg-ink text-paper" : "text-ink-soft hover:text-ink"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {shown.length === 0 ? (
+
+        <Empty>
+          {filter === "new"
+            ? "Nothing new since the last check. The moment a matching internship posts, it lands here and your phone buzzes."
+            : `Nothing ${filter} yet.`}
+        </Empty>
+
+      ) : (
+
+        <Card>
+          <SectionTitle count={shown.length}>
+            {FILTERS.find(f => f.key === filter)?.label}
+          </SectionTitle>
+          <ul>
+            {shown.map(p => (
+              <Posting key={p.id} posting={p} onStatus={onStatus} busy={isPending} />
+            ))}
+          </ul>
+        </Card>
+
+      )}
+
+      <div className="mt-5">
+        <Meta>
+          Watching {watching} company board{watching === 1 ? "" : "s"}
+          {lastCheckedAt ? ` · last checked ${when(lastCheckedAt)}` : " · never checked yet"}.
+        </Meta>
+        {/* A board that has started failing must be visible. A renamed company
+            slug returns 404 forever and looks exactly like a quiet hiring
+            market. */}
+        {broken.length > 0 && (
+          <p className="mt-1.5 text-[0.75rem] text-ember">
+            Not responding: {broken.join(", ")} — the board moved or was renamed.
+          </p>
+        )}
+      </div>
+
+    </>
+  );
+
+}

@@ -714,6 +714,41 @@ async function people(req, res) {
 // One resource rather than a bodyweight-only one, because this is where
 // training and any other measured health data will land — the page it feeds is
 // built in sections for exactly that reason.
+async function jobs(req, res) {
+
+  const { getJobFeed, setJobStatus } = await import("../../../tools/jobs.js");
+
+  if (req.method === "GET") {
+    return res.status(200).json(await getJobFeed({
+      onlyInternships: req.query.all !== "1"
+    }));
+  }
+
+  if (req.method === "POST") {
+
+    const { action, id, status } = req.body || {};
+
+    if (action === "setStatus") {
+      if (!id || !status) return res.status(400).json({ error: "Missing id or status" });
+      return res.status(200).json(await setJobStatus({ id, status }));
+    }
+
+    // Manual poll, for the Check now button and for testing the loop without
+    // waiting on the schedule.
+    if (action === "poll") {
+      const { checkForNewJobs } = await import("../../../tools/jobs.js");
+      return res.status(200).json(await checkForNewJobs());
+    }
+
+    return res.status(400).json({ error: `Unknown action: ${action}` });
+
+  }
+
+  return res.status(405).json({ error: "Method not allowed" });
+
+}
+
+
 async function health(req, res) {
 
   if (req.method === "GET") {
@@ -976,7 +1011,7 @@ async function graph(req, res) {
 }
 
 
-const RESOURCES = { data, history, nudges, desk, projects, deepThoughts, brief, settings, diag, practice, people, news, finance, graph, dining, health };
+const RESOURCES = { data, history, nudges, desk, projects, deepThoughts, brief, settings, diag, practice, people, news, finance, graph, dining, health, jobs };
 
 
 export default async function handler(req, res) {

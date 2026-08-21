@@ -31,6 +31,13 @@ import { probeTable } from "./tableProbe.js";
 const MIGRATIONS = [
 
   {
+    file: "docs/schema-jobs.sql",
+    purpose: "the internship monitor — company watchlist and everything ever posted",
+    tables: ["job_sources", "job_postings"],
+    breaksWithout: "The Jobs half of the Career tab, and every new-posting alert."
+  },
+
+  {
     file: "docs/schema-additions.sql",
     purpose: "proactive mode — push delivery, location, daily metrics, prompts",
     tables: ["push_subscriptions", "places", "location_points", "daily_metrics", "prompts"],

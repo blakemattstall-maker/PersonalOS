@@ -42,8 +42,11 @@ const TABS = [
     )
   },
   {
-    href: "/money",
-    label: "Money",
+    // Career holds Money and Jobs as two distinct pages behind one slot.
+    // /money still resolves, so nothing that already points there breaks.
+    href: "/career",
+    label: "Career",
+    also: ["/money"],
     icon: (
       <>
         <path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h12a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 18 18H6a2.5 2.5 0 0 1-2.5-2.5z" />

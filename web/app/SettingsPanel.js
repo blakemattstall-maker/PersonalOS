@@ -5,6 +5,7 @@ import { writePrefs, prefsSnapshot, prefsServerSnapshot, subscribeToPrefs } from
 import { NEURAL_VOICES, VOICE_PREVIEW_TEXT, listVoices, speakWith, playPreset, stop } from "./speech.js";
 import { saveSettingsAction, getDiagnosticsAction, sendTestPushAction } from "./actions.js";
 import PushSetup from "./PushSetup.js";
+import { field } from "./ui.js";
 import { EVENT_KINDS, KIND_COLOR } from "../lib/eventKind.js";
 import { EVENT_COLOR_HEX } from "../lib/recurrence.js";
 
@@ -253,7 +254,7 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
             onChange={(e) => update({ displayName: e.target.value })}
             placeholder="Almanac"
             maxLength={24}
-            className="mt-2 w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-sm text-ink outline-none placeholder:text-ink-soft focus:border-ink"
+            className={field("mt-2")}
           />
           <p className="mt-1.5 text-xs text-ink-soft">
             Shown in thread replies and on the lock-screen player. Leave blank for Almanac.

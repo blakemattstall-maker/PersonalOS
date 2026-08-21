@@ -14,13 +14,13 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 // ---------------------------------------------------------------------------
 
 
-test("the nav reads Today, Health, Money, People, News, Settings", () => {
+test("the nav reads Today, Health, Career, People, News, Settings", () => {
 
   const source = read("web/app/TabBar.js");
 
   const order = [...source.matchAll(/label: "([^"]+)"/g)].map(m => m[1]);
 
-  assert.deepEqual(order, ["Today", "Health", "Money", "People", "News", "Settings"]);
+  assert.deepEqual(order, ["Today", "Health", "Career", "People", "News", "Settings"]);
 
   // /food must keep working — a home-screen shortcut or an old push payload
   // still points at it.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Card, Empty } from "./ui.js";
+import { Card, Empty, field } from "./ui.js";
 
 
 // The day's menus: a meal switcher, then one card per station with its items,
@@ -371,7 +371,7 @@ export default function DiningMenu({ meals, suggestedMeal, onTrack = null }) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Find a food — chicken, rice, eggs…"
             aria-label="Search this menu"
-            className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-sm text-ink outline-none placeholder:text-ink-soft focus:border-ink"
+            className={field()}
           />
         </div>
         {q && (

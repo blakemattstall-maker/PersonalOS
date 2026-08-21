@@ -50,8 +50,20 @@ const KINDS = {
 // clock and battery instead of colliding with them. Inert in the browser.
 export function Page({ children }) {
   return (
+    // min-h-[100svh] is load-bearing, not cosmetic. The loading skeleton is
+    // three cards tall and most real pages are far taller, so during every
+    // navigation the document briefly collapsed to less than a screen. A page
+    // that cannot scroll makes mobile Safari expand its toolbar, which shrinks
+    // the visual viewport — and the fixed tab bar, being anchored to that
+    // viewport, rode about an inch up and then snapped back down when the real
+    // page arrived. Guaranteeing every page (skeleton included) is at least one
+    // screen tall keeps the viewport, and therefore the bar, still.
+    //
+    // svh, not vh: on mobile `100vh` is the LARGEST viewport (toolbar hidden),
+    // which would overflow by the toolbar's height and cause the same class of
+    // jitter in reverse.
     <div className="flex flex-1 flex-col bg-paper">
-      <main className="pos-safe-top mx-auto w-full max-w-[34rem] flex-1 px-5 pb-32">
+      <main className="pos-safe-top mx-auto min-h-[100svh] w-full max-w-[34rem] flex-1 px-5 pb-32">
         {children}
       </main>
     </div>

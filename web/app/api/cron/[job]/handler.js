@@ -1,4 +1,5 @@
 import { syncCanvasAssignments } from "../../../../tools/canvas.js";
+import { checkForNewJobs } from "../../../../tools/jobs.js";
 import { syncDiningMenus } from "../../../../tools/dining.js";
 import { createBrief, getLatestUnreadBrief, getMostRecentBrief } from "../../../../tools/database.js";
 import { composeBrief } from "../../../../tools/brief.js";
@@ -372,8 +373,21 @@ async function connectIslands() {
 }
 
 
+// Internship postings. Runs far more often than anything else here — every
+// fifteen minutes, driven by a GitHub Actions schedule rather than a Vercel
+// cron (see .github/workflows/job-poll.yml) because the whole value of this
+// feature is applying the DAY a posting drops, and Vercel's free crons are
+// daily. Cheap by construction: ~59 unauthenticated GETs and a set difference.
+async function checkJobs() {
+
+  return checkForNewJobs();
+
+}
+
+
 const JOBS = {
   morningBrief,
+  checkJobs,
   briefPush,
   syncCanvas,
   reviewIntentions,

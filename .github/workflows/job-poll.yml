@@ -1,0 +1,42 @@
+# The internship poller's clock.
+#
+# Vercel's free crons fire once a day, and a daily check is useless for the
+# one thing this feature is for: applying the day a posting goes live, ideally
+# within the hour. GitHub Actions schedules are free and unlimited on a public
+# repository, so the schedule lives here and simply rings Almanac's own cron
+# endpoint — all the logic stays in the app (web/tools/jobs.js).
+#
+# GitHub queues scheduled workflows and can run them several minutes late under
+# load, which is fine at this cadence: worst case a posting is found ~20
+# minutes after it appears instead of ~15.
+#
+# Setup (one time): repo Settings -> Secrets and variables -> Actions ->
+# New repository secret, named CRON_SECRET, holding the same value as the
+# CRON_SECRET environment variable on the Vercel project.
+
+name: Poll job boards
+
+on:
+  schedule:
+    # Every 15 minutes, all day. Postings go live during business hours but
+    # not on a schedule anyone publishes, and the polls are cheap.
+    - cron: "*/15 * * * *"
+  # So a run can be forced from the Actions tab while testing.
+  workflow_dispatch:
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check every watched board for new postings
+        run: |
+          code=$(curl -s -o /tmp/out.json -w "%{http_code}" \
+            --max-time 120 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://www.getalmanac.xyz/api/cron/checkJobs")
+          echo "HTTP $code"
+          cat /tmp/out.json
+          # A failed poll must fail the workflow, or a broken endpoint would
+          # look like a quiet hiring market for weeks.
+          test "$code" = "200"
