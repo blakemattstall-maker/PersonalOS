@@ -237,6 +237,54 @@ async function fetchAmazon(source) {
 }
 
 
+// A community dataset rather than a company board.
+//
+// Apple, Microsoft, Google and Meta all answer a plain HTTP request with an
+// empty body — bot protection, not a missing endpoint — so the boards this
+// system can reach will never include them. SimplifyJobs maintains a public
+// Summer 2027 listing set (updated daily, 14k rows) that does, and it costs
+// one unauthenticated GET.
+//
+// Filtered hard on the way in. The dataset is overwhelmingly software and
+// AI/ML — exactly the roles Blake has no chance at — so only its Product
+// category, only active rows, and only the Summer 2027 term are taken.
+// Everything else would be noise the scorer then has to fight.
+const SIMPLIFY_URL = "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/.github/scripts/listings.json";
+
+const SIMPLIFY_CATEGORIES = /product/i;
+
+async function fetchSimplify(source) {
+
+  const res = await fetch(SIMPLIFY_URL, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(25_000)
+  });
+
+  if (!res.ok) throw new Error(`${res.status} from simplify`);
+
+  const rows = await res.json();
+
+  return (rows || [])
+    .filter(r =>
+      r.active &&
+      r.is_visible !== false &&
+      SIMPLIFY_CATEGORIES.test(r.category || "") &&
+      (r.terms || []).some(t => /summer\s*2027/i.test(t))
+    )
+    .map(r => ({
+      external_id: String(r.id),
+      title: r.title,
+      location: (r.locations || []).join("; ") || null,
+      url: r.url,
+      posted_at: r.date_posted ? new Date(r.date_posted * 1000).toISOString() : null,
+      // The company is the real one, not "Simplify" — this source is a
+      // directory, and a posting that says Google should say Google.
+      company: r.company_name || source.company
+    }));
+
+}
+
+
 // Two more shapes, both found by following a company's careers URL until it
 // admitted what it runs on. Neither is a job-board API in the Greenhouse
 // sense; both are the private endpoint the company's own search box calls,
@@ -574,6 +622,7 @@ async function fetchSource(source) {
   if (source.ats === "workday") return fetchWorkday(source);
   if (source.ats === "radancy") return fetchRadancy(source);
   if (source.ats === "amazon") return fetchAmazon(source);
+  if (source.ats === "simplify") return fetchSimplify(source);
   if (source.ats === "phenom") return fetchPhenom(source);
 
   const spec = ENDPOINTS[source.ats];
@@ -659,7 +708,10 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
         return {
           source_id: source.id,
           external_id: p.external_id,
-          company: source.company,
+          // Usually the board IS the company. A directory source (Simplify)
+          // carries a different employer on every row, so the posting's own
+          // company wins when it has one.
+          company: p.company || source.company,
           title: p.title,
           location: p.location,
           url: p.url,

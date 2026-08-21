@@ -19,6 +19,30 @@ import supabase from "../web/lib/supabase.js";
 // Idempotent: re-running adds new rows and leaves existing ones alone.
 
 const WATCHLIST = [
+  // Round four: more Chicago, plus a community dataset that reaches the
+  // giants whose own APIs refuse anything without a browser.
+  { company: "Alight", ats: "smartrecruiters", token: "alight", category: "local" },
+  { company: "Amount", ats: "greenhouse", token: "amount", category: "local" },
+  { company: "BMO", ats: "workday", token: "bmo/wd3/External", category: "local" },
+  { company: "Belvedere", ats: "lever", token: "belvederetrading", category: "local" },
+  { company: "Beyond Finance", ats: "greenhouse", token: "beyondfinance", category: "local" },
+  { company: "Blue Owl", ats: "workday", token: "blueowl/wd1/blueowl", category: "local" },
+  { company: "ComEd", ats: "radancy", token: "careers.comed.com", category: "local" },
+  { company: "Cresco Labs", ats: "greenhouse", token: "crescolabs", category: "local" },
+  { company: "Echo Global", ats: "greenhouse", token: "echo", category: "local" },
+  { company: "HCSC", ats: "workday", token: "hcsc/wd1/hcsc_External", category: "local" },
+  { company: "JLL", ats: "workday", token: "jll/wd1/jllcareers", category: "local" },
+  { company: "Jump Trading", ats: "greenhouse", token: "jumptrading", category: "local" },
+  { company: "M1 Finance", ats: "smartrecruiters", token: "m1finance", category: "local" },
+  { company: "Northwestern Mutual", ats: "smartrecruiters", token: "northwesternmutual", category: "local" },
+  { company: "Simplify (Product, S27)", ats: "simplify", token: "summer2027", category: "product" },
+  { company: "SpotHero", ats: "greenhouse", token: "spothero", category: "local" },
+  { company: "Sysco", ats: "workday", token: "sysco/wd5/syscocareers", category: "local" },
+  { company: "Tovala", ats: "lever", token: "tovala", category: "local" },
+  { company: "TransUnion", ats: "workday", token: "transunion/wd5/transunion", category: "local" },
+  { company: "US Foods", ats: "phenom", token: "careers.usfoods.com", category: "local" },
+  { company: "VSA Partners", ats: "greenhouse", token: "vsapartners", category: "media" },
+
   // Round three: the moonshots, the studios, the boutique Chicago shops and
   // the sports/production names. Every token probed live before landing here.
   { company: "A24", ats: "greenhouse", token: "a24", category: "media" },
