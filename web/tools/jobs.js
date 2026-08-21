@@ -485,7 +485,9 @@ function stripHtml(html) {
 const INTERN_PATTERN = /\b(intern|internship|co-?op|apprentice|placement|summer analyst|university (grad|program)|early careers?)\b/i;
 
 // Titles that match the pattern but are not what he is looking for.
-const NOT_FOR_HIM = /\b(phd|doctoral|postdoc|md\b|mba\b|jd\b|nursing|pharmacy|internal medicine|internist|graduate student)\b/i;
+// A title carrying "Master's" is a graduate programme whatever else it says —
+// Conagra's "Human Resources Master's Internship" cleared every other filter.
+const NOT_FOR_HIM = /\b(phd|doctoral|postdoc|md\b|mba\b|jd\b|master'?s\b|nursing|pharmacy|internal medicine|internist|graduate student)/i;
 
 // Seniority, which INTERN_PATTERN cannot see past on its own: "Head of Early
 // Career Recruiting" is a $225k full-time job that matched on the words "early
@@ -592,13 +594,19 @@ export function scorePosting({ title, location }, { locationPriority = true } = 
     const looksUS = US_STATE.test(location) || US_ABBREV.test(location) || US_ANY.test(location);
     const vague = VAGUE_LOCATION.test(location);
 
-    // A role he cannot physically take is not a match however well the title
-    // fits. Inverted from a blacklist to an allowlist after Amazon posted
-    // operations internships across Spain, Italy, France and Brazil that all
-    // scored as matches: naming every foreign region is endless, naming the
-    // fifty states is finite.
+    // A role he cannot physically take is not a match at any score. This was
+    // a -5 penalty, which a strong title outran: Barcelona scored 7 on
+    // "marketing" plus "content" and stayed visible at 2.
+    //
+    // FOREIGN is checked first and beats the state-code allowlist, because
+    // two-letter codes are not unique to the US — Lucid's "Amsterdam, NH" is
+    // Noord-Holland, not New Hampshire.
+    if (FOREIGN.test(location) && !US_STATE.test(location)) {
+      return { isInternship, score: -99, matched, excluded: true, field };
+    }
+
     if (!looksUS && !vague) {
-      score -= 5;
+      score -= 8;
     } else if (locationPriority && HOME.test(location)) {
       score += 3;
     } else if (looksUS) {

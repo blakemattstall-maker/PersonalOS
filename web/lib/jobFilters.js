@@ -166,16 +166,24 @@ export function classifyGradFit(description = "") {
 // win outright), then every field that should be CUT, then business last as
 // the catch-all it actually is.
 const FIELDS = [
-  ["product",      /\b(product manage|product market|product owner|product intern|product analy|\bapm\b|user research|ux research)/i],
-  ["marketing",    /\b(marketing|brand|advertis|campaign|creative|copywrit|social media|content|influencer|seo\b|growth)/i],
-  ["media",        /\b(media|editorial|journalis|newsroom|production|broadcast|publicity|public relations|\bpr\b|communicat|talent relations|sponsorship|partnerships)/i],
+  // The three he wants, widened. These were too narrow before: "Product
+  // Development Intern" and "Product Innovation Intern" fell through to
+  // "other" — which is the same bucket quant trading and tool-and-die
+  // apprenticeships land in, so hiding that bucket meant hiding good roles
+  // too. Classify well first, then the cut can be clean.
+  ["product",      /\b(product (manage|market|owner|intern|analy|develop|innovat|strateg|design|operations)|associate product|\bapm\b|user research|ux research|program manage)/i],
+  ["marketing",    /\b(marketing|brand|advertis|campaign|creative|copywrit|social media|content|influencer|seo\b|growth|communicat|public relations|\bpr\b)/i],
+  ["media",        /\b(media|editorial|journalis|newsroom|broadcast|publicity|talent relations|sponsorship|partnerships|entertainment|studio)/i],
 
+  // Everything below is cut. Order matters: these run before the generic
+  // business pattern, which would otherwise claim half of them on the word
+  // "operations" or "analyst".
   ["legal",        /\b(legal|attorney|counsel|paralegal|compliance|litigation|trial)/i],
-  ["supply_chain", /\b(supply chain|logistics|procurement|sourcing|warehouse|distribution|inventory|transportation|fleet|merchandis)/i],
-  ["finance",      /\b(financ|fp&a|accounting|audit|tax\b|treasury|investment|actuar|underwrit|risk manage|equity research)/i],
-  ["technical",    /\b(software|engineer|developer|data scien|machine learning|security|hardware|firmware|validation|fpga|network|\bit\b|technical|technolog|cyber|cloud|devops)/i],
+  ["supply_chain", /\b(supply chain|logistics|procurement|sourcing|warehouse|distribution|inventory|transportation|fleet|merchandis|area manager|store (executive|leadership))/i],
+  ["finance",      /\b(financ|fp&a|accounting|audit|tax\b|treasury|investment|actuar|underwrit|risk (manage|advisory)|equity research|quant|trading|trader|capital markets|leasing|valuation|portfolio)/i],
+  ["technical",    /\b(software|engineer|developer|data scien|data analy|analytics|machine learning|security|hardware|firmware|validation|fpga|network|\bit\b|technical|technolog|cyber|cloud|devops|systems admin|application develop|\br&d\b|research and develop|tech art|manufactur|plant intern|tool ?& ?die|\bpcba\b|maintenance|apprentice|assembl|machinist|fabricat|welder|electrician|process)/i],
 
-  ["business",     /\b(business (develop|analy|strateg|operations)|strateg|consult|sales|account (manage|executive|coordinator)|client service|program manage|project manage|operations|revenue)/i]
+  ["business",     /\b(business (develop|analy|strateg|operations)|strateg|consult|sales|account (manage|executive|coordinator)|client service|project manage|revenue|human resources|\bhr\b)/i]
 ];
 
 
@@ -199,7 +207,7 @@ export function classifyField(title = "") {
 // matched the title — which is also true of "Summer 2027 Internship Program",
 // exactly the broad early-career posting he most wants. An unrecognised title
 // is not a rejected one.
-export const HIDDEN_FIELDS = new Set(["finance", "supply_chain", "legal", "technical"]);
+export const HIDDEN_FIELDS = new Set(["finance", "supply_chain", "legal", "technical", "other"]);
 
 
 // The disciplines worth waking his phone for. The feed can afford to be
@@ -218,9 +226,18 @@ const HIS_CAMPUS = /\b(illinois state|isu\b|normal, ?il|redbird)\b/i;
 
 
 export function isOtherCampusProgram(title = "") {
+
   const text = String(title);
+
   if (HIS_CAMPUS.test(text)) return false;
+
+  // The named-school list can never be complete — Louisiana State and Full
+  // Sail both slipped past it. The SHAPE is the reliable signal: a posting
+  // that says "on campus" and names a university is for that campus.
+  if (/\bon[- ]campus\b/i.test(text) && /\b(universit|college|state\b|institute)/i.test(text)) return true;
+
   return OTHER_CAMPUS.test(text);
+
 }
 
 

@@ -29,9 +29,23 @@ const SORTS = [
   { key: "closing", label: "Closing" }
 ];
 
-const NEARBY = /\b(chicago|illinois|\bil\b|evanston|bloomington|normal|naperville|schaumburg|deerfield|mettawa|milwaukee|indianapolis|st\.? louis)\b/i;
+// Distance, in tiers rather than a yes/no. The old version was a single
+// boolean that counted Milwaukee as "nearby" alongside Chicago, so a
+// Wisconsin role could sit above an Illinois one — sorting by distance and
+// then showing the wrong order is worse than not offering the sort.
+const CHICAGO = /\b(chicago|evanston|naperville|schaumburg|deerfield|mettawa|oak brook|skokie|des plaines|rosemont|aurora|joliet)\b/i;
+const ILLINOIS = /\b(illinois|\bil\b|bloomington|normal|peoria|champaign|springfield|rockford|moline)\b/i;
+const MIDWEST = /\b(milwaukee|madison|wisconsin|\bwi\b|indianapolis|indiana|\bin\b|st\.? louis|missouri|\bmo\b|iowa|\bia\b|michigan|\bmi\b|minneapolis|minnesota|\bmn\b|ohio|\boh\b|kentucky|\bky\b)\b/i;
 
-const isNearby = (p) => NEARBY.test(p.location || "");
+// Higher is closer to home.
+function proximity(p) {
+  const loc = p.location || "";
+  if (CHICAGO.test(loc)) return 4;
+  if (ILLINOIS.test(loc)) return 3;
+  if (MIDWEST.test(loc)) return 2;
+  if (loc) return 1;
+  return 0;
+}
 
 // Hourly, so an hourly rate and a salary can share one sorted list.
 const payRank = (p) => {
@@ -196,7 +210,7 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt, lo
   const shown = [...chosen].sort((a, b) => {
 
     if (sort === "nearby") {
-      const diff = Number(isNearby(b)) - Number(isNearby(a));
+      const diff = proximity(b) - proximity(a);
       if (diff !== 0) return diff;
     }
 

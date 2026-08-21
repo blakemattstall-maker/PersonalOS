@@ -7,6 +7,8 @@ import {
   isOtherCampusProgram, HIDDEN_FIELDS, GRAD_YEAR, parseDeadline
 } from "../web/lib/jobFilters.js";
 
+import { scorePosting } from "../web/tools/jobs.js";
+
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 
@@ -292,5 +294,90 @@ test("the places no feed can reach are listed where he will see them", async () 
   // The check-off state rides in settings rather than a new table.
   assert.match(read("web/lib/settings.js"), /manual_checks/);
   assert.match(read("web/app/career/jobs/page.js"), /ManualTargets/);
+
+});
+
+
+test("roles he is nowhere near qualified for are cut, not merely ranked low", () => {
+
+  // Every one of these was live in his feed when he complained: quant trading
+  // at a Chicago prop shop, sysadmin, tool-and-die apprenticeships, a graduate
+  // programme, and a campus programme at a school he does not attend.
+  for (const title of [
+    "Quantitative Trading Intern - Summer 2027",
+    "Systems Administration Internship",
+    "Application Development Internship",
+    "Analytics Internship",
+    "Tool & Die Maker Apprentice",
+    "Youth Apprentice - PCBA (Assembly)",
+    "Capital Markets Summer 2027 Internship",
+    "Human Resources Master's Internship",
+    "On Campus Internship - Louisiana State University"
+  ]) {
+    // The feed's real gate is both halves: is_internship AND match_score >= 1.
+    // A graduate programme fails the first, a quant role fails the second, and
+    // asserting only one of them tests the wrong thing.
+    const { score, isInternship } = scorePosting({ title, location: "Chicago, IL" });
+    assert.ok(
+      !isInternship || score < 1,
+      `"${title}" would still reach the feed (internship=${isInternship}, score=${score})`
+    );
+  }
+
+});
+
+
+test("widening the wanted fields is what makes the cut safe", () => {
+
+  // "other" is hidden again — which is only defensible because these now
+  // classify correctly instead of falling into it. Getting this backwards is
+  // what cut the feed to four postings once already.
+  for (const [title, field] of [
+    ["Product Development Intern", "product"],
+    ["Product Innovation Intern - Credit & Fraud", "product"],
+    ["Product Strategy Intern", "product"],
+    ["Community Product Management Intern", "product"],
+    ["Intern, Social Marketing", "marketing"],
+    ["Communications Internship", "marketing"],
+    ["Sales Internship - Summer 2027", "business"]
+  ]) {
+    assert.equal(classifyField(title), field, `"${title}" misclassified`);
+  }
+
+  assert.ok(HIDDEN_FIELDS.has("other"), "unrecognised titles must not reach the feed");
+
+});
+
+
+test("a role abroad is cut outright, not penalised into visibility", () => {
+
+  // Barcelona scored 7 on "marketing" plus "content" and survived a -5
+  // penalty at 2, which was enough to stay on the page.
+  for (const loc of ["Barcelona", "Sysco LABS - Sri Lanka", "Budapest Szabadsag Ter"]) {
+    const { score } = scorePosting({ title: "B2B Marketing Content Intern", location: loc });
+    assert.ok(score < 1, `${loc} scored ${score}`);
+  }
+
+  // A two-letter code is not proof of a US state: Lucid's "Amsterdam, NH" is
+  // Noord-Holland, and the foreign check has to beat the allowlist.
+  assert.ok(scorePosting({ title: "Business Operations Intern", location: "Amsterdam, NH" }).score < 1);
+
+  // And a real US location still passes.
+  assert.ok(scorePosting({ title: "Marketing Intern", location: "Chicago, IL" }).score >= 3);
+
+});
+
+
+test("the nearby sort ranks by distance instead of a yes/no", () => {
+
+  const view = read("web/app/JobsView.js");
+
+  // A single boolean counted Milwaukee as "nearby" alongside Chicago, so
+  // Wisconsin sat above Illinois at the top of the list.
+  assert.match(view, /function proximity/);
+  assert.match(view, /CHICAGO\.test\(loc\)\) return 4/);
+  assert.match(view, /ILLINOIS\.test\(loc\)\) return 3/);
+  assert.match(view, /MIDWEST\.test\(loc\)\) return 2/);
+  assert.doesNotMatch(view, /const isNearby/, "the old boolean must be gone");
 
 });
