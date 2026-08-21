@@ -205,6 +205,54 @@ export const MANUAL_TARGETS = [
     note: "Chicago production and post house — the film/production side."
   },
 
+  // ── Big employers with no reachable feed ────────────────────────────────
+  // Every one was probed properly: careers-URL fingerprinting, the Workday /
+  // Eightfold / SuccessFactors / Avature patterns, and a check for whether the
+  // page ships its listings in the HTML at all. Deere gave up a SuccessFactors
+  // company id and Paramount a SAP tenant, and neither leads anywhere without
+  // a browser. Caterpillar refuses a plain request outright with a 403.
+  {
+    slug: "caterpillar",
+    name: "Caterpillar",
+    group: "Big employers, no feed (check monthly)",
+    kind: "blocked",
+    url: "https://careers.caterpillar.com/",
+    note: "Illinois-headquartered, serious business programmes. Refuses non-browser requests outright, so it can never be polled."
+  },
+  {
+    slug: "john-deere",
+    name: "John Deere",
+    group: "Big employers, no feed (check monthly)",
+    kind: "blocked",
+    url: "https://jobs.deere.com/",
+    note: "Illinois roots and a strong internship programme. SuccessFactors plus Eightfold; the HTML is a shell and Eightfold's API wants auth."
+  },
+  {
+    slug: "kraft-heinz",
+    name: "Kraft Heinz",
+    group: "Big employers, no feed (check monthly)",
+    kind: "blocked",
+    url: "https://careers.kraftheinzcompany.com/",
+    note: "Chicago co-headquarters, and CPG brand marketing is squarely your field. Listings render in the browser only."
+  },
+  {
+    slug: "paramount",
+    name: "Paramount",
+    group: "Big employers, no feed (check monthly)",
+    kind: "blocked",
+    url: "https://careers.paramount.com/",
+    note: "SuccessFactors behind a JavaScript shell. Media, so worth the monthly look."
+  },
+  {
+    slug: "ea",
+    name: "Electronic Arts",
+    group: "Big employers, no feed (check monthly)",
+    kind: "blocked",
+    url: "https://jobs.ea.com/",
+    note: "Avature, no public endpoint. Gaming marketing and brand roles are the ones to look for."
+  },
+
+
   // ── Platforms worth a weekly pass ────────────────────────────────────────
   {
     slug: "handshake",
