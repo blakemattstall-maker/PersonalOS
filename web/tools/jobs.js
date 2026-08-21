@@ -188,6 +188,119 @@ async function fetchWorkday(source) {
 }
 
 
+// Two more shapes, both found by following a company's careers URL until it
+// admitted what it runs on. Neither is a job-board API in the Greenhouse
+// sense; both are the private endpoint the company's own search box calls,
+// and both accept a keyword server-side — so a poll costs one small request
+// rather than a crawl.
+//
+// `token` for these is simply the careers host, e.g. "careers.rivian.com".
+
+// Radancy (Rivian, State Farm). GET, and `keywords` narrows before we pay for
+// the payload: Rivian's whole board is thousands of roles, its internships are
+// six.
+async function fetchRadancy(source) {
+
+  const res = await fetch(`https://${source.token}/api/jobs?keywords=intern&limit=100`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(15_000)
+  });
+
+  if (!res.ok) throw new Error(`${res.status} from radancy`);
+
+  const body = await res.json();
+
+  return (body.jobs || []).map(entry => {
+
+    const j = entry.data || entry;
+
+    return {
+      external_id: String(j.slug || j.req_id),
+      title: j.title,
+      location: [j.city, j.state].filter(Boolean).join(", ") || j.location_name || null,
+      url: `https://${source.token}/jobs/${j.slug || j.req_id}`,
+      posted_at: j.posted_date || j.create_date || null,
+      company: source.company
+    };
+
+  });
+
+}
+
+
+// Phenom People (United, Conagra). POST to the widget endpoint its own search
+// page uses. The payload shape is fixed by Phenom rather than by us; `size`
+// above 50 is refused by some tenants, so it pages.
+const PHENOM_PAGE = 50;
+const PHENOM_MAX_PAGES = 4;
+
+async function fetchPhenom(source) {
+
+  const out = [];
+
+  for (let page = 0; page < PHENOM_MAX_PAGES; page++) {
+
+    const res = await fetch(`https://${source.token}/widgets`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify({
+        lang: "en_us",
+        deviceType: "desktop",
+        country: "us",
+        pageName: "search-results",
+        ddoKey: "refineSearch",
+        sortBy: "Most recent",
+        subsearch: "",
+        from: page * PHENOM_PAGE,
+        jobs: true,
+        counts: true,
+        all_fields: ["country", "state", "city", "category"],
+        size: PHENOM_PAGE,
+        clearAll: false,
+        jdsource: "facets",
+        isSliderEnable: false,
+        pageId: "page17",
+        siteType: "external",
+        keywords: "intern",
+        global: true,
+        selected_fields: {},
+        locationData: {}
+      })
+    });
+
+    if (!res.ok) throw new Error(`${res.status} from phenom`);
+
+    const body = await res.json();
+
+    const jobs = body.refineSearch?.data?.jobs || [];
+
+    for (const j of jobs) {
+
+      const id = j.reqId || j.jobId || j.jobSeqNo;
+
+      if (!id || !j.title) continue;
+
+      out.push({
+        external_id: String(id),
+        title: j.title,
+        location: [j.city, j.state].filter(Boolean).join(", ") || j.cityStateCountry || null,
+        url: j.applyUrl || j.jobUrl || `https://${source.token}`,
+        posted_at: j.postedDate || null,
+        company: source.company
+      });
+
+    }
+
+    if (jobs.length < PHENOM_PAGE) break;
+
+  }
+
+  return out;
+
+}
+
+
 // What counts as an internship. Deliberately generous on the way IN — a
 // missed posting is the failure this exists to prevent — and the exclusions
 // below are what keep it from being noise.
@@ -218,7 +331,7 @@ const FIELD_TERMS = [
 // the same boundary trap the product terms hit. Alternatives that genuinely
 // need an end anchor carry their own (security\b keeps "Securities Intern" —
 // a finance role — from being read as a security-engineering one).
-const NO_CHANCE = /\b(software|engineer|developer|programmer|\bswe\b|backend|front.?end|full.?stack|machine learning|\bml\b|\bai\b research|data scien|infrastructure|devops|\bqa\b|security\b|hardware|firmware|mechanical|electrical|chemical|civil\b|robotics|semiconductor|computer scien)/i;
+const NO_CHANCE = /\b(software|engineer|developer|programmer|\bswe\b|backend|front.?end|full.?stack|machine learning|\bml\b|\bai\b research|data scien|infrastructure|devops|\bqa\b|security\b|hardware|firmware|mechanical|electrical|chemical|civil\b|robotics|semiconductor|computer scien|fpga|asic|silicon|embedded|powertrain|battery|thermal|controls\b|validation|test engineer|manufacturing engineer|quality engineer|autonomy|perception|cad\b|plc\b)/i;
 
 // Engineering-ADJACENT words that a marketing or product role legitimately
 // carries ("Product Marketing Intern, Engineering Org"). Checked first, so an
@@ -288,6 +401,8 @@ const NOTIFY_SCORE = 3;
 async function fetchSource(source) {
 
   if (source.ats === "workday") return fetchWorkday(source);
+  if (source.ats === "radancy") return fetchRadancy(source);
+  if (source.ats === "phenom") return fetchPhenom(source);
 
   const spec = ENDPOINTS[source.ats];
 

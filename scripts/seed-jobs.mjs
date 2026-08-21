@@ -19,6 +19,18 @@ import supabase from "../web/lib/supabase.js";
 // Idempotent: re-running adds new rows and leaves existing ones alone.
 
 const WATCHLIST = [
+  // The holdouts, recovered by following each careers URL until it admitted
+  // what it runs on rather than by guessing slugs. Two of these matter most:
+  // Rivian builds in Normal and State Farm is headquartered in Bloomington —
+  // both a short drive from campus.
+  { company: "Rivian", ats: "radancy", token: "careers.rivian.com", category: "local" },
+  { company: "State Farm", ats: "radancy", token: "jobs.statefarm.com", category: "local" },
+  { company: "United Airlines", ats: "phenom", token: "careers.united.com", category: "local" },
+  { company: "Conagra Brands", ats: "phenom", token: "careers.conagrabrands.com", category: "local" },
+  { company: "Northern Trust", ats: "workday", token: "ntrs/wd1/northerntrust", category: "local" },
+  { company: "Discover / Capital One", ats: "workday", token: "capitalone/wd12/Capital_One", category: "local" },
+  { company: "Nike", ats: "workday", token: "nike/wd1/nke", category: "brand" },
+
   // Round two of the watchlist, weighted to Illinois — Blake is at Illinois
   // State, and a summer within driving distance is this year's plan. Every
   // token below was probed live before it was written down.
