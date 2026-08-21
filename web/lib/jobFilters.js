@@ -320,11 +320,29 @@ export function parseDeadline(description = "", now = new Date()) {
   // parser starts reading a programme's start date as its closing date.
   const window = text.slice(cue.index, cue.index + 120);
 
-  const named = window.match(new RegExp(`\\b(${MONTHS})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s*(20\\d{2}))?`, "i"));
+  // "September 19, 2026" — the day must not be the first two digits of a
+  // following year. Abbott writes "Closing Date: 19 September 2026", and
+  // without the negative lookahead this read "September 2026" as the 20th.
+  const named = window.match(new RegExp(`\\b(${MONTHS})\\.?\\s+(\\d{1,2})(?!\\d)(?:st|nd|rd|th)?(?:,?\\s*(20\\d{2}))?`, "i"));
 
-  if (named) {
+  // "19 September 2026" — day first, which is how a lot of postings written
+  // outside the US phrase it, and how Abbott phrases it anyway.
+  const dayFirst = window.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTHS})\\.?(?:,?\\s*(20\\d{2}))?`, "i"));
+
+  // Whichever appears earlier in the window is the one the cue was pointing at.
+  const first = named && dayFirst
+    ? (named.index <= dayFirst.index ? "named" : "dayFirst")
+    : named ? "named" : dayFirst ? "dayFirst" : null;
+
+  if (first === "named") {
     const year = named[3] ? Number(named[3]) : inferYear(named[1], Number(named[2]), now);
     const date = new Date(Date.UTC(year, monthIndex(named[1]), Number(named[2])));
+    return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null;
+  }
+
+  if (first === "dayFirst") {
+    const year = dayFirst[3] ? Number(dayFirst[3]) : inferYear(dayFirst[2], Number(dayFirst[1]), now);
+    const date = new Date(Date.UTC(year, monthIndex(dayFirst[2]), Number(dayFirst[1])));
     return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null;
   }
 
@@ -355,6 +373,11 @@ function inferYear(month, day, now) {
 
   const candidate = new Date(Date.UTC(year, monthIndex(month), day));
 
-  return candidate < now ? year + 1 : year;
+  // Compared against the START of today, not this instant. A deadline of
+  // "August 21" read at noon on August 21 is today — the old comparison
+  // pushed it a full year out, which is how a same-day deadline became 2027.
+  const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+  return candidate < startOfToday ? year + 1 : year;
 
 }

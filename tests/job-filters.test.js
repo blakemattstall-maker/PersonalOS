@@ -381,3 +381,39 @@ test("the nearby sort ranks by distance instead of a yes/no", () => {
   assert.doesNotMatch(view, /const isNearby/, "the old boolean must be gone");
 
 });
+
+
+test("a deadline written day-first, or falling today, is read correctly", () => {
+
+  const now = new Date("2026-08-21T12:00:00Z");
+
+  // Abbott writes "Closing Date: 19 September 2026". Without a negative
+  // lookahead the day pattern read "September 2026" as the 20th — a real
+  // posting was stored with the wrong date.
+  assert.equal(parseDeadline("Closing Date: 19 September 2026 Apply now", now), "2026-09-19");
+  assert.equal(parseDeadline("Application Deadline: September 19, 2026", now), "2026-09-19");
+  assert.equal(parseDeadline("Apply by 3 October 2026", now), "2026-10-03");
+
+  // A deadline of today is today. Comparing against the current INSTANT
+  // rather than the start of the day pushed a same-day deadline a year out.
+  assert.equal(parseDeadline("Applications close on August 21", now), "2026-08-21");
+
+  // And prose about meeting deadlines is still not a deadline.
+  assert.equal(parseDeadline("ensuring deadlines and deliverables are met", now), null);
+
+});
+
+
+test("reminders apply the same filters as the feed", () => {
+
+  const jobs = read("web/tools/jobs.js");
+  const review = jobs.slice(jobs.indexOf("export async function reviewJobDeadlines"));
+
+  // It was about to announce a Fall 2026 role as "closes today" — a posting
+  // the feed hides. A reminder about something already ruled out teaches him
+  // to ignore reminders.
+  assert.match(review, /r\.term === "summer_2027" \|\| r\.term === "unspecified"/);
+  assert.match(review, /r\.grad_fit !== "blocked"/);
+  assert.match(review, /NOTIFY_FIELDS\.has\(r\.field\)/);
+
+});

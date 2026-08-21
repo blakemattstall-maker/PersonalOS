@@ -1004,9 +1004,13 @@ export async function reviewJobDeadlines() {
 
   const [closing, quiet] = await Promise.all([
 
+    // The same filters the feed applies. Without them this would push about a
+    // posting the feed deliberately hides — it very nearly announced a Fall
+    // 2026 role as "closes today". A reminder about something already ruled
+    // out is worse than no reminder, because it teaches him to ignore them.
     supabase
       .from("job_postings")
-      .select("id, company, title, url, deadline, status, last_nudged_at")
+      .select("id, company, title, url, deadline, status, last_nudged_at, term, grad_fit, field")
       .in("status", ["new", "saved"])
       .eq("is_internship", true)
       .gte("match_score", 3)
@@ -1014,7 +1018,7 @@ export async function reviewJobDeadlines() {
       .lte("deadline", closingBy)
       .gte("deadline", now.toISOString().slice(0, 10))
       .or(`last_nudged_at.is.null,last_nudged_at.lt.${cooldownBefore}`)
-      .limit(10),
+      .limit(20),
 
     supabase
       .from("job_postings")
@@ -1032,7 +1036,12 @@ export async function reviewJobDeadlines() {
     return { success: false, configured: false, message: "Run docs/schema-jobs-track.sql in Supabase." };
   }
 
-  const closingRows = closing.data || [];
+  const closingRows = (closing.data || []).filter(r =>
+    (r.term == null || r.term === "summer_2027" || r.term === "unspecified") &&
+    r.grad_fit !== "blocked" &&
+    NOTIFY_FIELDS.has(r.field)
+  ).slice(0, 10);
+
   const quietRows = quiet.data || [];
 
   if (closingRows.length === 0 && quietRows.length === 0) {
