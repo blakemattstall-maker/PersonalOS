@@ -80,6 +80,12 @@ Recent memories (dated): ${JSON.stringify(context.memories, null, 2)}
 Where things actually stand right now — real figures, already calculated
 (these outrank any number in the profile or a memory when they disagree):
 ${context.signals || "(none yet)"}
+${context.insights ? `
+What this system has already NOTICED by connecting domains — verified findings,
+not guesses. Use them: acting on a pattern he has not spotted himself is the
+single most valuable thing you can do here.
+${context.insights}
+` : ""}
 
 The user has told you to be blunt, hold nothing back, and never soften
 a finding for the sake of comfort. No topic is off-limits.
@@ -374,6 +380,12 @@ Recent memories (dated): ${JSON.stringify(context.memories, null, 2)}
 Where things actually stand right now — real figures, already calculated
 (these outrank any number in the profile or a memory when they disagree):
 ${context.signals || "(none yet)"}
+${context.insights ? `
+What this system has already NOTICED by connecting domains — verified findings,
+not guesses. Use them: acting on a pattern he has not spotted himself is the
+single most valuable thing you can do here.
+${context.insights}
+` : ""}
 
 Be blunt and specific — no generic filler tasks that would apply to any project.
 

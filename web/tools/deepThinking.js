@@ -51,6 +51,12 @@ ${JSON.stringify(context.memories, null, 2)}
 Where things actually stand right now — real figures, already calculated,
 use them as fact and never re-total them:
 ${context.signals || "(no cross-domain data yet)"}
+${context.insights ? `
+What this system has already NOTICED by connecting domains — verified findings,
+not guesses. Use them: acting on a pattern he has not spotted himself is the
+single most valuable thing you can do here.
+${context.insights}
+` : ""}
 ${context.connections ? `
 What is already connected to the things this decision names. These are
 recorded connections, not guesses — a task really does belong to that

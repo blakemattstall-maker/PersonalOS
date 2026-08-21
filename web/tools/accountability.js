@@ -214,6 +214,9 @@ something to do between classes is "midday".
           `Who he is:\n${context.bio || "(no profile)"}\n\n` +
           `What is known about him (memories):\n${JSON.stringify(context.memories || [], null, 1)}\n\n` +
           `Where things stand (already calculated — never re-total):\n${context.signals || "(none)"}\n\n` +
+          (context.insights
+            ? `Patterns already noticed across domains — verified, not guesses. Acting on one of these is worth more than another reminder:\n${context.insights}\n\n`
+            : "") +
           `${todayShape ? `${todayShape}\n\n` : ""}` +
           `The days ahead:\n${ahead}\n\n` +
           `Open intentions he has stated:\n${intentionLines.length ? intentionLines.join("\n") : "(none)"}\n\n` +

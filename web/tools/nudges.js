@@ -177,6 +177,12 @@ Relevant memories (dated): ${JSON.stringify(memories, null, 2)}
 
 Where things actually stand right now — real figures, already calculated:
 ${context.signals || "(none yet)"}
+${context.insights ? `
+What this system has already NOTICED by connecting domains — verified findings,
+not guesses. Use them: acting on a pattern he has not spotted himself is the
+single most valuable thing you can do here.
+${context.insights}
+` : ""}
 
 Recent weigh-ins, dated, most recent first (real logs — when these exist they
 OUTRANK any weight mentioned in the profile or a memory; the profile is prose

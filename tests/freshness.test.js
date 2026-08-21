@@ -227,3 +227,27 @@ test("calorie columns can finally trend once meals are logged", () => {
   assert.match(observer, /calories_eaten/);
 
 });
+
+
+test("what the system notices reaches the surfaces that ACT, not just the ones that report", () => {
+
+  // findInsights walks the entity graph and writes real cross-domain findings.
+  // Every reasoning surface FETCHED them through buildRichContext and then
+  // dropped them: only the brief and the answer path ever rendered one. An
+  // insight nobody acts on is a diary entry, which is the difference between
+  // an app that logs a life and one that changes it.
+  for (const file of [
+    "web/tools/nudges.js",        // decides what to interrupt him about
+    "web/tools/accountability.js",// decides what he is dodging
+    "web/tools/deepThinking.js",  // reasons a decision through
+    "web/tools/thread.js",        // plans it with him
+    "web/tools/observer.js"       // decides what is worth saying today
+  ]) {
+    assert.match(
+      read(file),
+      /context\.insights/,
+      `${file} must render the insights it already fetches`
+    );
+  }
+
+});

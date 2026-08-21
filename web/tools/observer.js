@@ -141,6 +141,12 @@ ${JSON.stringify(context.memories, null, 2)}
 
 Where things stand right now (already calculated — never re-total these):
 ${context.signals || "(nothing yet)"}
+${context.insights ? `
+What this system has already NOTICED by connecting domains — verified findings,
+not guesses. Use them: acting on a pattern he has not spotted himself is the
+single most valuable thing you can do here.
+${context.insights}
+` : ""}
 
 Daily history, newest first:
 ${describeMetrics(metrics)}
