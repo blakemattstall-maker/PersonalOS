@@ -19,6 +19,48 @@ import supabase from "../web/lib/supabase.js";
 // Idempotent: re-running adds new rows and leaves existing ones alone.
 
 const WATCHLIST = [
+  // Round two of the watchlist, weighted to Illinois — Blake is at Illinois
+  // State, and a summer within driving distance is this year's plan. Every
+  // token below was probed live before it was written down.
+  { company: "AbbVie", ats: "smartrecruiters", token: "abbvie", category: "local" },
+  { company: "Abbott", ats: "workday", token: "abbott/wd5/abbottcareers", category: "local" },
+  { company: "Allstate", ats: "workday", token: "allstate/wd5/allstate_careers", category: "local" },
+  { company: "Beam Suntory", ats: "smartrecruiters", token: "beamsuntory", category: "brand" },
+  { company: "Braze", ats: "greenhouse", token: "braze", category: "local" },
+  { company: "CDW", ats: "workday", token: "cdw/wd5/Careers", category: "local" },
+  { company: "Cameo", ats: "greenhouse", token: "cameo", category: "media" },
+  { company: "Cars.com", ats: "workday", token: "cars/wd12/cars", category: "local" },
+  { company: "Chewy", ats: "workday", token: "chewy/wd5/External", category: "brand" },
+  { company: "Clorox", ats: "workday", token: "clorox/wd1/clorox", category: "brand" },
+  { company: "Comscore", ats: "workday", token: "comscore/wd5/External", category: "media" },
+  { company: "DraftKings", ats: "workday", token: "draftkings/wd1/draftkings", category: "media" },
+  { company: "Enova", ats: "greenhouse", token: "enova", category: "local" },
+  { company: "Fanatics", ats: "greenhouse", token: "fanaticsinc", category: "media" },
+  { company: "Gap", ats: "smartrecruiters", token: "gapinc", category: "brand" },
+  { company: "Genius Sports", ats: "greenhouse", token: "geniussports", category: "media" },
+  { company: "Golin", ats: "greenhouse", token: "golin", category: "media" },
+  { company: "Groupon", ats: "greenhouse", token: "groupon", category: "local" },
+  { company: "Hasbro", ats: "greenhouse", token: "hasbro", category: "brand" },
+  { company: "Highdive", ats: "greenhouse", token: "highdive", category: "media" },
+  { company: "Huron", ats: "workday", token: "huron/wd1/huroncareers", category: "business" },
+  { company: "Kimberly-Clark", ats: "smartrecruiters", token: "kimberlyclark", category: "brand" },
+  { company: "Live Nation", ats: "smartrecruiters", token: "livenationentertainment", category: "media" },
+  { company: "McDonalds", ats: "smartrecruiters", token: "mcdonaldscorporation", category: "local" },
+  { company: "Mondelez", ats: "workday", token: "mdlz/wd3/External", category: "local" },
+  { company: "Morningstar", ats: "workday", token: "morningstar/wd5/morningstar", category: "local" },
+  { company: "Motorola Solutions", ats: "workday", token: "motorolasolutions/wd5/Careers", category: "local" },
+  { company: "On Running", ats: "greenhouse", token: "onrunning", category: "brand" },
+  { company: "Peacock / Sky", ats: "workday", token: "sky/wd3/sky_careers", category: "media" },
+  { company: "Relativity", ats: "greenhouse", token: "relativity", category: "local" },
+  { company: "Sportradar", ats: "smartrecruiters", token: "sportradar", category: "media" },
+  { company: "Tempus", ats: "workday", token: "tempus/wd5/tempus_careers", category: "local" },
+  { company: "The New York Times", ats: "greenhouse", token: "thenewyorktimes", category: "media" },
+  { company: "Universal Music", ats: "smartrecruiters", token: "universalmusicgroup", category: "media" },
+  { company: "VML", ats: "greenhouse", token: "wundermanthompson", category: "media" },
+  { company: "Warner Music", ats: "lever", token: "wmg", category: "media" },
+  { company: "Wayfair", ats: "smartrecruiters", token: "wayfair", category: "brand" },
+  { company: "iHeartMedia", ats: "smartrecruiters", token: "iheartmedia", category: "media" },
+
   // Workday, where the biggest names live. `token` is "tenant/dc/site"; each
   // was probed live and returns a real board. These carry the roles most worth
   // catching — Disney, NBCU (through Comcast's tenant), Warner Bros Discovery.
