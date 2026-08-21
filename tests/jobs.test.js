@@ -206,3 +206,93 @@ test("a page is always at least a screen tall, so the fixed tab bar cannot drift
   assert.match(read("web/app/ui.js"), /min-h-\[100svh\]/);
 
 });
+
+
+test("roles he has no chance at never reach him", () => {
+
+  // His words: CS and most engineering are 0%. These are excluded outright
+  // rather than ranked low — a buzz he can never act on is worse than silence.
+  for (const title of [
+    "Software Engineer Intern",
+    "Machine Learning Intern",
+    "Data Science Intern",
+    "Security Engineering Intern",
+    "Mechanical Engineering Co-op"
+  ]) {
+    const { score, excluded } = scorePosting({ title, location: "Chicago, IL" });
+    assert.equal(excluded, true, `${title} should be excluded`);
+    assert.ok(score < 0, `${title} scored ${score}`);
+  }
+
+  // But a marketing role does not become an engineering role by naming one.
+  const hybrid = scorePosting({ title: "Product Marketing Intern, Engineering Org", location: "Chicago, IL" });
+  assert.equal(hybrid.excluded, false);
+  assert.ok(hybrid.score >= 3);
+
+});
+
+
+test("a role he cannot physically take does not buzz", () => {
+
+  // Warner's Budapest CRM internship scored 7 on title alone before this.
+  const abroad = scorePosting({ title: "CRM Campaign Operations Intern", location: "Budapest Szabadsag Ter" });
+  assert.ok(abroad.score < 3, `Budapest scored ${abroad.score}`);
+
+  assert.ok(scorePosting({ title: "Market Research Strategy Intern", location: "Singapore" }).score < 3);
+
+  // An unknown or vague location is not evidence of anything and stays
+  // eligible — "In-Office" and "2 Locations" are real values on live boards.
+  assert.ok(scorePosting({ title: "Marketing Events Intern", location: "In-Office" }).score >= 3);
+  assert.ok(scorePosting({ title: "Marketing Events Intern", location: null }).score >= 3);
+
+});
+
+
+test("the location switch changes ranking, never collection", () => {
+
+  const chicago = { title: "Marketing Intern", location: "Chicago, IL" };
+  const seattle = { title: "Marketing Intern", location: "Seattle, WA" };
+
+  // On: home turf outranks the coasts.
+  assert.ok(
+    scorePosting(chicago, { locationPriority: true }).score >
+    scorePosting(seattle, { locationPriority: true }).score
+  );
+
+  // Off: every US location is weighed the same, so the best roles — which are
+  // usually not in Illinois — stop being quietly ranked down.
+  assert.equal(
+    scorePosting(chicago, { locationPriority: false }).score,
+    scorePosting(seattle, { locationPriority: false }).score
+  );
+
+  // Either way both are still internships worth collecting.
+  assert.equal(scorePosting(seattle, { locationPriority: true }).isInternship, true);
+
+});
+
+
+test("Workday is polled by its intern facet, not by brute pagination", () => {
+
+  const source = read("web/tools/jobs.js");
+
+  // Every Workday site exposes a workerSubType facet including "Intern (Fixed
+  // Term)". Applying it turns Warner's 373 roles into 50 — three pages instead
+  // of nineteen — and the facet id differs per tenant, so it must be
+  // discovered per poll rather than hard-coded.
+  assert.match(source, /workerSubType/);
+  assert.match(source, /\/intern\/i\.test\(v\.descriptor/);
+  assert.match(source, /WORKDAY_PAGE = 20/, "Workday returns nothing for larger limits");
+
+  // A tenant without the facet must still work rather than silently return
+  // nothing.
+  assert.match(source, /searchText = internValue \? "" : "intern"/);
+
+});
+
+
+test("the feed hides the same requisition posted per-location", () => {
+
+  assert.match(read("web/tools/jobs.js"), /seenTitles/);
+
+});

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DateTime } from "luxon";
-import { setJobStatusAction } from "./actions.js";
+import { setJobStatusAction, saveSettingsAction } from "./actions.js";
 import { Card, SectionTitle, Empty, Meta, btn } from "./ui.js";
 
 
@@ -100,12 +100,25 @@ function Posting({ posting, onStatus, busy }) {
 }
 
 
-export default function JobsView({ postings, watching, broken, lastCheckedAt }) {
+export default function JobsView({ postings, watching, broken, lastCheckedAt, locationPriority = true }) {
 
   const router = useRouter();
 
   const [filter, setFilter] = useState("new");
+  const [nearby, setNearby] = useState(locationPriority);
   const [isPending, startTransition] = useTransition();
+
+  // Chicago-first is right for this summer and wrong the moment he wants
+  // Seattle or New York, so it is a switch rather than a constant. It only
+  // reorders and re-ranks; nothing is ever collected differently.
+  const toggleNearby = () => {
+    const next = !nearby;
+    setNearby(next);
+    startTransition(async () => {
+      await saveSettingsAction({ jobs_location_priority: next });
+      router.refresh();
+    });
+  };
 
   const onStatus = (id, status) => {
     startTransition(async () => {
@@ -160,7 +173,28 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt }) 
 
       )}
 
-      <div className="mt-5">
+      <div className="mt-5 border-t border-[var(--line)] pt-4">
+        <button
+          onClick={toggleNearby}
+          disabled={isPending}
+          className="flex w-full items-start justify-between gap-3 text-left"
+        >
+          <span>
+            <span className="block text-sm text-ink">Favour Chicago and the Midwest</span>
+            <span className="mt-0.5 block text-xs leading-relaxed text-ink-soft">
+              Ranks nearby roles above the coasts. Turn it off to weigh Seattle,
+              the Bay and New York evenly — nothing is filtered out either way.
+            </span>
+          </span>
+          <span className={`mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-xs ${
+            nearby ? "border-moss text-moss" : "border-[var(--line)] text-ink-soft"
+          }`}>
+            {nearby ? "On" : "Off"}
+          </span>
+        </button>
+      </div>
+
+      <div className="mt-4">
         <Meta>
           Watching {watching} company board{watching === 1 ? "" : "s"}
           {lastCheckedAt ? ` · last checked ${when(lastCheckedAt)}` : " · never checked yet"}.

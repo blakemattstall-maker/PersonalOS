@@ -39,6 +39,14 @@ export const DEFAULTS = {
   // the setting.
   auto_color_events: true,
 
+  // Whether the internship monitor weights Chicago and Illinois above
+  // everywhere else. True for this summer, when staying local is the plan;
+  // turning it off levels every US location so Seattle, the Bay and New York
+  // — where the best roles usually are — stop being quietly ranked down.
+  // It only ever changes ORDER and the notification bar, never what is
+  // collected: a role is stored either way.
+  jobs_location_priority: true,
+
   // Which colour each kind gets, when the above is on. Empty means "use
   // KIND_COLOR from lib/eventKind.js", so the shipped mapping stays the
   // default and this only ever holds the kinds actually overridden — a

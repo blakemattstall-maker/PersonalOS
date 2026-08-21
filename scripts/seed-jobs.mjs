@@ -19,6 +19,16 @@ import supabase from "../web/lib/supabase.js";
 // Idempotent: re-running adds new rows and leaves existing ones alone.
 
 const WATCHLIST = [
+  // Workday, where the biggest names live. `token` is "tenant/dc/site"; each
+  // was probed live and returns a real board. These carry the roles most worth
+  // catching — Disney, NBCU (through Comcast's tenant), Warner Bros Discovery.
+  { company: "Disney", ats: "workday", token: "disney/wd5/disneycareer", category: "media" },
+  { company: "NBCUniversal / Comcast", ats: "workday", token: "comcast/wd5/Comcast_Careers", category: "media" },
+  { company: "Warner Bros Discovery", ats: "workday", token: "warnerbros/wd5/global", category: "media" },
+  { company: "Target", ats: "workday", token: "target/wd5/targetcareers", category: "brand" },
+  { company: "Salesforce", ats: "workday", token: "salesforce/wd12/External_Career_Site", category: "product" },
+  { company: "Adobe", ats: "workday", token: "adobe/wd5/external_experienced", category: "product" },
+
   { company: "Away", ats: "ashby", token: "away", category: "brand" },
   { company: "Glossier", ats: "greenhouse", token: "glossier", category: "brand" },
   { company: "Peloton", ats: "greenhouse", token: "peloton", category: "brand" },

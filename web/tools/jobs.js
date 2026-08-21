@@ -73,6 +73,121 @@ const ENDPOINTS = {
 };
 
 
+// Workday is its own shape: a POST, its own pagination, and no single
+// endpoint that lists a board. It is also where the biggest names live —
+// Disney, NBCUniversal (through Comcast), Warner Bros Discovery — so it is
+// worth the extra code rather than an honest gap.
+//
+// The trick that makes it cheap: every Workday site exposes a `workerSubType`
+// facet whose values include "Intern (Fixed Term)". Applying it server-side
+// turns Warner's 373 open roles into 50 internships — three pages instead of
+// nineteen — and the facet's id differs per tenant, so it is discovered on
+// each poll rather than hard-coded and left to rot.
+//
+// `token` for a Workday source is "tenant/dc/site", e.g. "warnerbros/wd5/global".
+
+const WORKDAY_PAGE = 20;          // Workday's own cap; larger limits return nothing.
+const WORKDAY_MAX_PAGES = 5;      // 100 internships per company per poll.
+
+function workdayParts(token) {
+  const [tenant, dc, site] = String(token).split("/");
+  if (!tenant || !dc || !site) throw new Error(`Malformed Workday token: ${token}`);
+  return { tenant, dc, site };
+}
+
+async function workdayPost({ tenant, dc, site }, body) {
+
+  const res = await fetch(`https://${tenant}.${dc}.myworkdayjobs.com/wday/cxs/${tenant}/${site}/jobs`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000)
+  });
+
+  if (!res.ok) throw new Error(`${res.status} from workday`);
+
+  return res.json();
+
+}
+
+// "Posted Today" / "Posted 8 Days Ago" is all Workday gives — no timestamp.
+// Approximated rather than dropped, because "posted today" is exactly the
+// signal this feature exists to act on. first_seen_at remains the honest one.
+function workdayPostedAt(text) {
+
+  if (!text) return null;
+
+  const lower = String(text).toLowerCase();
+
+  if (lower.includes("today")) return new Date().toISOString();
+  if (lower.includes("yesterday")) return new Date(Date.now() - 86400000).toISOString();
+
+  const days = lower.match(/(\d+)\+?\s*days?\s*ago/);
+  if (days) return new Date(Date.now() - Number(days[1]) * 86400000).toISOString();
+
+  const months = lower.match(/(\d+)\+?\s*months?\s*ago/);
+  if (months) return new Date(Date.now() - Number(months[1]) * 30 * 86400000).toISOString();
+
+  return null;
+
+}
+
+async function fetchWorkday(source) {
+
+  const parts = workdayParts(source.token);
+
+  // Find this tenant's "Intern" facet value. One request, and it also tells us
+  // the board is reachable before we start paging.
+  const first = await workdayPost(parts, { appliedFacets: {}, limit: WORKDAY_PAGE, offset: 0, searchText: "" });
+
+  const subType = (first.facets || []).find(f => f.facetParameter === "workerSubType");
+
+  const internValue = (subType?.values || []).find(v => /intern/i.test(v.descriptor || ""));
+
+  const appliedFacets = internValue ? { workerSubType: [internValue.id] } : {};
+
+  // No intern facet on this tenant — fall back to a text search, which is
+  // looser (Workday matches descriptions too) but never silently empty.
+  const searchText = internValue ? "" : "intern";
+
+  const out = [];
+
+  for (let page = 0; page < WORKDAY_MAX_PAGES; page++) {
+
+    // Always a fresh request: `first` was the unfiltered discovery call, so
+    // its rows answer a different question than the one being paged here.
+    const body = await workdayPost(parts, {
+      appliedFacets,
+      limit: WORKDAY_PAGE,
+      offset: page * WORKDAY_PAGE,
+      searchText
+    });
+
+    const postings = body.jobPostings || [];
+
+    for (const j of postings) {
+      if (!j.externalPath) continue;
+      out.push({
+        // externalPath is stable and unique per requisition; Workday exposes
+        // no plain id in this payload.
+        external_id: j.externalPath,
+        title: j.title,
+        location: j.locationsText || null,
+        url: `https://${parts.tenant}.${parts.dc}.myworkdayjobs.com/en-US/${parts.site}${j.externalPath}`,
+        posted_at: workdayPostedAt(j.postedOn),
+        company: source.company
+      });
+    }
+
+    if (postings.length < WORKDAY_PAGE) break;
+
+  }
+
+  return out;
+
+}
+
+
 // What counts as an internship. Deliberately generous on the way IN — a
 // missed posting is the failure this exists to prevent — and the exclusions
 // below are what keep it from being noise.
@@ -95,17 +210,41 @@ const FIELD_TERMS = [
   [2, /\b(financ|investment|corporate development)/i]
 ];
 
-// Engineering-heavy titles he is not applying to — scored down rather than
-// hidden, so a "Product Design Engineer Intern" still surfaces if it also
-// scores on his fields.
-const OFF_FIELD = /\b(software engineer|swe\b|backend|frontend|full.?stack|machine learning|infrastructure|devops|security engineer|hardware|firmware|mechanical|electrical|chemical)\b/i;
+// Roles with, in his words, a 0% chance: computer science and the engineering
+// disciplines. These are not scored down, they are EXCLUDED — a buzz he can
+// never act on is worse than silence, and a feed full of SWE internships is
+// how this page would get ignored.
+// No trailing \b on the group: "data scien\b" cannot match "Data Science",
+// the same boundary trap the product terms hit. Alternatives that genuinely
+// need an end anchor carry their own (security\b keeps "Securities Intern" —
+// a finance role — from being read as a security-engineering one).
+const NO_CHANCE = /\b(software|engineer|developer|programmer|\bswe\b|backend|front.?end|full.?stack|machine learning|\bml\b|\bai\b research|data scien|infrastructure|devops|\bqa\b|security\b|hardware|firmware|mechanical|electrical|chemical|civil\b|robotics|semiconductor|computer scien)/i;
+
+// Engineering-ADJACENT words that a marketing or product role legitimately
+// carries ("Product Marketing Intern, Engineering Org"). Checked first, so an
+// exclusion never eats a role that is plainly his.
+const CLEARLY_HIS = /\b(marketing|brand|advertis|social media|content|communicat|public relations|creative|media plan|business develop|account (manage|executive)|product (manage|market|owner))\b/i;
+
+const US_ANY = /\b(remote|united states|usa|new york|\bny\b|los angeles|san francisco|bay area|seattle|austin|boston|atlanta|denver|dallas|miami|washington|\bdc\b|\bca\b|\bwa\b|\btx\b|burbank|bellevue|glendale|orlando|minneapolis|philadelphia|nashville|phoenix|portland|san diego|san jose|charlotte|detroit|houston|columbus)\b/i;
+
+// Somewhere he cannot take a summer internship. Named explicitly rather than
+// inferred from "not US", because a location this app has never seen before
+// is not evidence of anything — an unknown or vague location ("In-Office",
+// "2 Locations") stays neutral and is still allowed to notify.
+const FOREIGN = /\b(singapore|hong kong|budapest|hungary|amsterdam|netherlands|malaysia|kuala lumpur|london|united kingdom|\buk\b|england|ireland|dublin|germany|munich|berlin|hamburg|france|paris|spain|madrid|barcelona|italy|milan|rome|canada|toronto|vancouver|montreal|ottawa|australia|sydney|melbourne|india|bangalore|bengaluru|hyderabad|mumbai|japan|tokyo|china|shanghai|beijing|shenzhen|brazil|mexico|guadalajara|poland|warsaw|sweden|stockholm|denmark|copenhagen|israel|tel aviv|dubai|\buae\b|korea|seoul|taiwan|taipei|philippines|manila|thailand|bangkok|vietnam|indonesia|jakarta|costa rica|argentina|colombia|chile|peru|south africa|egypt|turkey|istanbul|switzerland|zurich|geneva|austria|vienna|belgium|brussels|norway|oslo|finland|helsinki|portugal|lisbon|czech|prague|romania|bucharest|greece|athens|new zealand|auckland|scotland|edinburgh|glasgow|wales|cardiff)\b/i;
+const HOME = /\b(chicago|illinois|\bil\b|evanston|bloomington|normal|naperville|schaumburg|milwaukee|indianapolis|st\.? louis)\b/i;
 
 
-export function scorePosting({ title, location }) {
+// `locationPriority` decides whether home turf outranks the coasts. It is a
+// setting rather than a constant because the answer changes with the year:
+// this summer the plan is local, and the best roles are usually not.
+export function scorePosting({ title, location }, { locationPriority = true } = {}) {
 
   const text = `${title || ""}`;
 
   const isInternship = INTERN_PATTERN.test(text) && !NOT_FOR_HIM.test(text);
+
+  const excluded = NO_CHANCE.test(text) && !CLEARLY_HIS.test(text);
 
   let score = 0;
   const matched = [];
@@ -118,15 +257,25 @@ export function scorePosting({ title, location }) {
     }
   }
 
-  if (OFF_FIELD.test(text)) score -= 4;
+  // Well below any notify bar, and below the feed's default floor, so an
+  // excluded role is collected but never shown or announced.
+  if (excluded) return { isInternship, score: -99, matched, excluded: true };
 
-  // A US-based role is worth more than one he cannot take, but a missing
-  // location is not evidence of anything — it stays neutral.
-  if (location && /\b(remote|united states|usa|new york|chicago|los angeles|san francisco|seattle|austin|boston|atlanta|illinois|ny|ca|il)\b/i.test(location)) {
-    score += 1;
+  if (location) {
+
+    // A role he cannot physically take is not a match however well the title
+    // fits — Warner's Budapest CRM internship scored 7 before this.
+    if (FOREIGN.test(location) && !US_ANY.test(location)) {
+      score -= 5;
+    } else if (locationPriority && HOME.test(location)) {
+      score += 3;
+    } else if (US_ANY.test(location) || HOME.test(location)) {
+      score += 1;
+    }
+
   }
 
-  return { isInternship, score, matched };
+  return { isInternship, score, matched, excluded: false };
 
 }
 
@@ -137,6 +286,8 @@ const NOTIFY_SCORE = 3;
 
 
 async function fetchSource(source) {
+
+  if (source.ats === "workday") return fetchWorkday(source);
 
   const spec = ENDPOINTS[source.ats];
 
@@ -177,6 +328,10 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
     return { success: true, message: "No boards on the watchlist yet.", checked: 0, fresh: [] };
   }
 
+  // One settings read for the whole poll rather than one per posting.
+  const { getSettings } = await import("../lib/settings.js");
+  const locationPriority = (await getSettings().catch(() => ({}))).jobs_location_priority !== false;
+
   const now = new Date().toISOString();
 
   const fresh = [];
@@ -213,7 +368,7 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
     const rows = postings
       .filter(p => p.external_id && p.title && p.url)
       .map(p => {
-        const { isInternship, score, matched } = scorePosting(p);
+        const { isInternship, score, matched } = scorePosting(p, { locationPriority });
         return {
           source_id: source.id,
           external_id: p.external_id,
@@ -368,7 +523,7 @@ export async function checkForNewJobs() {
 
 
 // What the Jobs page reads.
-export async function getJobFeed({ limit = 60, onlyInternships = true } = {}) {
+export async function getJobFeed({ limit = 60, onlyInternships = true, minScore = 1 } = {}) {
 
   let query = supabase
     .from("job_postings")
@@ -379,9 +534,16 @@ export async function getJobFeed({ limit = 60, onlyInternships = true } = {}) {
 
   if (onlyInternships) query = query.eq("is_internship", true);
 
-  const [{ data: postings, error }, { data: sources }] = await Promise.all([
+  // Roles he has no chance at are collected but never shown by default —
+  // they score -99 (see NO_CHANCE above).
+  if (minScore != null) query = query.gte("match_score", minScore);
+
+  const { getSettings } = await import("../lib/settings.js");
+
+  const [{ data: postings, error }, { data: sources }, settings] = await Promise.all([
     query,
-    supabase.from("job_sources").select("company, ats, active, last_ok_at, last_error, consecutive_failures")
+    supabase.from("job_sources").select("company, ats, active, last_ok_at, last_error, consecutive_failures"),
+    getSettings().catch(() => ({}))
   ]);
 
   if (error) {
@@ -390,6 +552,18 @@ export async function getJobFeed({ limit = 60, onlyInternships = true } = {}) {
     }
     throw new Error(error.message);
   }
+
+  // Companies post the same requisition once per location, so a feed sorted by
+  // arrival shows the same role three times over. Newest of each
+  // company+title wins; the rest stay in the table, out of the way.
+  const seenTitles = new Set();
+
+  const deduped = (postings || []).filter(p => {
+    const key = `${p.company}|${(p.title || "").toLowerCase().trim()}`;
+    if (seenTitles.has(key)) return false;
+    seenTitles.add(key);
+    return true;
+  });
 
   const broken = (sources || []).filter(s => s.active && s.consecutive_failures >= 3);
 
@@ -402,8 +576,9 @@ export async function getJobFeed({ limit = 60, onlyInternships = true } = {}) {
   return {
     success: true,
     configured: true,
-    postings: postings || [],
+    postings: deduped,
     watching: (sources || []).filter(s => s.active).length,
+    locationPriority: settings.jobs_location_priority !== false,
     broken: broken.map(s => s.company),
     lastCheckedAt: lastOk
   };

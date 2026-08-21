@@ -43,6 +43,7 @@ export default async function CareerJobs() {
               watching={feed.watching || 0}
               broken={feed.broken || []}
               lastCheckedAt={feed.lastCheckedAt || null}
+              locationPriority={feed.locationPriority !== false}
             />
           </div>
 
