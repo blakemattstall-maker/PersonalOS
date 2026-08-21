@@ -817,7 +817,7 @@ export async function checkForNewJobs() {
       source: "cron"
     }).catch(() => {});
 
-    return { ...result, notified: 0 };
+    return { ...result, notified: 0, enriched: opportunistic.enriched || 0 };
 
   }
 
