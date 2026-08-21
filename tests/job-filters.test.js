@@ -212,3 +212,51 @@ test("reminders claim their cooldown before sending, and only for real matches",
   assert.match(jobs, /if \(status === "applied"\) patch\.applied_at/);
 
 });
+
+
+test("a US location is recognised by allowlist, not by ruling out the world", () => {
+
+  // Amazon posts operations internships across Spain, Italy, France and Brazil
+  // — Valencia, Tarragona, Asturias, Figueres, Abruzzo, Lazio, Région Nord,
+  // Nova Santa Rita. Naming every foreign region is endless; naming the fifty
+  // states is finite and permanent.
+  const jobs = read("web/tools/jobs.js");
+
+  assert.match(jobs, /const US_STATE = /);
+  assert.match(jobs, /const VAGUE_LOCATION = /);
+
+  // The state code must be anchored to the END of the string. Amazon's
+  // "IT, RI, Passo Corese" is Rieti in Italy, and an unanchored match read it
+  // as Rhode Island and scored an Italian warehouse as a US role.
+  assert.match(jobs, /US_ABBREV = \/,\\s\*\([A-Z|]+\)\(\\s\+\\d\{5\}\)\?\\s\*\$\//);
+
+});
+
+
+test("no single company may own the feed", () => {
+
+  // Amazon alone has ~200 intern postings; unbounded, they were 60 of the 60
+  // rows on the page and every other company on the watchlist was invisible.
+  const jobs = read("web/tools/jobs.js");
+
+  assert.match(jobs, /perCompany/);
+  assert.match(jobs, /count <= 6/);
+
+});
+
+
+test("trade and technician roles are not internships he can use", () => {
+
+  const jobs = read("web/tools/jobs.js");
+
+  for (const term of ["technician", "assembler", "machinist", "fabricator", "welder"]) {
+    assert.match(jobs, new RegExp(term), `${term} should be on the no-chance list`);
+  }
+
+  // And a title with seniority is a job, not an internship, unless it also
+  // says intern: "Head of Early Career Recruiting" is a $225k full-time role
+  // that matched on the words "early career".
+  assert.match(jobs, /SENIOR_TITLE/);
+  assert.match(jobs, /SAYS_INTERN/);
+
+});

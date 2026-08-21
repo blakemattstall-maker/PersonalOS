@@ -164,7 +164,7 @@ const FIELDS = [
   ["finance",      /\b(financ|fp&a|accounting|audit|tax\b|treasury|investment|actuar|underwrit|risk manage|equity research)/i],
   ["supply_chain", /\b(supply chain|logistics|procurement|sourcing|warehouse|distribution|inventory|transportation|fleet)/i],
   ["legal",        /\b(legal|attorney|counsel|paralegal|compliance|litigation|trial)/i],
-  ["technical",    /\b(software|engineer|developer|data scien|machine learning|security|hardware|firmware|validation|fpga|network|\bit\b|technolog)/i]
+  ["technical",    /\b(software|engineer|developer|data scien|machine learning|security|hardware|firmware|validation|fpga|network|\bit\b|technical|technolog)/i]
 ];
 
 
@@ -179,15 +179,28 @@ export function classifyField(title = "") {
 }
 
 
-// The disciplines he asked to cut. Kept in the database, kept out of the feed
-// by default — his words: "we can frankly cut most of these, they won't work
-// well."
-export const HIDDEN_FIELDS = new Set(["finance", "supply_chain", "legal", "technical", "other"]);
+// The disciplines he asked to cut, and ONLY those. Kept in the database, kept
+// out of the feed — his words: "we can frankly cut most of these, they won't
+// work well."
+//
+// "other" deliberately is NOT here, though it was briefly, and that mistake
+// cut the feed to four postings. "Other" only means none of eight patterns
+// matched the title — which is also true of "Summer 2027 Internship Program",
+// exactly the broad early-career posting he most wants. An unrecognised title
+// is not a rejected one.
+export const HIDDEN_FIELDS = new Set(["finance", "supply_chain", "legal", "technical"]);
+
+
+// The disciplines worth waking his phone for. The feed can afford to be
+// generous — he is scrolling it on purpose — but a notification has to be
+// something he could actually get, so an alert needs a recognised field
+// rather than merely surviving the cuts.
+export const NOTIFY_FIELDS = new Set(["product", "marketing", "media", "business"]);
 
 
 // An internship tied to a campus that is not his. "UIUC Research Park Intern"
 // is a real internship and a real dead end.
-const OTHER_CAMPUS = /\b(uiuc|urbana|champaign|purdue|northwestern|depaul|loyola|marquette|notre dame|michigan state|ohio state|penn state|georgia tech|virginia tech|texas a&m|arizona state|byu\b|rutgers|umass|ucla|usc\b|nyu\b|mit\b|stanford|berkeley|harvard|yale|princeton|cornell|duke\b|vanderbilt|emory|tulane|baylor|clemson|auburn|alabama|tennessee|kentucky|iowa state|kansas state|oklahoma state|oregon state|washington state|colorado state|florida state|miami university|indiana university|university of (illinois|michigan|texas|florida|georgia|wisconsin|minnesota|iowa|indiana|kansas|missouri|nebraska|oklahoma|arkansas|kentucky|tennessee|alabama|maryland|virginia|arizona|utah|oregon|washington|colorado|california|chicago|pennsylvania|rochester|delaware|connecticut|vermont|maine))\b/i;
+const OTHER_CAMPUS = /\b(uiuc|urbana|champaign|northern illinois|\bniu\b|southern illinois|\bsiu\b|western illinois|eastern illinois|purdue|northwestern|depaul|loyola|marquette|notre dame|michigan state|ohio state|penn state|georgia tech|virginia tech|texas a&m|arizona state|byu\b|rutgers|umass|ucla|usc\b|nyu\b|mit\b|stanford|berkeley|harvard|yale|princeton|cornell|duke\b|vanderbilt|emory|tulane|baylor|clemson|auburn|alabama|tennessee|kentucky|iowa state|kansas state|oklahoma state|oregon state|washington state|colorado state|florida state|miami university|indiana university|university of (illinois|michigan|texas|florida|georgia|wisconsin|minnesota|iowa|indiana|kansas|missouri|nebraska|oklahoma|arkansas|kentucky|tennessee|alabama|maryland|virginia|arizona|utah|oregon|washington|colorado|california|chicago|pennsylvania|rochester|delaware|connecticut|vermont|maine))\b/i;
 
 // His own school stays welcome.
 const HIS_CAMPUS = /\b(illinois state|isu\b|normal, ?il|redbird)\b/i;

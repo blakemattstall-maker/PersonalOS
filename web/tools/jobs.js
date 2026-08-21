@@ -3,7 +3,7 @@ import { mapWithConcurrency } from "../lib/async.js";
 import { logActivity } from "./activityLog.js";
 import {
   classifyTerm, classifyGradFit, classifyField, parsePay, parseDeadline,
-  HIDDEN_FIELDS, isOtherCampusProgram
+  HIDDEN_FIELDS, NOTIFY_FIELDS, isOtherCampusProgram
 } from "../lib/jobFilters.js";
 
 
@@ -186,6 +186,49 @@ async function fetchWorkday(source) {
     }
 
     if (postings.length < WORKDAY_PAGE) break;
+
+  }
+
+  return out;
+
+}
+
+
+// Amazon runs its own search API — public, unauthenticated, and the only one
+// of the giants that answers a plain request. Apple, Microsoft, Google and
+// Meta all sit behind bot protection that returns an empty body to anything
+// without a browser, so they are honestly absent rather than quietly broken.
+async function fetchAmazon(source) {
+
+  const out = [];
+
+  // 100 is the API's own page ceiling; two pages is every intern posting they
+  // have open, with room to spare.
+  for (let page = 0; page < 3; page++) {
+
+    const res = await fetch(
+      `https://www.amazon.jobs/en/search.json?base_query=intern&result_limit=100&offset=${page * 100}&sort=recent`,
+      { headers: { accept: "application/json" }, signal: AbortSignal.timeout(15_000) }
+    );
+
+    if (!res.ok) throw new Error(`${res.status} from amazon`);
+
+    const body = await res.json();
+
+    const jobs = body.jobs || [];
+
+    for (const j of jobs) {
+      out.push({
+        external_id: String(j.id_icims || j.id || j.job_path),
+        title: j.title,
+        location: j.location || j.normalized_location || null,
+        url: j.job_path ? `https://www.amazon.jobs${j.job_path}` : "https://www.amazon.jobs",
+        posted_at: j.posted_date || null,
+        company: source.company
+      });
+    }
+
+    if (jobs.length < 100) break;
 
   }
 
@@ -396,6 +439,13 @@ const INTERN_PATTERN = /\b(intern|internship|co-?op|apprentice|placement|summer 
 // Titles that match the pattern but are not what he is looking for.
 const NOT_FOR_HIM = /\b(phd|doctoral|postdoc|md\b|nursing|pharmacy|internal medicine|internist)\b/i;
 
+// Seniority, which INTERN_PATTERN cannot see past on its own: "Head of Early
+// Career Recruiting" is a $225k full-time job that matched on the words "early
+// career". Only disqualifying when the title does not ALSO say intern, so
+// "Product Manager Intern" and "Marketing Manager Intern" survive.
+const SENIOR_TITLE = /\b(head of|director|vice president|\bvp\b|senior|principal|staff|chief|manager of|supervisor)\b/i;
+const SAYS_INTERN = /\b(intern|internship|co-?op|apprentice)\b/i;
+
 // His fields, weighted. Scored in code, never by a model: this decides
 // whether his phone buzzes, and it has to behave the same way every time.
 const FIELD_TERMS = [
@@ -418,7 +468,7 @@ const FIELD_TERMS = [
 // the same boundary trap the product terms hit. Alternatives that genuinely
 // need an end anchor carry their own (security\b keeps "Securities Intern" —
 // a finance role — from being read as a security-engineering one).
-const NO_CHANCE = /\b(software|engineer|developer|programmer|\bswe\b|backend|front.?end|full.?stack|machine learning|\bml\b|\bai\b research|data scien|infrastructure|devops|\bqa\b|security\b|hardware|firmware|mechanical|electrical|chemical|civil\b|robotics|semiconductor|computer scien|fpga|asic|silicon|embedded|powertrain|battery|thermal|controls\b|validation|test engineer|manufacturing engineer|quality engineer|autonomy|perception|cad\b|plc\b)/i;
+const NO_CHANCE = /\b(software|engineer|developer|programmer|\bswe\b|backend|front.?end|full.?stack|machine learning|\bml\b|\bai\b research|data scien|infrastructure|devops|\bqa\b|security\b|hardware|firmware|mechanical|electrical|chemical|civil\b|robotics|semiconductor|computer scien|fpga|asic|silicon|embedded|powertrain|battery|thermal|controls\b|validation|test engineer|manufacturing engineer|quality engineer|autonomy|perception|cad\b|plc\b|technician|assembler|machinist|fabricator|welder|electrician|millwright|maintenance tech)/i;
 
 // Engineering-ADJACENT words that a marketing or product role legitimately
 // carries ("Product Marketing Intern, Engineering Org"). Checked first, so an
@@ -431,6 +481,23 @@ const US_ANY = /\b(remote|united states|usa|new york|\bny\b|los angeles|san fran
 // inferred from "not US", because a location this app has never seen before
 // is not evidence of anything — an unknown or vague location ("In-Office",
 // "2 Locations") stays neutral and is still allowed to notify.
+// Every US state, spelled out and abbreviated. This is the reliable signal:
+// enumerating the world's cities is endless — Amazon alone posted internships
+// in Valencia, Tarragona, Asturias, Figueres, Abruzzo, Lazio, Région Nord and
+// Nova Santa Rita — while enumerating fifty states is finite and permanent.
+const US_STATE = /\b(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming|district of columbia)\b/i;
+
+// Anchored to the END of the string, because a bare two-letter code is not
+// unique to the United States: Amazon's "IT, RI, Passo Corese" is Rieti in
+// Italy, and an unanchored match read it as Rhode Island and scored an Italian
+// warehouse internship as a US one. A real US location ends in its state.
+const US_ABBREV = /,\s*(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)(\s+\d{5})?\s*$/;
+
+// Values that name no place at all. These stay neutral — a posting that says
+// "In-Office" or "2 Locations" is not evidence of anything, and refusing them
+// would hide real roles.
+const VAGUE_LOCATION = /^(\s*)(in.?office|remote|hybrid|virtual|flexible|multiple|various|\d+\s+locations?|united states|usa|us|n\/a|tbd)(\s|,|$)/i;
+
 const FOREIGN = /\b(singapore|hong kong|budapest|hungary|amsterdam|netherlands|malaysia|kuala lumpur|london|united kingdom|\buk\b|england|ireland|dublin|germany|munich|berlin|hamburg|france|paris|spain|madrid|barcelona|italy|milan|rome|canada|toronto|vancouver|montreal|ottawa|australia|sydney|melbourne|india|bangalore|bengaluru|hyderabad|mumbai|japan|tokyo|china|shanghai|beijing|shenzhen|brazil|mexico|guadalajara|poland|warsaw|sweden|stockholm|denmark|copenhagen|israel|tel aviv|dubai|\buae\b|korea|seoul|taiwan|taipei|philippines|manila|thailand|bangkok|vietnam|indonesia|jakarta|costa rica|argentina|colombia|chile|peru|south africa|egypt|turkey|istanbul|switzerland|zurich|geneva|austria|vienna|belgium|brussels|norway|oslo|finland|helsinki|portugal|lisbon|czech|prague|romania|bucharest|greece|athens|new zealand|auckland|scotland|edinburgh|glasgow|wales|cardiff)\b/i;
 const HOME = /\b(chicago|illinois|\bil\b|evanston|bloomington|normal|naperville|schaumburg|milwaukee|indianapolis|st\.? louis)\b/i;
 
@@ -442,7 +509,9 @@ export function scorePosting({ title, location }, { locationPriority = true } = 
 
   const text = `${title || ""}`;
 
-  const isInternship = INTERN_PATTERN.test(text) && !NOT_FOR_HIM.test(text);
+  const isInternship = INTERN_PATTERN.test(text)
+    && !NOT_FOR_HIM.test(text)
+    && !(SENIOR_TITLE.test(text) && !SAYS_INTERN.test(text));
 
   // Whole disciplines he asked to cut — finance, supply chain, legal,
   // engineering — plus internships tied to a campus that is not his. These are
@@ -472,13 +541,19 @@ export function scorePosting({ title, location }, { locationPriority = true } = 
 
   if (location) {
 
+    const looksUS = US_STATE.test(location) || US_ABBREV.test(location) || US_ANY.test(location);
+    const vague = VAGUE_LOCATION.test(location);
+
     // A role he cannot physically take is not a match however well the title
-    // fits — Warner's Budapest CRM internship scored 7 before this.
-    if (FOREIGN.test(location) && !US_ANY.test(location)) {
+    // fits. Inverted from a blacklist to an allowlist after Amazon posted
+    // operations internships across Spain, Italy, France and Brazil that all
+    // scored as matches: naming every foreign region is endless, naming the
+    // fifty states is finite.
+    if (!looksUS && !vague) {
       score -= 5;
     } else if (locationPriority && HOME.test(location)) {
       score += 3;
-    } else if (US_ANY.test(location) || HOME.test(location)) {
+    } else if (looksUS) {
       score += 1;
     }
 
@@ -498,6 +573,7 @@ async function fetchSource(source) {
 
   if (source.ats === "workday") return fetchWorkday(source);
   if (source.ats === "radancy") return fetchRadancy(source);
+  if (source.ats === "amazon") return fetchAmazon(source);
   if (source.ats === "phenom") return fetchPhenom(source);
 
   const spec = ENDPOINTS[source.ats];
@@ -631,10 +707,14 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
         // Term is title-only at this point; a posting that names a term he has
         // ruled out never buzzes, and one that names none still can — it is
         // usually an early listing that has not decided yet.
+        // The feed shows anything that survived the cuts; a NOTIFICATION also
+        // needs a recognised discipline, so an unclassifiable title can sit in
+        // the list without buzzing him at 2am.
         if (!seen.has(row.external_id) &&
             row.is_internship &&
             row.match_score >= NOTIFY_SCORE &&
-            row.term !== "other") {
+            row.term !== "other" &&
+            NOTIFY_FIELDS.has(row.field)) {
           fresh.push(row);
         }
       }
@@ -1008,12 +1088,25 @@ export async function getJobFeed({ limit = 120, onlyInternships = true, minScore
   // arrival shows the same role three times over. Newest of each
   // company+title wins; the rest stay in the table, out of the way.
   const seenTitles = new Set();
+  const perCompany = new Map();
 
   const deduped = (postings || []).filter(p => {
+
     const key = `${p.company}|${(p.title || "").toLowerCase().trim()}`;
+
     if (seenTitles.has(key)) return false;
+
     seenTitles.add(key);
-    return true;
+
+    // And no single company may own the page. Amazon alone posts a hundred
+    // operations internships; six of them is a fair sample, sixty is a wall
+    // that hides every other company on the watchlist.
+    const count = (perCompany.get(p.company) || 0) + 1;
+
+    perCompany.set(p.company, count);
+
+    return count <= 6;
+
   });
 
   const broken = (sources || []).filter(s => s.active && s.consecutive_failures >= 3);
