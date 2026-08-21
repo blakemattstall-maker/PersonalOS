@@ -25,7 +25,8 @@ const SORTS = [
   { key: "recent", label: "Newest" },
   { key: "nearby", label: "Nearby" },
   { key: "pay", label: "Pay" },
-  { key: "match", label: "Best fit" }
+  { key: "match", label: "Best fit" },
+  { key: "closing", label: "Closing" }
 ];
 
 const NEARBY = /\b(chicago|illinois|\bil\b|evanston|bloomington|normal|naperville|schaumburg|deerfield|mettawa|milwaukee|indianapolis|st\.? louis)\b/i;
@@ -70,9 +71,23 @@ function when(iso) {
 }
 
 
+// Days until applications close, when the posting said so.
+function closingIn(deadline) {
+  if (!deadline) return null;
+  const days = Math.round((new Date(`${deadline}T23:59:59Z`) - Date.now()) / 86400000);
+  if (days < 0) return null;
+  if (days === 0) return "closes today";
+  if (days === 1) return "closes tomorrow";
+  if (days <= 14) return `closes in ${days}d`;
+  return null;
+}
+
+
 function Posting({ posting, onStatus, busy }) {
 
   const seen = when(posting.first_seen_at);
+
+  const closing = closingIn(posting.deadline);
 
   const hot = posting.first_seen_at &&
     DateTime.now().diff(DateTime.fromISO(posting.first_seen_at), "hours").hours < 24;
@@ -90,9 +105,16 @@ function Posting({ posting, onStatus, busy }) {
             {posting.term === "summer_2027" ? " · Summer 2027" : ""}
           </span>
         </span>
-        {seen && (
-          <span className={`shrink-0 text-[0.7rem] ${hot ? "text-ember" : "text-ink-soft"}`}>{seen}</span>
-        )}
+        <span className="shrink-0 text-right">
+          {seen && (
+            <span className={`block text-[0.7rem] ${hot ? "text-ember" : "text-ink-soft"}`}>{seen}</span>
+          )}
+          {/* A closing date is the one piece of information that changes what
+              he should do in the next hour. */}
+          {closing && (
+            <span className="mt-0.5 block text-[0.7rem] font-medium text-ember">{closing}</span>
+          )}
+        </span>
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
@@ -181,6 +203,14 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt, lo
     if (sort === "pay") {
       const diff = payRank(b) - payRank(a);
       if (diff !== 0) return diff;
+    }
+
+    if (sort === "closing") {
+      // Postings with a stated deadline first, soonest at the top; everything
+      // undated sits below rather than pretending to be urgent.
+      const av = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+      const bv = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+      if (av !== bv) return av - bv;
     }
 
     if (sort === "match") {

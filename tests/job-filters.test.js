@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 import {
   classifyTerm, classifyGradFit, classifyField, parsePay,
-  isOtherCampusProgram, HIDDEN_FIELDS, GRAD_YEAR
+  isOtherCampusProgram, HIDDEN_FIELDS, GRAD_YEAR, parseDeadline
 } from "../web/lib/jobFilters.js";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -169,5 +169,46 @@ test("the jobs feed can be sorted four ways", () => {
   // Newest is the tiebreaker everywhere: of two equally good roles, the fresh
   // one is the one still worth applying to.
   assert.match(view, /new Date\(b\.first_seen_at\) - new Date\(a\.first_seen_at\)/);
+
+});
+
+
+test("a deadline is only read when the posting plainly states one", () => {
+
+  const now = new Date("2026-08-21T00:00:00Z");
+
+  assert.equal(parseDeadline("Applications close on September 15, 2026.", now), "2026-09-15");
+  assert.equal(parseDeadline("The deadline to apply is 10/31/2026.", now), "2026-10-31");
+
+  // A bare month/day means the NEXT one — "apply by March 1" written in August
+  // is next March, not the one already gone.
+  assert.equal(parseDeadline("Apply by March 1 to be considered.", now), "2027-03-01");
+
+  // A start date is not a deadline, and a posted date is not a deadline. A
+  // wrong deadline hides a live posting, which is worse than none.
+  assert.equal(parseDeadline("Our program starts June 2027 and runs 12 weeks.", now), null);
+  assert.equal(parseDeadline("Posted August 2026. You will support the brand team.", now), null);
+  assert.equal(parseDeadline("", now), null);
+
+});
+
+
+test("reminders claim their cooldown before sending, and only for real matches", () => {
+
+  const jobs = read("web/tools/jobs.js");
+  const review = jobs.slice(jobs.indexOf("export async function reviewJobDeadlines"));
+
+  // Same claim-then-send order as every other alert here.
+  const claim = review.indexOf("last_nudged_at: now.toISOString()");
+  const push = review.indexOf("sendPush(");
+  assert.ok(claim > 0 && claim < push, "the cooldown must be claimed before the push");
+
+  // A closing-soon alert is only worth sending for something he could
+  // actually get.
+  assert.match(review, /gte\("match_score", 3\)/);
+  assert.match(review, /in\("status", \["new", "saved"\]\)/);
+
+  // Applying records when, or silence can never be noticed.
+  assert.match(jobs, /if \(status === "applied"\) patch\.applied_at/);
 
 });

@@ -2,7 +2,7 @@ import supabase from "../lib/supabase.js";
 import { mapWithConcurrency } from "../lib/async.js";
 import { logActivity } from "./activityLog.js";
 import {
-  classifyTerm, classifyGradFit, classifyField, parsePay,
+  classifyTerm, classifyGradFit, classifyField, parsePay, parseDeadline,
   HIDDEN_FIELDS, isOtherCampusProgram
 } from "../lib/jobFilters.js";
 
@@ -34,6 +34,8 @@ const ENDPOINTS = {
       // first_published is when it went LIVE; updated_at moves whenever
       // anything is edited, so it would make an old posting look new.
       posted_at: j.first_published || j.updated_at || null,
+      // The only ATS here that states it outright.
+      deadline: j.application_deadline ? String(j.application_deadline).slice(0, 10) : null,
       company
     }))
   },
@@ -590,6 +592,7 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
           match_score: score,
           matched_terms: matched,
           field,
+          ...(p.deadline ? { deadline: p.deadline } : {}),
           // From the title alone for now; the enrichment pass refines it once
           // the description is in hand.
           term: classifyTerm({ title: p.title })
@@ -801,6 +804,7 @@ export async function enrichJobDetails({ limit = 60 } = {}) {
     const term = classifyTerm({ title: posting.title, description: description || "" });
     const gradFit = classifyGradFit(description || "");
     const pay = parsePay(description || "");
+    const deadline = parseDeadline(description || "");
 
     const { error: writeError } = await supabase
       .from("job_postings")
@@ -811,6 +815,9 @@ export async function enrichJobDetails({ limit = 60 } = {}) {
         term,
         grad_fit: gradFit,
         ...pay,
+        // Never overwrite a deadline the ATS stated outright with one guessed
+        // from prose.
+        ...(deadline ? { deadline } : {}),
         detail_fetched_at: new Date().toISOString()
       })
       .eq("id", posting.id);
@@ -825,12 +832,118 @@ export async function enrichJobDetails({ limit = 60 } = {}) {
 }
 
 
+// Two things worth interrupting him about after a posting is already known:
+// it is about to close, and one he applied to has gone quiet.
+//
+// Runs hourly alongside enrichment rather than on the fifteen-minute poll —
+// neither is urgent to the minute, and an alert engine that runs four times an
+// hour is one that eventually gets muted. Every posting carries its own
+// cooldown, so a deadline three days out produces one nudge, not seventy.
+const CLOSING_WINDOW_DAYS = 3;
+const FOLLOW_UP_DAYS = 14;
+const NUDGE_COOLDOWN_DAYS = 5;
+
+export async function reviewJobDeadlines() {
+
+  const now = new Date();
+
+  const cooldownBefore = new Date(now.getTime() - NUDGE_COOLDOWN_DAYS * 86400000).toISOString();
+
+  const closingBy = new Date(now.getTime() + CLOSING_WINDOW_DAYS * 86400000)
+    .toISOString().slice(0, 10);
+
+  const appliedBefore = new Date(now.getTime() - FOLLOW_UP_DAYS * 86400000).toISOString();
+
+  const [closing, quiet] = await Promise.all([
+
+    supabase
+      .from("job_postings")
+      .select("id, company, title, url, deadline, status, last_nudged_at")
+      .in("status", ["new", "saved"])
+      .eq("is_internship", true)
+      .gte("match_score", 3)
+      .not("deadline", "is", null)
+      .lte("deadline", closingBy)
+      .gte("deadline", now.toISOString().slice(0, 10))
+      .or(`last_nudged_at.is.null,last_nudged_at.lt.${cooldownBefore}`)
+      .limit(10),
+
+    supabase
+      .from("job_postings")
+      .select("id, company, title, url, applied_at, last_nudged_at")
+      .eq("status", "applied")
+      .not("applied_at", "is", null)
+      .lt("applied_at", appliedBefore)
+      .or(`last_nudged_at.is.null,last_nudged_at.lt.${cooldownBefore}`)
+      .limit(5)
+
+  ]);
+
+  // The tracking columns arrive by a later migration than the table.
+  if (closing.error && /column|schema cache/i.test(closing.error.message)) {
+    return { success: false, configured: false, message: "Run docs/schema-jobs-track.sql in Supabase." };
+  }
+
+  const closingRows = closing.data || [];
+  const quietRows = quiet.data || [];
+
+  if (closingRows.length === 0 && quietRows.length === 0) {
+    return { success: true, closing: 0, followUps: 0 };
+  }
+
+  // Claimed before anything is sent, exactly as the new-posting alert does: a
+  // failed push should cost one missed reminder, never a reminder every hour.
+  const ids = [...closingRows, ...quietRows].map(r => r.id);
+
+  await supabase
+    .from("job_postings")
+    .update({ last_nudged_at: now.toISOString() })
+    .in("id", ids);
+
+  const lines = [];
+
+  for (const row of closingRows) {
+    const days = Math.round((new Date(row.deadline) - now) / 86400000);
+    lines.push(`Closes ${days <= 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`}: ${row.company} — ${row.title}\n${row.url}`);
+  }
+
+  for (const row of quietRows) {
+    const days = Math.floor((now - new Date(row.applied_at)) / 86400000);
+    lines.push(`Applied ${days} days ago, no word since: ${row.company} — ${row.title}. Worth a follow-up.\n${row.url}`);
+  }
+
+  const { sendPush } = await import("../lib/push.js");
+
+  const title = closingRows.length > 0
+    ? (closingRows.length === 1 ? "An application closes soon" : `${closingRows.length} applications close soon`)
+    : "Time to follow up";
+
+  await sendPush({
+    title,
+    body: lines[0].split("\n")[0],
+    url: "/career/jobs",
+    tag: `jobs-followup-${Date.now()}`
+  }).catch(error => console.error("JOB FOLLOWUP PUSH FAILED:", error.message));
+
+  await supabase.from("prompts").insert([{
+    kind: "digest",
+    title,
+    body: lines.join("\n\n"),
+    status: "pending",
+    pushed_at: now.toISOString()
+  }]);
+
+  return { success: true, closing: closingRows.length, followUps: quietRows.length };
+
+}
+
+
 // What the Jobs page reads.
 export async function getJobFeed({ limit = 120, onlyInternships = true, minScore = 1 } = {}) {
 
   let query = supabase
     .from("job_postings")
-    .select("id, company, title, location, url, posted_at, first_seen_at, match_score, is_internship, status, notified_at, term, grad_fit, pay_min, pay_max, pay_period, field")
+    .select("id, company, title, location, url, posted_at, first_seen_at, match_score, is_internship, status, notified_at, term, grad_fit, pay_min, pay_max, pay_period, field, deadline, applied_at")
     .neq("status", "dismissed")
     .order("first_seen_at", { ascending: false })
     .limit(limit);
@@ -931,9 +1044,15 @@ export async function setJobStatus({ id, status }) {
     throw new Error(`Unknown status: ${status}`);
   }
 
+  const patch = { status };
+
+  // The status column records THAT he applied; this records when, which is
+  // what makes a two-week silence noticeable.
+  if (status === "applied") patch.applied_at = new Date().toISOString();
+
   const { error } = await supabase
     .from("job_postings")
-    .update({ status })
+    .update(patch)
     .eq("id", id);
 
   if (error) throw new Error(error.message);

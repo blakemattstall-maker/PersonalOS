@@ -251,3 +251,69 @@ export function hourlyEquivalent({ pay_min, pay_period }) {
   if (pay_period === "year") return pay_min / 2080;
   return pay_min;
 }
+
+
+// When applications close, when a posting bothers to say.
+//
+// Greenhouse publishes this as a field; everyone else buries it in prose or
+// omits it. Only unambiguous phrasings are read — a date sitting alone in a
+// description is as likely to be a start date or a programme date as a
+// deadline, and a wrong deadline that hides a live posting is worse than no
+// deadline at all.
+const DEADLINE_CUES = /\b(appl(?:y|ications?)\s+(?:by|close[sd]?|deadline|due)|deadline\s+(?:to apply|for applications?)|closing date|last day to apply|accepting applications until)\b/i;
+
+const MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec";
+
+
+export function parseDeadline(description = "", now = new Date()) {
+
+  if (!description) return null;
+
+  const text = String(description).replace(/\s+/g, " ");
+
+  const cue = text.match(DEADLINE_CUES);
+
+  if (!cue) return null;
+
+  // Only look just after the cue. Widening this window is how a deadline
+  // parser starts reading a programme's start date as its closing date.
+  const window = text.slice(cue.index, cue.index + 120);
+
+  const named = window.match(new RegExp(`\\b(${MONTHS})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s*(20\\d{2}))?`, "i"));
+
+  if (named) {
+    const year = named[3] ? Number(named[3]) : inferYear(named[1], Number(named[2]), now);
+    const date = new Date(Date.UTC(year, monthIndex(named[1]), Number(named[2])));
+    return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null;
+  }
+
+  const numeric = window.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2}|\d{2})\b/);
+
+  if (numeric) {
+    const year = numeric[3].length === 2 ? 2000 + Number(numeric[3]) : Number(numeric[3]);
+    const date = new Date(Date.UTC(year, Number(numeric[1]) - 1, Number(numeric[2])));
+    return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null;
+  }
+
+  return null;
+
+}
+
+
+function monthIndex(name) {
+  const list = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  return list.indexOf(String(name).slice(0, 3).toLowerCase());
+}
+
+
+// A deadline with no year means the next time that date comes around — "apply
+// by March 1" written in August is next March, not the one already past.
+function inferYear(month, day, now) {
+
+  const year = now.getUTCFullYear();
+
+  const candidate = new Date(Date.UTC(year, monthIndex(month), day));
+
+  return candidate < now ? year + 1 : year;
+
+}

@@ -31,6 +31,13 @@ import { probeTable } from "./tableProbe.js";
 const MIGRATIONS = [
 
   {
+    file: "docs/schema-jobs-track.sql",
+    purpose: "internship deadlines and follow-ups",
+    columns: [["job_postings", "deadline"], ["job_postings", "applied_at"], ["job_postings", "last_nudged_at"]],
+    breaksWithout: "Nothing warns that an application closes tomorrow, and a submitted application that goes quiet is never surfaced again."
+  },
+
+  {
     file: "docs/schema-jobs-detail.sql",
     purpose: "internship filtering — term, graduation-year fit, pay, discipline",
     columns: [["job_postings", "term"], ["job_postings", "grad_fit"], ["job_postings", "pay_min"]],

@@ -1,5 +1,5 @@
 import { syncCanvasAssignments } from "../../../../tools/canvas.js";
-import { checkForNewJobs, enrichJobDetails } from "../../../../tools/jobs.js";
+import { checkForNewJobs, enrichJobDetails, reviewJobDeadlines } from "../../../../tools/jobs.js";
 import { syncDiningMenus } from "../../../../tools/dining.js";
 import { createBrief, getLatestUnreadBrief, getMostRecentBrief } from "../../../../tools/database.js";
 import { composeBrief } from "../../../../tools/brief.js";
@@ -390,7 +390,18 @@ async function checkJobs() {
 // larger slice than the poll's own opportunistic pass.
 async function enrichJobs() {
 
-  return enrichJobDetails({ limit: 120 });
+  const enriched = await enrichJobDetails({ limit: 120 });
+
+  // Deadlines and follow-ups ride the same hourly slot: neither is urgent to
+  // the minute, and giving them their own schedule would be another clock to
+  // keep honest.
+  const reminders = await reviewJobDeadlines()
+    .catch(error => {
+      console.error("JOB REMINDERS FAILED:", error.message);
+      return { success: false, error: error.message };
+    });
+
+  return { enriched, reminders };
 
 }
 
