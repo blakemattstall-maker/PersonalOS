@@ -260,3 +260,37 @@ test("trade and technician roles are not internships he can use", () => {
   assert.match(jobs, /SAYS_INTERN/);
 
 });
+
+
+test("the places no feed can reach are listed where he will see them", async () => {
+
+  const { MANUAL_TARGETS, isStale } = await import("../web/lib/manualTargets.js");
+
+  // The giants that answer a plain request with an empty body, and Handshake,
+  // which needs his login — none of these can ever be polled.
+  for (const slug of ["microsoft", "google", "apple", "meta", "handshake"]) {
+    assert.ok(MANUAL_TARGETS.some(t => t.slug === slug), `${slug} must be on the manual list`);
+  }
+
+  // And the Chicago independents, which are the opposite problem: too small to
+  // have software, which is exactly why an email works.
+  const small = MANUAL_TARGETS.filter(t => t.kind === "small");
+  assert.ok(small.length >= 8, `only ${small.length} small studios listed`);
+
+  // Every entry needs somewhere to go and a reason to bother.
+  for (const t of MANUAL_TARGETS) {
+    assert.match(t.url, /^https:\/\//, `${t.slug} has no usable link`);
+    assert.ok((t.note || "").length > 20, `${t.slug} needs a note saying why`);
+    assert.ok(t.group, `${t.slug} needs a group`);
+  }
+
+  // Never looked at is stale by definition, and two weeks is the limit.
+  assert.equal(isStale(null), true);
+  assert.equal(isStale(new Date().toISOString()), false);
+  assert.equal(isStale(new Date(Date.now() - 20 * 86400000).toISOString()), true);
+
+  // The check-off state rides in settings rather than a new table.
+  assert.match(read("web/lib/settings.js"), /manual_checks/);
+  assert.match(read("web/app/career/jobs/page.js"), /ManualTargets/);
+
+});

@@ -47,6 +47,11 @@ export const DEFAULTS = {
   // collected: a role is stored either way.
   jobs_location_priority: true,
 
+  // When each manual target on the Jobs page was last looked at, keyed by
+  // slug. Lives in settings rather than its own table because it is a handful
+  // of timestamps and deserves no migration.
+  manual_checks: {},
+
   // Which colour each kind gets, when the above is on. Empty means "use
   // KIND_COLOR from lib/eventKind.js", so the shipped mapping stays the
   // default and this only ever holds the kinds actually overridden — a

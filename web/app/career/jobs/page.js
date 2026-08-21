@@ -2,6 +2,7 @@ import { backendGet } from "../../backend.js";
 import Reveal from "../../Reveal.js";
 import CareerNav from "../../CareerNav.js";
 import JobsView from "../../JobsView.js";
+import ManualTargets from "../../ManualTargets.js";
 import { Page, PageHeader, Empty } from "../../ui.js";
 
 
@@ -10,7 +11,10 @@ export const dynamic = "force-dynamic";
 
 export default async function CareerJobs() {
 
-  const feed = await backendGet("/api/jobs").catch(() => ({ success: false, configured: true, postings: [] }));
+  const [feed, settings] = await Promise.all([
+    backendGet("/api/jobs").catch(() => ({ success: false, configured: true, postings: [] })),
+    backendGet("/api/settings").catch(() => ({ settings: {} }))
+  ]);
 
   return (
     <Page>
@@ -48,6 +52,12 @@ export default async function CareerJobs() {
           </div>
 
         )}
+
+        {/* Always shown, even when the feed is empty or unconfigured — these
+            are the places that do not depend on any of it working. */}
+        <div className="pos-reveal" data-reveal>
+          <ManualTargets checks={settings?.settings?.manual_checks || {}} />
+        </div>
 
       </Reveal>
 
