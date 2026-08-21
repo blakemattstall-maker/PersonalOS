@@ -85,6 +85,26 @@ async function getPendingPrompts() {
 }
 
 
+// The search, on the page he opens every morning. A posting is worth applying
+// to the day it appears, so it belongs where he already looks rather than
+// behind two taps on another tab.
+async function getJobHeadline() {
+
+  try {
+
+    const data = await backendGet("/api/jobs?headline=1");
+
+    return data?.headline || null;
+
+  } catch (error) {
+
+    return null;
+
+  }
+
+}
+
+
 async function getPendingNudges() {
 
   try {
@@ -196,12 +216,13 @@ function NudgeCard({ item }) {
 
 export default async function Home() {
 
-  const [brief, pendingThoughts, pendingNudges, projects, raised] = await Promise.all([
+  const [brief, pendingThoughts, pendingNudges, projects, raised, jobs] = await Promise.all([
     getBrief(),
     getPendingDeepThoughts(),
     getPendingNudges(),
     getActiveProjects(),
-    getPendingPrompts()
+    getPendingPrompts(),
+    getJobHeadline()
   ]);
 
   const needsYou = [
@@ -229,6 +250,38 @@ export default async function Home() {
       <div className="pos-reveal" data-reveal>
         <Headline waiting={needsYou.length} projectCount={projects.length} />
       </div>
+
+      {/* The search sits above the brief when it has something to say. An
+          internship is worth applying to the day it appears, and the brief is
+          prose he might skim; this is the one line he cannot miss. */}
+      {jobs && (jobs.freshCount > 0 || jobs.closingCount > 0) && (
+        <div className="pos-reveal" data-reveal>
+          <Link href="/career/jobs" className="mb-5 block">
+            <Card tone="sunken">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
+                  Internships
+                </span>
+                <span aria-hidden="true" className="text-[0.7rem] text-ink-soft">›</span>
+              </div>
+              <p className="mt-1.5 text-[0.95rem] leading-snug text-ink">
+                {jobs.freshCount > 0 && (
+                  <>
+                    <span className="text-ember">{jobs.freshCount} new</span>
+                    {jobs.lead ? ` — ${jobs.lead}` : ""}
+                  </>
+                )}
+                {jobs.freshCount > 0 && jobs.closingCount > 0 && " · "}
+                {jobs.closingCount > 0 && (
+                  <span className="text-ember">
+                    {jobs.closingCount} closing soon
+                  </span>
+                )}
+              </p>
+            </Card>
+          </Link>
+        </div>
+      )}
 
       {/* Order is state-dependent by design. When something is waiting, it
           comes before the brief — the headline just said so, and scrolling

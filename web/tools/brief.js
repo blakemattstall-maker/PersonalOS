@@ -131,13 +131,19 @@ export async function gatherBriefFacts({ tz } = {}) {
     return fallback;
   });
 
-  const [events, tasks, context, people, intentions, projects, inbox, priorBriefs] = await Promise.all([
+  const [events, tasks, context, people, intentions, projects, jobs, inbox, priorBriefs] = await Promise.all([
     settle("calendar", getEvents({ startDate: todayISO, endDate: todayISO, maxResults: 50 }), { events: [] }),
     settle("tasks", getTasks({ maxResults: 100 }), { tasks: [] }),
     settle("context", buildRichContext(), {}),
     settle("people", getAllPeople(), []),
     settle("intentions", getOpenIntentions(), []),
     settle("projects", getProjectsWithDetails({ status: "active" }), []),
+    // The internship monitor. Its own failure must never cost the brief, so it
+    // rides the same settle() as every other source.
+    settle("jobs",
+      import("./jobs.js").then(m => m.briefJobFacts({ hours: 24 })),
+      null
+    ),
     // Only reachable once the readonly scope is granted; a brief without it is
     // still a brief.
     settle("inbox",
@@ -178,6 +184,8 @@ export async function gatherBriefFacts({ tz } = {}) {
     projects: (projects || []).map(p => ({ name: p.name, next: p.next_action })),
 
     inbox: inbox?.success ? (inbox.data?.needs_you || []) : null,
+
+    jobs,
 
     priorBriefs: priorBriefs || [],
 
@@ -279,6 +287,31 @@ function renderFacts(f) {
     lines.push(`GONE QUIET: ${f.quiet.map(p => `${p.name} — ${p.days}d since contact, wanted every ${p.cadence}d`).join("; ")}`);
   }
 
+  // The search, which the brief was blind to until now. Ordered before the
+  // inbox because a posting that went up overnight has a shelf life measured
+  // in days and an email usually does not.
+  if (f.jobs) {
+
+    if (f.jobs.freshCount > 0) {
+      lines.push(
+        `NEW INTERNSHIPS (${f.jobs.freshCount} in the last 24h): ` +
+        f.jobs.fresh.map(j => `${j.company} — ${j.title}${j.location ? ` (${j.location})` : ""}`).join("; ")
+      );
+    }
+
+    if (f.jobs.closing.length) {
+      lines.push(
+        `APPLICATIONS CLOSING: ` +
+        f.jobs.closing.map(j => `${j.company} — ${j.title}, closes ${j.deadline}`).join("; ")
+      );
+    }
+
+    if (f.jobs.openApplications > 0) {
+      lines.push(`APPLICATIONS OUT: ${f.jobs.openApplications} submitted and awaiting a reply.`);
+    }
+
+  }
+
   if (f.inbox?.length) {
 
     // Second line of defence behind the classifier in gmail.js: anything that
@@ -357,6 +390,10 @@ Hard rules:
   are not the same and must not be described as if they were.
 - Only mention money, relationships, projects or email when there is something
   genuinely worth saying. Silence on a domain is correct and expected.
+- A new internship or a closing application is an exception to that restraint.
+  These roles take thousands of applicants and are won by applying early, so
+  if one is listed above, say so plainly and near the top. Name the company and
+  the role; do not generalise it into "some new postings".
 - If two things collide and one of them can actually move, say so plainly and
   say which one should move. A standing collision between fixtures is not news.
 - End with one sentence that is not an obligation: the best use of today's

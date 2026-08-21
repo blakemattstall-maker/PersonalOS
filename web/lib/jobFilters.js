@@ -156,15 +156,26 @@ export function classifyGradFit(description = "") {
 // Coarse discipline, so whole categories can be cut rather than fought one
 // title at a time. Order matters: the first match wins, and the fields he
 // actually wants are checked before the ones he does not.
+// Order is the whole design here, and it bit once already: "Warehouse
+// Operations Supply Chain Intern" and "IT Business Analyst Internship" both
+// classified as BUSINESS, because the generic business pattern matches
+// "operations" and "analyst" before anything specific gets a look — and
+// business is a field he wants, so both sailed into the brief.
+//
+// So: the three fields he actively wants first (they are specific enough to
+// win outright), then every field that should be CUT, then business last as
+// the catch-all it actually is.
 const FIELDS = [
   ["product",      /\b(product manage|product market|product owner|product intern|product analy|\bapm\b|user research|ux research)/i],
   ["marketing",    /\b(marketing|brand|advertis|campaign|creative|copywrit|social media|content|influencer|seo\b|growth)/i],
   ["media",        /\b(media|editorial|journalis|newsroom|production|broadcast|publicity|public relations|\bpr\b|communicat|talent relations|sponsorship|partnerships)/i],
-  ["business",     /\b(business (develop|analy|strateg|operations)|strateg|consult|sales|account (manage|executive|coordinator)|client service|program manage|project manage|operations|revenue)/i],
-  ["finance",      /\b(financ|fp&a|accounting|audit|tax\b|treasury|investment|actuar|underwrit|risk manage|equity research)/i],
-  ["supply_chain", /\b(supply chain|logistics|procurement|sourcing|warehouse|distribution|inventory|transportation|fleet)/i],
+
   ["legal",        /\b(legal|attorney|counsel|paralegal|compliance|litigation|trial)/i],
-  ["technical",    /\b(software|engineer|developer|data scien|machine learning|security|hardware|firmware|validation|fpga|network|\bit\b|technical|technolog)/i]
+  ["supply_chain", /\b(supply chain|logistics|procurement|sourcing|warehouse|distribution|inventory|transportation|fleet|merchandis)/i],
+  ["finance",      /\b(financ|fp&a|accounting|audit|tax\b|treasury|investment|actuar|underwrit|risk manage|equity research)/i],
+  ["technical",    /\b(software|engineer|developer|data scien|machine learning|security|hardware|firmware|validation|fpga|network|\bit\b|technical|technolog|cyber|cloud|devops)/i],
+
+  ["business",     /\b(business (develop|analy|strateg|operations)|strateg|consult|sales|account (manage|executive|coordinator)|client service|program manage|project manage|operations|revenue)/i]
 ];
 
 

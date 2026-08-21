@@ -485,7 +485,7 @@ function stripHtml(html) {
 const INTERN_PATTERN = /\b(intern|internship|co-?op|apprentice|placement|summer analyst|university (grad|program)|early careers?)\b/i;
 
 // Titles that match the pattern but are not what he is looking for.
-const NOT_FOR_HIM = /\b(phd|doctoral|postdoc|md\b|nursing|pharmacy|internal medicine|internist)\b/i;
+const NOT_FOR_HIM = /\b(phd|doctoral|postdoc|md\b|mba\b|jd\b|nursing|pharmacy|internal medicine|internist|graduate student)\b/i;
 
 // Seniority, which INTERN_PATTERN cannot see past on its own: "Head of Early
 // Career Recruiting" is a $225k full-time job that matched on the words "early
@@ -1178,6 +1178,67 @@ export async function getJobFeed({ limit = 120, onlyInternships = true, minScore
     locationPriority: settings.jobs_location_priority !== false,
     broken: broken.map(s => s.company),
     lastCheckedAt: lastOk
+  };
+
+}
+
+
+// What the morning brief needs to know about the search.
+//
+// The monitor polls 183 boards every fifteen minutes and, until now, the one
+// thing read every morning had no idea it existed. A posting he has not opened
+// yet, and a deadline about to pass, are exactly the kind of fact a brief is
+// for — and unlike a push at 3am, the brief arrives when he can act.
+export async function briefJobFacts({ hours = 24 } = {}) {
+
+  const since = new Date(Date.now() - hours * 3600000).toISOString();
+
+  const soon = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+
+  const { data, error } = await supabase
+    .from("job_postings")
+    .select("company, title, location, first_seen_at, deadline, status, match_score, term, grad_fit, field")
+    .eq("is_internship", true)
+    .gte("match_score", 3)
+    .neq("status", "dismissed")
+    .order("first_seen_at", { ascending: false })
+    .limit(200);
+
+  if (error) {
+    // A missing table or column must cost the jobs LINE, never the brief.
+    console.error("BRIEF JOB FACTS UNAVAILABLE:", error.message);
+    return null;
+  }
+
+  const usable = (data || []).filter(r =>
+    (r.term == null || r.term === "summer_2027" || r.term === "unspecified") &&
+    r.grad_fit !== "blocked" &&
+    NOTIFY_FIELDS.has(r.field)
+  );
+
+  const fresh = usable.filter(r => r.first_seen_at >= since);
+
+  const closing = usable.filter(r =>
+    r.deadline && r.deadline <= soon && r.status !== "applied"
+  );
+
+  const openApplications = (data || []).filter(r => r.status === "applied").length;
+
+  if (fresh.length === 0 && closing.length === 0) return null;
+
+  return {
+    fresh: fresh.slice(0, 5).map(r => ({
+      company: r.company,
+      title: r.title,
+      location: r.location
+    })),
+    freshCount: fresh.length,
+    closing: closing.slice(0, 3).map(r => ({
+      company: r.company,
+      title: r.title,
+      deadline: r.deadline
+    })),
+    openApplications
   };
 
 }

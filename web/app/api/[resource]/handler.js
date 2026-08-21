@@ -719,9 +719,30 @@ async function jobs(req, res) {
   const { getJobFeed, setJobStatus } = await import("../../../tools/jobs.js");
 
   if (req.method === "GET") {
+
+    // A one-line summary for the dashboard: enough to decide whether to tap,
+    // and nothing more to serialise into the page.
+    if (req.query.headline) {
+
+      const { briefJobFacts } = await import("../../../tools/jobs.js");
+
+      const facts = await briefJobFacts({ hours: 24 }).catch(() => null);
+
+      return res.status(200).json({
+        success: true,
+        headline: facts && {
+          freshCount: facts.freshCount,
+          closingCount: facts.closing.length,
+          lead: facts.fresh[0] ? `${facts.fresh[0].company} — ${facts.fresh[0].title}` : null
+        }
+      });
+
+    }
+
     return res.status(200).json(await getJobFeed({
       onlyInternships: req.query.all !== "1"
     }));
+
   }
 
   if (req.method === "POST") {
