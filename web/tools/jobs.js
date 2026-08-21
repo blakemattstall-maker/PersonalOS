@@ -791,12 +791,28 @@ export async function checkForNewJobs() {
 
   const result = await pollJobBoards();
 
+  // Before the early return, not after it. This sat below and therefore only
+  // ran on a poll that found something new — which is the rare case — so the
+  // `enriched` figure in the log was always null and the opportunistic pass
+  // never happened. The hourly job covered the backlog regardless, which is
+  // exactly why it went unnoticed.
+  const opportunistic = await enrichJobDetails({ limit: 40 })
+    .catch(error => {
+      console.error("ENRICH FAILED:", error.message);
+      return { enriched: 0 };
+    });
+
   if (!result.success || result.fresh?.length === 0 || !result.fresh) {
 
     await logActivity({
       action: "job_check",
       input: null,
-      output: { checked: result.checked || 0, failed: result.failed || 0, new: 0 },
+      output: {
+        checked: result.checked || 0,
+        failed: result.failed || 0,
+        new: 0,
+        enriched: opportunistic.enriched || 0
+      },
       success: result.success !== false,
       source: "cron"
     }).catch(() => {});
@@ -858,14 +874,6 @@ export async function checkForNewJobs() {
 
   }
 
-  // Read the descriptions of anything new enough to still be unclassified.
-  // Best-effort and capped, so a slow company page never eats the poll.
-  const enriched = await enrichJobDetails({ limit: 40 })
-    .catch(error => {
-      console.error("ENRICH FAILED:", error.message);
-      return { enriched: 0 };
-    });
-
   await logActivity({
     action: "job_check",
     input: null,
@@ -873,14 +881,14 @@ export async function checkForNewJobs() {
       checked: result.checked,
       failed: result.failed,
       new: toTell.length,
-      enriched: enriched.enriched || 0,
+      enriched: opportunistic.enriched || 0,
       companies: [...new Set(toTell.map(j => j.company))]
     },
     success: true,
     source: "cron"
   }).catch(() => {});
 
-  return { ...result, notified: toTell.length, enriched: enriched.enriched || 0 };
+  return { ...result, notified: toTell.length, enriched: opportunistic.enriched || 0 };
 
 }
 
