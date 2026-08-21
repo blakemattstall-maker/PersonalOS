@@ -29,18 +29,26 @@ const TABS = [
     )
   },
   {
-    href: "/news",
-    label: "News",
-    // Practice lives under News now — reachable from the standing link at the
-    // bottom of the news feed rather than owning a nav slot. `also` keeps this
-    // tab lit while you're in there, so the bar never shows six unlit tabs on
-    // a page you plainly reached from one of them.
-    also: ["/practice"],
+    // Health owns the body: weigh-ins, food, and training when it exists.
+    // /food redirects here, so old shortcuts and links still land right.
+    href: "/health",
+    label: "Health",
+    also: ["/food"],
     icon: (
       <>
-        <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H16a1 1 0 0 1 1 1v11a2 2 0 0 0 2 2H6a3 3 0 0 1-3-3z" />
-        <path d="M17 9h2.5A1.5 1.5 0 0 1 21 10.5V17a2 2 0 0 1-2 2" />
-        <path d="M7 9h6M7 12.5h6M7 16h3.5" />
+        <path d="M12 20.5s-7-4.4-7-9.4a3.9 3.9 0 0 1 7-2.4 3.9 3.9 0 0 1 7 2.4c0 5-7 9.4-7 9.4z" />
+        <path d="M4.8 12.6h3l1.4-2.3 1.8 4 1.5-2.6h6.7" />
+      </>
+    )
+  },
+  {
+    href: "/money",
+    label: "Money",
+    icon: (
+      <>
+        <path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h12a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 18 18H6a2.5 2.5 0 0 1-2.5-2.5z" />
+        <circle cx="12" cy="12" r="2.4" />
+        <path d="M6.8 12h.01M17.2 12h.01" />
       </>
     )
   },
@@ -57,25 +65,18 @@ const TABS = [
     )
   },
   {
-    href: "/money",
-    label: "Money",
+    href: "/news",
+    label: "News",
+    // Practice lives under News — reachable from the standing link at the
+    // bottom of the news feed rather than owning a nav slot. `also` keeps this
+    // tab lit while you're in there, so the bar never shows six unlit tabs on
+    // a page you plainly reached from one of them.
+    also: ["/practice"],
     icon: (
       <>
-        <path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h12a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 18 18H6a2.5 2.5 0 0 1-2.5-2.5z" />
-        <circle cx="12" cy="12" r="2.4" />
-        <path d="M6.8 12h.01M17.2 12h.01" />
-      </>
-    )
-  },
-  {
-    href: "/food",
-    label: "Food",
-    icon: (
-      <>
-        <path d="M4.5 15.5a7.5 7.5 0 0 1 15 0" />
-        <path d="M3 15.5h18" />
-        <path d="M12 8V6.2" />
-        <path d="M7.5 18.8h9" />
+        <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H16a1 1 0 0 1 1 1v11a2 2 0 0 0 2 2H6a3 3 0 0 1-3-3z" />
+        <path d="M17 9h2.5A1.5 1.5 0 0 1 21 10.5V17a2 2 0 0 1-2 2" />
+        <path d="M7 9h6M7 12.5h6M7 16h3.5" />
       </>
     )
   },

@@ -192,12 +192,22 @@ function LogEntry({ row, planned = false }) {
   return (
     <li className="flex items-start justify-between gap-3 border-t border-[var(--line)] py-2.5 first:border-t-0">
 
+      {/* An eaten row is one food now (tools/mealPlan.js logs per item), so
+          the FOOD leads and the meal it belonged to is the subtitle — the old
+          order read "Lunch — Grill / chicken sandwich" for every line of a
+          three-item lunch. Planned rows still carry a whole meal. */}
       <div className="min-w-0">
         <div className="text-[0.85rem] leading-snug text-ink">
-          <span className="font-medium">{row.meal}</span>
-          {row.station && <span className="text-ink-soft"> — {row.station}</span>}
+          {!planned && names
+            ? <span className="font-medium">{names}</span>
+            : <><span className="font-medium">{row.meal}</span>
+                {row.station && <span className="text-ink-soft"> — {row.station}</span>}</>}
         </div>
-        <div className="mt-0.5 text-[0.78rem] leading-relaxed text-ink-soft">{names}</div>
+        <div className="mt-0.5 text-[0.78rem] leading-relaxed text-ink-soft">
+          {!planned && names
+            ? [row.meal, row.station].filter(Boolean).join(" · ")
+            : names}
+        </div>
         {planned && row.note && (
           <div className="mt-0.5 text-[0.72rem] text-ink-soft">{row.note}</div>
         )}
@@ -208,7 +218,7 @@ function LogEntry({ row, planned = false }) {
           {row.calories == null ? "—" : Math.round(row.calories)}
           <span className="ml-1 text-[0.6rem] text-ink-soft">cal{unknown ? "*" : ""}</span>
         </span>
-        <RemoveButton id={row.id} label={planned ? `Remove the ${row.meal} plan` : `Remove ${row.meal} from the log`} />
+        <RemoveButton id={row.id} label={planned ? `Remove the ${row.meal} plan` : `Remove ${names || row.meal} from the log`} />
       </div>
 
     </li>

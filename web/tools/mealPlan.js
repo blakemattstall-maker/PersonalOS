@@ -238,33 +238,59 @@ export async function logMealItems({ items, meal, date = null, status = "eaten",
     ? date
     : DateTime.now().setZone(tz).toISODate();
 
-  const row = {
-    date: day,
-    meal: meal || "Snack",
-    status,
-    station,
-    items,
-    calories: sumField(items, "calories"),
-    protein_g: sumField(items, "protein_g"),
-    carbs_g: sumField(items, "carbs_g"),
-    fat_g: sumField(items, "fat_g"),
-    source,
-    event_id,
-    note
-  };
+  // One row per FOOD, not per meal.
+  //
+  // Logging "eggs, bacon and a bagel" as a single row made the whole meal one
+  // undoable blob: the matcher gets an item wrong now and then, and fixing one
+  // line meant deleting all three and re-saying the rest. A row per item is
+  // individually editable and removable, and the day's totals are a sum either
+  // way. Planned rows stay whole — a plan owns one calendar event, and
+  // splitting it would give every item a claim on the same block.
+  const perItem = status !== "planned";
+
+  const rows = perItem
+    ? items.map(item => ({
+        date: day,
+        meal: meal || "Snack",
+        status,
+        station: item.station || station,
+        items: [item],
+        calories: sumField([item], "calories"),
+        protein_g: sumField([item], "protein_g"),
+        carbs_g: sumField([item], "carbs_g"),
+        fat_g: sumField([item], "fat_g"),
+        source,
+        event_id,
+        note
+      }))
+    : [{
+        date: day,
+        meal: meal || "Snack",
+        status,
+        station,
+        items,
+        calories: sumField(items, "calories"),
+        protein_g: sumField(items, "protein_g"),
+        carbs_g: sumField(items, "carbs_g"),
+        fat_g: sumField(items, "fat_g"),
+        source,
+        event_id,
+        note
+      }];
 
   const { data, error } = await supabase
     .from("dining_log")
-    .insert([row])
-    .select()
-    .single();
+    .insert(rows)
+    .select();
 
   if (error) {
     if (missingTable(error)) return { success: false, message: MISSING_LOG_HINT };
     throw new Error(error.message);
   }
 
-  return { success: true, row: data };
+  // `row` stays the first inserted row so existing callers (which read
+  // row.event_id and row.id) behave exactly as before.
+  return { success: true, row: (data || [])[0], rows: data || [] };
 
 }
 
@@ -603,10 +629,17 @@ Quantities: "two slices" is 2. Ignore words that aren't food.`
     ? ` (${unmatched.map(u => u.name).join(", ")} wasn't on the menu, so its nutrition is unrecorded)`
     : "";
 
+  // Each food is now its own row, so the meal's totals are the sum of what
+  // was just written, not one row's figures.
+  const justLogged = {
+    calories: sumField(logged.rows || [logged.row], "calories"),
+    protein_g: sumField(logged.rows || [logged.row], "protein_g")
+  };
+
   return {
     success: true,
-    message: `Logged ${targetMeal.toLowerCase()}: ${names.join(", ")} — ${fmtTotals(logged.row)}${caveat}. Today so far: ${fmtTotals(log.totals)}.`,
-    data: { row: logged.row, totals: log.totals }
+    message: `Logged ${targetMeal.toLowerCase()}: ${names.join(", ")} — ${fmtTotals(justLogged)}${caveat}. Today so far: ${fmtTotals(log.totals)}.`,
+    data: { rows: logged.rows, totals: log.totals }
   };
 
 }

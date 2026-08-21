@@ -283,7 +283,7 @@ export async function syncDiningAction() {
 
   const result = await backendPost("/api/dining", { action: "sync" });
 
-  revalidatePath("/food");
+  revalidatePath("/health");
 
   return result;
 
@@ -304,7 +304,7 @@ export async function planMealsAction(date, meals = null) {
 
   const result = await backendPost("/api/dining", { action: "plan", date, meals });
 
-  revalidatePath("/food");
+  revalidatePath("/health");
 
   return result;
 
@@ -315,7 +315,7 @@ export async function trackMealAction({ items, meal, date, station }) {
 
   const result = await backendPost("/api/dining", { action: "track", items, meal, date, station });
 
-  revalidatePath("/food");
+  revalidatePath("/health");
 
   return result;
 
@@ -326,7 +326,21 @@ export async function untrackMealAction(id) {
 
   const result = await backendPost("/api/dining", { action: "untrack", id });
 
-  revalidatePath("/food");
+  revalidatePath("/health");
+
+  return result;
+
+}
+
+
+// Weighing in from the app rather than only through capture. Same tool the
+// capture router calls, so both doors write one shape.
+export async function logWeightAction(weight, unit = "lbs") {
+
+  const result = await backendPost("/api/health", { action: "logWeight", weight, unit });
+
+  revalidatePath("/health");
+  revalidatePath("/");
 
   return result;
 

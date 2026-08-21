@@ -184,12 +184,74 @@ export function describeCapture(results = [], heard = null) {
 }
 
 
+// A push body is truncated by every platform and gone once swiped, so any
+// answer worth reading twice also needs somewhere to live.
+//
+// The no-tool-call branch of the capture handler already files its reply as a
+// prompt; answers that came from a TOOL did not, which is precisely backwards
+// — those are the long ones. A cut analysis, a spending breakdown or an inbox
+// review would arrive as a notification cut off mid-sentence with no way back
+// to the rest of it. Anything substantial now lands in the dashboard's "needs
+// you" queue with its full text and its own read-aloud.
+const ANSWER_TOOLS = new Set([
+  "general_question", "query_health", "query_finances", "query_tasks",
+  "query_schedule", "query_notes", "query_projects", "query_people",
+  "query_connections", "query_dining", "research_query", "review_inbox"
+]);
+
+// Short confirmations ("Created task X") are complete in the notification —
+// filing those would turn the queue into a receipt printer.
+const WORTH_KEEPING = 240;
+
+async function fileAnswer(results, heard) {
+
+  const answers = results.filter(r =>
+    ANSWER_TOOLS.has(r.tool) &&
+    !r.error &&
+    r.result?.success !== false &&
+    String(r.result?.message || "").length > WORTH_KEEPING
+  );
+
+  if (answers.length === 0) return;
+
+  const body = answers.map(r => r.result.message.trim()).join("\n\n");
+
+  const title = heard
+    ? (heard.length > 90 ? `${heard.slice(0, 89)}…` : heard)
+    : "You asked";
+
+  try {
+
+    const { default: supabase } = await import("./supabase.js");
+
+    const { error } = await supabase.from("prompts").insert([{
+      kind: "general_question",
+      title,
+      body,
+      status: "pending"
+    }]);
+
+    if (error) console.error("CAPTURE ANSWER FILE FAILED:", error.message);
+
+  } catch (error) {
+
+    console.error("CAPTURE ANSWER FILE THREW:", error.message);
+
+  }
+
+}
+
+
 // Never throws, and never blocks the response on a delivery problem. The
 // capture itself already succeeded by the time this runs; a push failure must
 // not turn a completed action into a 500.
 export async function notifyCapture(results, heard = null) {
 
   try {
+
+    // Filed regardless of the interruption level: turning notifications down
+    // means "stop buzzing my phone", never "throw the answer away".
+    await fileAnswer(results, heard);
 
     const notification = describeCapture(results, heard);
 

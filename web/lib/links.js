@@ -60,7 +60,21 @@ export const ENTITIES = {
   // makes a merchant node worth looking at: "Costco, 21 charges" is a fact,
   // "Costco" alone is a string that was already on the money page.
   merchant:     { table: "merchants",        label: "name",    time: "last_seen_at", extra: "txn_count" },
-  category:     { table: "spend_categories", label: "name",    time: "updated_at",   extra: "txn_count" }
+  category:     { table: "spend_categories", label: "name",    time: "updated_at",   extra: "txn_count" },
+
+  // Everything below is a DATAPOINT rather than a thing with a name: a
+  // weigh-in, a logged food, a morning brief, something the app noticed or
+  // asked. None of them are produced by linkText (nothing writes an edge to a
+  // number), so they appear on the graph as isolated dots via
+  // isolatedNodes() — which is the point. The graph is meant to be the
+  // living record of everything that passes through the app, and a record
+  // that shows only what happens to be connected is a record with holes.
+  weigh_in:     { table: "bodyweight_logs",   label: "weight",  time: "logged_at" },
+  meal:         { table: "dining_log",        label: "meal",    time: "created_at", extra: "calories" },
+  brief:        { table: "briefs",            label: "content", time: "created_at" },
+  insight:      { table: "insights",          label: "title",   time: "created_at" },
+  prompt:       { table: "prompts",           label: "title",   time: "created_at" },
+  practice:     { table: "practice_sessions", label: "topic",   time: "created_at" }
 
 };
 
@@ -467,6 +481,51 @@ export async function pruneDangling() {
 // `val` is the node's distinct-neighbour count, and it is what the page sizes
 // dots by. Degree is the honest computed proxy for importance: it is derived
 // from facts already in the database, needs no model, and cannot flatter.
+// Recent rows of every entity type, whether or not anything links to them.
+//
+// entity_links only ever holds edges between things a sentence MENTIONED, so
+// a graph built from edges alone can only show the part of a life that got
+// talked about. Weigh-ins, meals, briefs, insights and prompts are never
+// mentioned by anything — they are the raw record — so they had no way onto
+// the page at all. Capped per type because this is a canvas, not a table: the
+// most recent slice of each stream is a picture, 2,378 location points is a
+// smear.
+async function isolatedNodes({ perType = 40 } = {}) {
+
+  const out = [];
+
+  await Promise.all(Object.entries(ENTITIES).map(async ([type, spec]) => {
+
+    const columns = ["id", spec.label, spec.time, spec.extra].filter(Boolean).join(", ");
+
+    const { data, error } = await supabase
+      .from(spec.table)
+      .select(columns)
+      .order(spec.time, { ascending: false })
+      .limit(perType);
+
+    if (error) {
+      if (!missing(error)) console.error(`GRAPH ISOLATED ${type} FAILED:`, error.message);
+      return;
+    }
+
+    for (const row of data || []) {
+      out.push({
+        key: `${type}:${row.id}`,
+        type,
+        label: row[spec.label],
+        when: row[spec.time],
+        ...(spec.extra ? { extra: row[spec.extra] } : {})
+      });
+    }
+
+  }));
+
+  return out;
+
+}
+
+
 export async function fullGraph({ limit = 5000 } = {}) {
 
   const { rows: data, error, capped } = await selectAll(
@@ -479,16 +538,18 @@ export async function fullGraph({ limit = 5000 } = {}) {
     console.warn(`fullGraph hit its ${limit}-edge ceiling — the /graph page is showing a partial graph.`);
   }
 
-  if (error || !data || data.length === 0) return { nodes: [], links: [] };
+  // A graph with no edges yet is still a graph of everything that has
+  // happened — it just has no lines in it.
+  const edges = (error ? [] : data) || [];
 
   const refs = [];
 
-  for (const edge of data) {
+  for (const edge of edges) {
     refs.push({ type: edge.from_type, id: edge.from_id });
     refs.push({ type: edge.to_type, id: edge.to_id });
   }
 
-  const rows = await hydrate(refs);
+  const [rows, isolated] = await Promise.all([hydrate(refs), isolatedNodes()]);
 
   // Labels are trimmed HERE, not in the client. An intention's label is a
   // whole sentence, and 180 of those in a payload that gets serialised into
@@ -502,7 +563,7 @@ export async function fullGraph({ limit = 5000 } = {}) {
 
   const links = [];
 
-  for (const edge of data) {
+  for (const edge of edges) {
 
     const from = `${edge.from_type}:${edge.from_id}`;
     const to = `${edge.to_type}:${edge.to_id}`;
@@ -537,6 +598,29 @@ export async function fullGraph({ limit = 5000 } = {}) {
     };
 
   });
+
+  // Then everything that has no edges at all — the raw record. val 0 marks
+  // them as isolated so the canvas can draw them smaller and dimmer rather
+  // than pretending a weigh-in is a hub.
+  const seen = new Set(nodes.map(n => n.id));
+
+  for (const node of isolated) {
+
+    if (seen.has(node.key)) continue;
+    if (!node.label && node.label !== 0) continue;
+
+    seen.add(node.key);
+
+    nodes.push({
+      id: node.key,
+      type: node.type,
+      label: short(node.label),
+      when: node.when,
+      ...(node.extra !== undefined && node.extra !== null && { extra: node.extra }),
+      val: 0
+    });
+
+  }
 
   return { nodes, links };
 
@@ -588,7 +672,7 @@ export async function graphAnchors({ limit = 24, minDegree = 2 } = {}) {
     neighbourSets.get(key).add(other);
   };
 
-  for (const edge of data) {
+  for (const edge of edges) {
 
     const from = `${edge.from_type}:${edge.from_id}`;
     const to = `${edge.to_type}:${edge.to_id}`;

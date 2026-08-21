@@ -121,6 +121,32 @@ export function detail(node) {
     return `${node.extra} charge${Number(node.extra) === 1 ? "" : "s"}`;
   }
 
+  // A logged food without its calories is half a fact.
+  if (node.type === "meal" && node.extra != null) {
+    return `${Math.round(Number(node.extra))} cal`;
+  }
+
   return null;
+
+}
+
+
+// What a datapoint node should SAY.
+//
+// The raw-record types carry columns, not names: a weigh-in's label is the
+// bare number 216.2, a brief's is its whole first paragraph, a meal's is the
+// word "Lunch". Left alone the graph would show a field of dots reading "216.2"
+// and "Lunch" with no clue what they were — so each gets a handle here.
+export function nodeLabel(node) {
+
+  if (!node) return "";
+
+  if (node.type === "weigh_in") return `${node.label} lbs`;
+
+  if (node.type === "meal") return `${node.label}${node.extra != null ? ` · ${Math.round(Number(node.extra))} cal` : ""}`;
+
+  if (node.type === "brief") return "Morning brief";
+
+  return node.label;
 
 }

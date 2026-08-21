@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { forceCollide, forceX, forceY } from "d3-force";
-import { typeName, detail, nodeToRoot, moneyTotal } from "./phrasing.js";
+import { typeName, detail, nodeToRoot, moneyTotal, nodeLabel } from "./phrasing.js";
 import { reducedMotion } from "../motion.js";
 
 
@@ -46,7 +46,14 @@ const FAMILY = {
   project: "work", task: "work", event: "work", deep_thought: "work",
   transaction: "money", merchant: "money", category: "money",
   memory: "notes", note: "notes", intention: "notes",
-  nudge: "notes", news_item: "notes", place: "notes"
+  nudge: "notes", news_item: "notes", place: "notes",
+  // The raw record: weigh-ins, meals, briefs, insights, prompts, practice.
+  // These arrive with no edges (nothing writes a link to a number), so they
+  // ride the notes family's neutral ink rather than claiming an identity
+  // colour they'd only dilute — a field of quiet dots the connected world
+  // sits inside.
+  weigh_in: "notes", meal: "notes", brief: "notes",
+  insight: "notes", prompt: "notes", practice: "notes"
 };
 
 const FAMILIES = [
@@ -99,7 +106,11 @@ function readPalette() {
 // the square root. The floor keeps a leaf visible; the cap stops Groceries
 // (43 neighbours) from becoming a moon.
 function radiusOf(node) {
-  return Math.min(3 + 2.1 * Math.sqrt(node.val || 1), 18);
+  // An unconnected datapoint (val 0) is a fact that happened, not a hub —
+  // drawn as a small fixed dot so the raw record reads as texture and never
+  // competes with the connected structure.
+  if (!node.val) return 2.2;
+  return Math.min(3 + 2.1 * Math.sqrt(node.val), 18);
 }
 
 
@@ -410,7 +421,7 @@ export default function GraphCanvas({ nodes, links, focus = null, failed = false
 
           const text = isCharge && node.extra != null
             ? `$${Math.abs(Number(node.extra)).toFixed(0)}`
-            : node.label;
+            : nodeLabel(node);
 
           // Labels arrive with zoom, biggest first — scale × √degree crosses
           // the threshold earlier for a hub than a leaf, so names appear a
@@ -1020,7 +1031,7 @@ export default function GraphCanvas({ nodes, links, focus = null, failed = false
                   {money.count > 0 &&
                     ` · $${money.total.toFixed(2)} in ${money.count} charge${money.count === 1 ? "" : "s"}`}
                 </p>
-                <h2 className="mt-0.5 truncate text-[0.9rem] leading-snug text-ink">{selected.label}</h2>
+                <h2 className="mt-0.5 truncate text-[0.9rem] leading-snug text-ink">{nodeLabel(selected)}</h2>
               </div>
               <button
                 onClick={() => select(null)}
@@ -1039,7 +1050,7 @@ export default function GraphCanvas({ nodes, links, focus = null, failed = false
                       onClick={() => walkTo(node)}
                       className="flex w-full items-baseline justify-between gap-2 rounded-item px-2 py-1 text-left transition-colors hover:bg-[var(--sunken)]"
                     >
-                      <span className="min-w-0 truncate text-[0.82rem] text-ink">{node.label}</span>
+                      <span className="min-w-0 truncate text-[0.82rem] text-ink">{nodeLabel(node)}</span>
                       <span className="pos-data shrink-0 text-[0.62rem] text-ink-soft">
                         {nodeToRoot({ relation, direction })}
                         {detail(node) && ` · ${detail(node)}`}

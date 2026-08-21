@@ -709,6 +709,53 @@ async function people(req, res) {
 }
 
 
+// The body: what the scale says, and the way to tell it something new.
+//
+// One resource rather than a bodyweight-only one, because this is where
+// training and any other measured health data will land — the page it feeds is
+// built in sections for exactly that reason.
+async function health(req, res) {
+
+  if (req.method === "GET") {
+
+    const { computeBodyVitals } = await import("../../../lib/vitals.js");
+
+    const vitals = await computeBodyVitals();
+
+    return res.status(200).json({ success: true, vitals });
+
+  }
+
+  if (req.method === "POST") {
+
+    const { action, weight, unit } = req.body || {};
+
+    if (action === "logWeight") {
+
+      const value = Number(weight);
+
+      // Refuse the fat-finger rather than letting it into the trend: every
+      // reasoning surface now states the latest weigh-in as fact, so one 2160
+      // would reshape the pace, the brief and every nudge until noticed.
+      if (!Number.isFinite(value) || value < 50 || value > 1000) {
+        return res.status(400).json({ success: false, error: "That doesn't look like a weight." });
+      }
+
+      const { logBodyweight } = await import("../../../tools/bodyweight.js");
+
+      return res.status(200).json(await logBodyweight({ weight: value, unit: unit || "lbs" }));
+
+    }
+
+    return res.status(400).json({ error: `Unknown action: ${action}` });
+
+  }
+
+  return res.status(405).json({ error: "Method not allowed" });
+
+}
+
+
 async function dining(req, res) {
 
   if (req.method === "GET") {
@@ -929,7 +976,7 @@ async function graph(req, res) {
 }
 
 
-const RESOURCES = { data, history, nudges, desk, projects, deepThoughts, brief, settings, diag, practice, people, news, finance, graph, dining };
+const RESOURCES = { data, history, nudges, desk, projects, deepThoughts, brief, settings, diag, practice, people, news, finance, graph, dining, health };
 
 
 export default async function handler(req, res) {

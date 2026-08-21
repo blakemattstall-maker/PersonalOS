@@ -144,6 +144,15 @@ async function alertAuthExpired() {
       source: "system"
     });
 
+    // Filed as well as pushed. A swiped notification must not be the only
+    // record that every Google feature is down.
+    await supabase.from("prompts").insert([{
+      kind: "digest",
+      title: "Google connection expired",
+      body: "Calendar, tasks, Gmail and Docs are down until you reconnect. Open Settings and tap Reconnect Google — about twenty seconds.",
+      status: "pending"
+    }]);
+
     const { sendPush } = await import("./push.js");
 
     await sendPush({

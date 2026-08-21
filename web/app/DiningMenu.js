@@ -244,7 +244,13 @@ function MenuItem({ item, onTrack }) {
 }
 
 
-function StationCard({ station, onTrack }) {
+function StationCard({ station, onTrack, forceOpen = false, defaultOpen = false }) {
+
+  const [open, setOpen] = useState(defaultOpen);
+
+  // A search result must be visible without a second tap, so a filtered
+  // station opens regardless of its own state.
+  const isOpen = forceOpen || open;
 
   // Items arrive course-grouped from the sync (Entrees, Sides, Soup…). The
   // eyebrow only appears when a station actually has more than one course —
@@ -265,17 +271,34 @@ function StationCard({ station, onTrack }) {
   return (
     <Card className="mb-3">
 
-      <div className="mb-1 flex items-baseline justify-between gap-3">
+      {/* The whole header is the toggle. Watterson publishes a dozen-plus
+          stations a meal, so an all-open menu meant scrolling past hundreds of
+          items to reach the one being logged. */}
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={isOpen}
+        disabled={forceOpen}
+        className="mb-1 flex w-full items-baseline justify-between gap-3 text-left disabled:cursor-default"
+      >
         <h2 className="pos-display text-[1.02rem] text-ink">
           {station.station}
           {station.allDay && (
             <span className="ml-2 text-[0.68rem] font-normal text-ink-soft">All day</span>
           )}
         </h2>
-        <span className="pos-data text-[0.78rem] text-ink-soft">{station.items.length}</span>
-      </div>
+        <span className="flex shrink-0 items-baseline gap-2">
+          <span className="pos-data text-[0.78rem] text-ink-soft">{station.items.length}</span>
+          <span
+            aria-hidden="true"
+            className={`text-[0.7rem] text-ink-soft transition-transform ${isOpen ? "rotate-90" : ""}`}
+          >
+            ›
+          </span>
+        </span>
+      </button>
 
-      {courses.map(group => (
+      {isOpen && courses.map(group => (
         <div key={group.course || "all"}>
           {showCourses && group.course && (
             <div className="mt-2 text-[0.7rem] font-medium text-ink-soft">{group.course}</div>
@@ -304,6 +327,11 @@ export default function DiningMenu({ meals, suggestedMeal, onTrack = null }) {
     meals.some(m => m.meal === suggestedMeal) ? suggestedMeal : meals[0]?.meal
   );
 
+  // Plain substring matching, deliberately: finding "chicken" on a menu is a
+  // string problem, and a model in this path would add latency, cost and a
+  // chance of being wrong to something Array.filter already does perfectly.
+  const [query, setQuery] = useState("");
+
   const current = meals.find(m => m.meal === active) || meals[0];
 
   if (!current) {
@@ -315,15 +343,51 @@ export default function DiningMenu({ meals, suggestedMeal, onTrack = null }) {
     );
   }
 
+  const q = query.trim().toLowerCase();
+
+  const stations = q
+    ? current.stations
+        .map(station => ({
+          ...station,
+          items: station.items.filter(item =>
+            `${item.name} ${item.course || ""} ${station.station}`.toLowerCase().includes(q)
+          )
+        }))
+        .filter(station => station.items.length > 0)
+    : current.stations;
+
+  const matchCount = stations.reduce((n, s) => n + s.items.length, 0);
+
   return (
     <div className="flex flex-col">
 
       <MealSwitcher meals={meals} active={active} onPick={setActive} />
 
-      {current.stations.map(station => (
+      <div className="mb-3">
+        <div className="relative">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find a food — chicken, rice, eggs…"
+            aria-label="Search this menu"
+            className="w-full rounded-item border border-[var(--line)] bg-[var(--sunken)] px-3.5 py-2.5 text-sm text-ink outline-none placeholder:text-ink-soft focus:border-ink"
+          />
+        </div>
+        {q && (
+          <p className="mt-1.5 text-[0.72rem] text-ink-soft">
+            {matchCount === 0
+              ? "Nothing on this meal's menu matches."
+              : `${matchCount} item${matchCount === 1 ? "" : "s"} across ${stations.length} station${stations.length === 1 ? "" : "s"}`}
+          </p>
+        )}
+      </div>
+
+      {stations.map(station => (
         <StationCard
           key={station.station}
           station={station}
+          forceOpen={Boolean(q)}
           onTrack={onTrack ? (item, stationName) => onTrack(item, current.meal, stationName) : null}
         />
       ))}
