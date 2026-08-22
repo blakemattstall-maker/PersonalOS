@@ -8,7 +8,8 @@ import PromptCard from "./PromptCard.js";
 import InsightCard from "./InsightCard.js";
 import { backendGet } from "./backend.js";
 import Reveal from "./Reveal.js";
-import { Page, Card, SectionTitle, ItemCard, Meta, Empty, btn } from "./ui.js";
+import { Page, Card, SectionTitle, ItemCard, Body, Meta, Empty, btn } from "./ui.js";
+import { speakable } from "../lib/linkify.js";
 
 
 // Every page here reads live state, so none of them may be prerendered.
@@ -196,8 +197,8 @@ function NudgeCard({ item }) {
     <ItemCard kind="nudge" meta={formatDate(item.created_at)}>
 
       <div className="mt-3.5 flex items-start justify-between gap-3">
-        <p className="leading-relaxed text-ink">{item.message}</p>
-        <ReadAloud text={item.message} title="Nudge" />
+        <Body text={item.message} />
+        <ReadAloud text={speakable(item.message)} title="Nudge" />
       </div>
 
       {item.intentions?.content && (
@@ -310,7 +311,7 @@ export default async function Home() {
         <SectionTitle
           action={
             brief.hasBrief
-              ? <ReadAloud text={brief.content} title="Today's brief" label autoplay />
+              ? <ReadAloud text={speakable(brief.content)} title="Today's brief" label autoplay />
               : null
           }
         >
@@ -320,7 +321,7 @@ export default async function Home() {
         {brief.created_at && <Meta className="-mt-1 block">{formatDate(brief.created_at)}</Meta>}
 
         {brief.hasBrief ? (
-          <div className="mt-3 whitespace-pre-wrap leading-relaxed text-ink">
+          <div className="mt-3 whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed text-ink">
             {brief.content}
           </div>
         ) : (

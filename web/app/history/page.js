@@ -1,7 +1,7 @@
 import { formatDate, DeepThoughtBody } from "../shared.js";
 import { backendGet } from "../backend.js";
 import Reveal from "../Reveal.js";
-import { Page, PageHeader, ItemCard, Empty } from "../ui.js";
+import { Page, PageHeader, ItemCard, Body, Empty } from "../ui.js";
 
 
 // Every page here reads live state, so none of them may be prerendered.
@@ -81,7 +81,7 @@ export default async function History() {
 
               {item.kind === "nudge" && (
                 <>
-                  <p className="mt-3 leading-relaxed text-ink">{item.message}</p>
+                  <Body text={item.message} className="mt-3" />
                   {item.intentions?.content && (
                     <p className="mt-2 text-[0.82rem] text-ink-soft">
                       Because you said: {item.intentions.content}
@@ -91,7 +91,7 @@ export default async function History() {
               )}
 
               {item.kind === "brief" && (
-                <div className="mt-3 whitespace-pre-wrap leading-relaxed text-ink">
+                <div className="mt-3 whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed text-ink">
                   {item.content}
                 </div>
               )}

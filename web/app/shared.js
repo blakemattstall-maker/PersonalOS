@@ -39,7 +39,7 @@ export function DeepThoughtBody({ content }) {
   // Older entries (before structured output) were saved as plain text.
   if (!parsed) {
     return (
-      <div className="mt-3 whitespace-pre-wrap leading-relaxed text-ink">
+      <div className="mt-3 whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed text-ink">
         {content}
       </div>
     );

@@ -103,6 +103,24 @@ const PROMPTS = {
       body: "You set a two-week cadence for him back in June. Last contact was a text on the 15th.",
       created_at: hoursAgo(20),
       payload: {}
+    },
+
+    // The internship digest, with its real URLs — an 86-character Oracle Cloud
+    // link among them. This is the shape that broke the layout: newlines a <p>
+    // collapsed, and one unbreakable word wide enough to stretch the whole page
+    // sideways. It stays in the fixtures precisely so the regression is one
+    // page load away rather than something only production can show.
+    {
+      id: "fx-prompt-3",
+      kind: "digest",
+      title: "2 new internships posted",
+      body:
+        "Vertiv — Product Management Intern - Product Marketing (Delaware, OH)\n" +
+        "https://egup.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/20279047\n\n" +
+        "TikTok — AI Product Manager Intern - Product Social (San Jose, CA)\n" +
+        "https://lifeattiktok.com/search/7675616554318596357",
+      created_at: hoursAgo(1),
+      payload: {}
     }
   ],
 

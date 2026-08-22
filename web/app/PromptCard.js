@@ -4,7 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { answerPromptAction } from "./actions.js";
 import ReadAloud from "./ReadAloud.js";
-import { ItemCard, btn, field } from "./ui.js";
+import { ItemCard, Body, btn, field } from "./ui.js";
+import { speakable } from "../lib/linkify.js";
 
 
 // Things the app raised on its own: a place it wants named, a daily
@@ -53,8 +54,8 @@ export default function PromptCard({ item }) {
     <ItemCard kind="prompt" title={item.title || HEADINGS[promptKind]}>
 
       <div className="mt-2 flex items-start justify-between gap-3">
-        <p className="leading-relaxed text-ink">{item.body}</p>
-        <ReadAloud text={item.body} title={item.title || HEADINGS[promptKind]} />
+        <Body text={item.body} />
+        <ReadAloud text={speakable(item.body)} title={item.title || HEADINGS[promptKind]} />
       </div>
 
       {promptKind === "stale_review" ? (

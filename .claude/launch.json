@@ -39,12 +39,10 @@
         "run",
         "dev",
         "--prefix",
-        "web",
-        "--",
-        "--port",
-        "3011"
+        "web"
       ],
-      "port": 3011
+      "port": 3011,
+      "autoPort": true
     },
     {
       "name": "vathos-preview",

@@ -1,3 +1,5 @@
+import { splitLinks } from "../lib/linkify.js";
+
 // Shared shape vocabulary.
 //
 // Before this existed, `rounded-2xl border border-border bg-surface p-6` was
@@ -234,6 +236,53 @@ export function ItemCard({ kind, title, meta, waiting = true, children }) {
 
     </article>
   );
+}
+
+
+/* ── Body text ──────────────────────────────────────────────────────────── */
+
+// One item's body, rendered as it was written.
+//
+// Three things went wrong when a body was dropped into a bare <p>, and the
+// internship digest hit all three. It is written with newlines between
+// entries, which a <p> collapses into one run-on paragraph. It contains raw
+// URLs, and an 86-character link is a single unbreakable word — so the card
+// grew to fit it and dragged the page's width along with it. And those links
+// were text, not links, on a card whose whole purpose is to be tapped through.
+//
+// The flex row is what let a stray long word do that at all: a flex child's
+// default min-width is auto, meaning "no narrower than my longest word", so no
+// amount of wrapping helps until min-w-0 lets it shrink. overflow-wrap:anywhere
+// is the belt to that braces — it also lets the min-content width fall below a
+// long token, so nothing here can push the layout wide again.
+//
+// Which pieces are prose and which are links is decided in lib/linkify.js.
+export function Body({ text, className = "" }) {
+
+  const parts = splitLinks(text);
+
+  if (parts.length === 0) return null;
+
+  return (
+    <p className={`min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed text-ink ${className}`}>
+      {parts.map((part, i) =>
+        typeof part === "string" ? part : (
+          <a
+            key={i}
+            href={part.url}
+            target="_blank"
+            rel="noreferrer"
+            title={part.url}
+            className="font-medium text-ink underline decoration-[var(--line)] decoration-1 underline-offset-[3px] transition-colors hover:decoration-[var(--ink)]"
+          >
+            {part.label}
+            <span aria-hidden="true"> ↗</span>
+          </a>
+        )
+      )}
+    </p>
+  );
+
 }
 
 

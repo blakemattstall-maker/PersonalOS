@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { resolveInsightAction } from "./actions.js";
 import ReadAloud from "./ReadAloud.js";
-import { ItemCard, btn } from "./ui.js";
+import { ItemCard, Body, btn } from "./ui.js";
+import { speakable } from "../lib/linkify.js";
 
 
 // Something the graph noticed by putting two domains side by side.
@@ -62,8 +63,8 @@ export default function InsightCard({ item }) {
     <ItemCard kind="insight" title={item.title}>
 
       <div className="mt-2 flex items-start justify-between gap-3">
-        <p className="leading-relaxed text-ink">{item.body}</p>
-        <ReadAloud text={item.body} title={item.title} />
+        <Body text={item.body} />
+        <ReadAloud text={speakable(item.body)} title={item.title} />
       </div>
 
       {failed && (
