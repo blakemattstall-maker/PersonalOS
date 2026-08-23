@@ -319,3 +319,102 @@ test("a scheduler that stops firing is visible, not silent", () => {
   assert.match(cron, /PUT_YOUR_CRON_SECRET_HERE/);
 
 });
+
+
+// ---------------------------------------------------------------------------
+// The weekly digest, which was neither weekly nor a digest
+// ---------------------------------------------------------------------------
+
+// It rides the hourly enrichJobs slot rather than owning a cron, and the only
+// thing standing between that and a notification every hour was `weekday !== 7`
+// — a condition that is true for twenty-four consecutive hours. It sent
+// SEVENTEEN copies of the same digest in one Sunday: a buzz on the hour, and
+// seventeen identical cards stacked behind them on the dashboard.
+//
+// Everything else in this file already claims before it sends. This is the one
+// that had nothing to claim.
+
+
+function digestBody() {
+  const jobs = read("web/tools/jobs.js");
+  const start = jobs.indexOf("export async function weeklyJobDigest");
+  assert.ok(start !== -1, "weeklyJobDigest is gone");
+  const after = jobs.slice(start + 40);
+  const next = after.search(/\nexport (async )?function /);
+  return next === -1 ? after : after.slice(0, next);
+}
+
+
+test("a once-a-week alert on an hourly clock claims the week first", () => {
+
+  const digest = digestBody();
+
+  // Being Sunday is not enough — it has to not have gone out already.
+  assert.match(
+    digest,
+    /\.eq\("action", "jobs_weekly_digest"\)/,
+    "the digest must look up whether it has already been sent"
+  );
+
+  assert.match(
+    digest,
+    /days < 6/,
+    "and refuse to send again inside the same week"
+  );
+
+});
+
+
+test("the claim is written before anything is sent, and a failed claim sends nothing", () => {
+
+  const digest = digestBody();
+
+  const claim = digest.indexOf('action: "jobs_weekly_digest"');
+  const card = digest.indexOf('from("prompts").insert');
+  const push = digest.indexOf("sendPush({");
+
+  assert.ok(claim > 0 && card > 0 && push > 0, "could not find all three steps");
+
+  assert.ok(claim < card, "the week must be claimed before the dashboard card is written");
+  assert.ok(claim < push, "the week must be claimed before the push goes out");
+
+  // A swallowed claim is worse than no claim: the digest goes out and leaves
+  // nothing behind to say so, and the next hourly run sends it again — which
+  // is precisely the bug.
+  assert.ok(
+    !/action: "jobs_weekly_digest"[\s\S]{0,400}\}\)\.catch\(\(\) => \{\}\)/.test(digest),
+    "the claim must not be written with a swallowing catch"
+  );
+
+  assert.match(digest, /could not claim the week's digest/,
+    "and a claim that fails has to abort the send");
+
+});
+
+
+test("the digest lands at a readable hour rather than the first slot after midnight", () => {
+
+  const jobs = read("web/tools/jobs.js");
+
+  assert.match(jobs, /const DIGEST_HOUR = \d+/);
+
+  const hour = Number(jobs.match(/const DIGEST_HOUR = (\d+)/)[1]);
+
+  assert.ok(hour >= 7 && hour <= 12, `a weekly digest at ${hour}:00 is not a morning digest`);
+
+  // A floor, not an equality: a missed 9am run must still send at 10, rather
+  // than skipping the week because one cron tick was late.
+  assert.match(digestBody(), /now\.hour < DIGEST_HOUR/);
+
+});
+
+
+test("force still bypasses every guard, so the digest can be tested on any day", () => {
+
+  const digest = digestBody();
+
+  for (const guard of [/!force && now\.weekday/, /!force && now\.hour/, /!force && sent\?\.\[0\]/]) {
+    assert.match(digest, guard, "every guard has to be escapable with force");
+  }
+
+});

@@ -1466,13 +1466,49 @@ export async function getPipeline() {
 // Everything in it is counted in code. The point of a digest is to be trusted
 // at a glance, and a model narrating numbers it derived itself is how a digest
 // starts being wrong quietly.
+// Sunday morning, local. Late enough to be read, early enough to act on.
+const DIGEST_HOUR = 9;
+
+
 export async function weeklyJobDigest({ force = false, tz = "America/Chicago" } = {}) {
 
   const { DateTime } = await import("luxon");
 
   const now = DateTime.now().setZone(tz);
 
+  // ── Sunday is not a schedule ────────────────────────────────────────────
+  //
+  // This rides the hourly enrichJobs slot rather than owning a cron, and the
+  // only thing standing between that and 24 identical pushes was a check that
+  // it is Sunday. Which it is, all day. It sent seventeen copies of the same
+  // digest in one Sunday — a buzz on the hour, every hour, and seventeen
+  // identical cards stacked up on the dashboard behind them.
+  //
+  // Every other alert in this file already claims before it sends: a posting
+  // gets notified_at, a deadline reminder gets last_nudged_at, the Google auth
+  // alarm dedupes on its own activity row. This one had nothing to claim, so
+  // it claims the week itself, below, before a single thing is sent.
   if (!force && now.weekday !== 7) return { success: true, skipped: "not Sunday" };
+
+  // And at a civilised hour. Without this the first slot after midnight wins,
+  // which is a digest nobody reads and a notification at 12:07am. It is a
+  // floor rather than an exact hour on purpose — if the 9am run is missed, the
+  // 10am one sends it, instead of skipping the week entirely.
+  if (!force && now.hour < DIGEST_HOUR) return { success: true, skipped: "too early on Sunday" };
+
+  const { data: sent } = await supabase
+    .from("activity_logs")
+    .select("created_at")
+    .eq("action", "jobs_weekly_digest")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  // Six days, not seven: a digest sent at 9am one Sunday must not be blocked
+  // by its own timestamp the next, and the Sunday guard above already stops it
+  // landing mid-week.
+  if (!force && sent?.[0] && now.diff(DateTime.fromISO(sent[0].created_at), "days").days < 6) {
+    return { success: true, skipped: "already sent this week" };
+  }
 
   const weekAgo = now.minus({ days: 7 }).toISO();
 
@@ -1561,6 +1597,31 @@ export async function weeklyJobDigest({ force = false, tz = "America/Chicago" } 
 
   const body = lines.join("\n");
 
+  // The claim, and it goes first.
+  //
+  // Not `.catch(() => {})` like the other logging in this file: this row IS the
+  // once-a-week lock. Swallowing a failure here would send the digest and leave
+  // nothing behind to say so, and the next hourly run would send it again — the
+  // exact behaviour this guard exists to end. If the week cannot be claimed,
+  // nothing is sent and the next run tries again.
+  try {
+
+    await logActivity({
+      action: "jobs_weekly_digest",
+      input: null,
+      output: { posted: relevant.length, applied, advanced, offers, rejected, closing: closing?.length || 0 },
+      success: true,
+      source: "cron"
+    });
+
+  } catch (error) {
+
+    console.error("WEEKLY DIGEST NOT CLAIMED, NOT SENT:", error.message);
+
+    return { success: false, error: "could not claim the week's digest" };
+
+  }
+
   await supabase.from("prompts").insert([{
     kind: "digest",
     title: "Your week in the search",
@@ -1577,14 +1638,6 @@ export async function weeklyJobDigest({ force = false, tz = "America/Chicago" } 
     url: "/career/jobs",
     tag: "jobs-weekly"
   }).catch(error => console.error("WEEKLY DIGEST PUSH FAILED:", error.message));
-
-  await logActivity({
-    action: "jobs_weekly_digest",
-    input: null,
-    output: { posted: relevant.length, applied, advanced, offers, rejected, closing: closing?.length || 0 },
-    success: true,
-    source: "cron"
-  }).catch(() => {});
 
   return { success: true, posted: relevant.length, applied, advanced, offers };
 
