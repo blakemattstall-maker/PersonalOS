@@ -295,7 +295,8 @@ Call every tool needed to satisfy the request — if one message asks for two th
     // and stayed silent about the reminder. Stitch every message together so
     // the spoken reply covers everything that actually happened.
     const spokenMessage = results
-      .map(r => r.result?.message || (r.error ? `That one failed: ${r.error}` : null))
+      // Named, not anonymous: "That one failed" leaves the useful half out.
+      .map(r => r.result?.message || (r.error ? `Couldn't ${String(r.tool || "do that").replace(/_/g, " ")}: ${r.error}` : null))
       .filter(Boolean)
       // Tool messages don't all end in punctuation ("Created task \"X\""), and
       // run together they read badly when spoken aloud.

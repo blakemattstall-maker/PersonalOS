@@ -16,6 +16,29 @@ const buttonSource = read("web/app/GraphButton.js");
 const layoutSource = read("web/app/layout.js");
 
 
+// Slicing a source file between two landmarks, loudly.
+//
+// These tests read source as text, and the failure mode of that style is
+// silent: when a landmark is renamed away, indexOf returns -1, slice(start, -1)
+// quietly returns nearly the whole file, and the assertion then passes against
+// unrelated code. That is not hypothetical here — the two savePerson tests
+// below were bounded by "let taskResult", a string this file has never
+// contained, and so neither of them was reading savePerson at all. They both
+// passed while savePerson shipped a ReferenceError in its return statement.
+const between = (source, from, to) => {
+
+  const start = source.indexOf(from);
+  const end = source.indexOf(to);
+
+  assert.ok(start !== -1, `the landmark "${from}" is gone — this test is not reading what it thinks`);
+  assert.ok(end !== -1, `the landmark "${to}" is gone — this test is not reading what it thinks`);
+  assert.ok(end > start, `"${to}" comes before "${from}" — the slice is empty`);
+
+  return source.slice(start, end);
+
+};
+
+
 // ---------------------------------------------------------------------------
 // Editing a person. The semantics here carry two different callers with two
 // different vocabularies, and flattening them breaks one silently.
@@ -26,9 +49,10 @@ test("an edit is looked up by id, so a rename cannot fork a person", () => {
   // savePerson matched by name only, which meant a corrected name could never
   // match its own typo — fixing "Jon Rider" to "Jon Ryder" created a second
   // person and left the misspelt one holding all the history.
-  const body = peopleSource.slice(
-    peopleSource.indexOf("export async function savePerson"),
-    peopleSource.indexOf("let taskResult")
+  const body = between(
+    peopleSource,
+    "export async function savePerson",
+    "const patch = {"
   );
 
   assert.match(
@@ -59,9 +83,10 @@ test("null leaves a field alone; empty string clears it", () => {
   // sends "" for a blanked field, because in a form showing every current
   // value, blank IS the statement. Under the old `!== null` spread alone, a
   // phone number silently survived its own deletion.
-  const body = peopleSource.slice(
-    peopleSource.indexOf("export async function savePerson"),
-    peopleSource.indexOf("let taskResult")
+  const body = between(
+    peopleSource,
+    "export async function savePerson",
+    "let staggerOffset = 0;"
   );
 
   assert.match(body, /provided\(phone\) && \{ phone: phone \|\| null \}/,

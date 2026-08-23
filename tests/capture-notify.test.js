@@ -52,8 +52,61 @@ test("a partial failure says so rather than reporting only the win", () => {
     { tool: "create_task", error: "boom" }
   ]);
 
-  assert.match(n.title, /failed/);
+  // A count of ATTEMPTS read as a count of successes: this used to title
+  // itself "2 things done (1 failed)", which says two things happened and one
+  // didn't in the same breath. Exactly one thing happened.
+  assert.equal(n.title, "1 of 2 done");
   assert.match(n.body, /boom/);
+
+});
+
+
+test("the title counts what worked, at every ratio", () => {
+
+  const ok = (tool) => ({ tool, result: { success: true, message: `Did ${tool}` } });
+  const bad = (tool) => ({ tool, error: "boom" });
+
+  assert.equal(describeCapture([ok("a"), ok("b")]).title, "2 things done");
+  assert.equal(describeCapture([ok("a"), ok("b"), bad("c")]).title, "2 of 3 done");
+
+  // The hardcoded "(1 failed)" reported the same string here as it did for one
+  // failure, so two things going wrong looked exactly like one.
+  assert.equal(describeCapture([ok("a"), bad("b"), bad("c")]).title, "1 of 3 done");
+
+  // All of them failing is a different notification entirely.
+  assert.equal(describeCapture([bad("a"), bad("b")]).title, "Didn't work");
+
+});
+
+
+test("the failure names the action that failed", () => {
+
+  // "That failed: taskResult is not defined" told the user an error happened
+  // and not what it happened to — with a person save and an intention save in
+  // the same capture, that is the only question worth answering.
+  const n = describeCapture([
+    { tool: "save_intention", result: { success: true, message: "Saved that." } },
+    { tool: "save_person", error: "taskResult is not defined" }
+  ]);
+
+  assert.match(n.body, /Couldn't save person/);
+  assert.match(n.body, /taskResult is not defined/);
+
+});
+
+
+test("the half that did not happen is read first", () => {
+
+  // The body is truncated on the lock screen, so order decides what is seen.
+  const n = describeCapture([
+    { tool: "save_intention", result: { success: true, message: "Saved that." } },
+    { tool: "save_person", error: "boom" }
+  ]);
+
+  assert.ok(
+    n.body.indexOf("Couldn't save person") < n.body.indexOf("Saved that"),
+    "the failure has to lead the body"
+  );
 
 });
 

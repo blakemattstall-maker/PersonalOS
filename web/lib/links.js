@@ -672,7 +672,7 @@ export async function graphAnchors({ limit = 24, minDegree = 2 } = {}) {
     neighbourSets.get(key).add(other);
   };
 
-  for (const edge of edges) {
+  for (const edge of data) {
 
     const from = `${edge.from_type}:${edge.from_id}`;
     const to = `${edge.to_type}:${edge.to_id}`;

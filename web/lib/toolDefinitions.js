@@ -461,8 +461,8 @@ export const TOOLS = [
         type: "object",
         properties: {
           name: { type: "string" },
-          relationship: { type: "string", description: "e.g. 'college friend', 'coworker', 'aunt'." },
-          notes: { type: "string", description: "How they met, what they do, anything worth remembering." },
+          relationship: { type: "string", description: "e.g. 'college friend', 'coworker', 'aunt'. ONLY if he actually says how he knows them. Never guess, and never fill in a generic placeholder like 'contact', 'friend' or 'acquaintance' — this replaces whatever is already on file, so a guess erases a real answer." },
+          notes: { type: "string", description: "The NEW fact worth remembering — how they met, what they do, what they just said. Send only what is new: this is added to what is already noted about them, so restating existing notes is unnecessary." },
           email: { type: "string" },
           phone: { type: "string" },
           check_in_days: {

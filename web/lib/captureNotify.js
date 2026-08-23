@@ -130,15 +130,40 @@ function linkFor(entry) {
 }
 
 
+// A thrown exception and a deliberate { success: false } are the same thing to
+// the person reading the notification: it didn't happen.
+const isFailure = (r) => Boolean(r?.error) || r?.result?.success === false;
+
+
+// Which one broke, in words, before the error text.
+//
+// "That failed: taskResult is not defined" names no action at all, so a capture
+// that saved an intention and failed to save a person reported an error with
+// nothing attached to it. The tool name is the only thing that answers "failed
+// at what", and it is already right there on the result.
+function failureLine(r) {
+
+  const what = String(r.tool || "").replace(/_/g, " ").trim();
+
+  return what ? `Couldn't ${what}: ${r.error}` : `That failed: ${r.error}`;
+
+}
+
+
 export function describeCapture(results = [], heard = null) {
 
   if (!Array.isArray(results) || results.length === 0) return null;
 
 
-  const failures = results.filter(r => r.error || r.result?.success === false);
+  const failures = results.filter(isFailure);
 
-  const spoken = results
-    .map(r => r.result?.message || (r.error ? `That failed: ${r.error}` : null))
+  // Failures first. The body is truncated for the lock screen, so whatever
+  // leads is the part that gets read — and on a partial capture the thing worth
+  // reading is the half that did not happen, not the half that did.
+  const ordered = [...results].sort((a, b) => Number(isFailure(b)) - Number(isFailure(a)));
+
+  const spoken = ordered
+    .map(r => (isFailure(r) && r.error) ? failureLine(r) : (r.result?.message || null))
     .filter(Boolean)
     .map(m => /[.!?]$/.test(m.trim()) ? m.trim() : `${m.trim()}.`)
     .join(" ");
@@ -161,13 +186,25 @@ export function describeCapture(results = [], heard = null) {
 
   const first = results.find(r => !r.error && r.result?.success !== false) || results[0];
 
+  // Count what WORKED, not what was attempted.
+  //
+  // This read `${results.length} things done` with `(1 failed)` bolted on when
+  // anything went wrong, which produced "2 things done (1 failed)" for a
+  // capture where exactly one thing was done — a title that contradicts itself
+  // and leaves the only useful question, which one, unanswered. The "1" was
+  // hardcoded too, so two failures out of three also reported "(1 failed)".
+  //
+  // Every failure below the all-failed branch above is partial by definition,
+  // so a fraction says it exactly and needs no suffix.
+  const done = results.length - failures.length;
+
   const title = results.length > 1
-    ? `${results.length} things done`
+    ? (failures.length === 0 ? `${done} things done` : `${done} of ${results.length} done`)
     : (TITLE_FOR_TOOL[first?.tool] || "Almanac");
 
   return {
 
-    title: failures.length > 0 ? `${title} (1 failed)` : title,
+    title,
 
     body: truncate(spoken),
 

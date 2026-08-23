@@ -233,6 +233,31 @@ export async function syncAllImportantDateEvents({ update = false } = {}) {
 // (0 is not a meaningful cadence or calendar month, so nothing is lost).
 const provided = (value) => value !== null && value !== undefined;
 
+
+// Add a note without losing the one already there.
+//
+// Deliberately dumb: a new line, and a check that the fact is not already on
+// file. No model call, no summarising, no rewriting — every one of those can
+// lose a detail, and the whole point of this function is that nothing gets
+// lost. Growth is fine; this is a notes column, not a budget.
+export function mergeNote(existing, incoming) {
+
+  const had = String(existing || "").trim();
+  const add = String(incoming || "").trim();
+
+  if (!add) return had || null;
+  if (!had) return add;
+
+  // Said again, in the same words. Common: the model restates the standing
+  // note alongside the new one, and appending would double it every time.
+  const lines = had.split("\n").map(l => l.trim());
+
+  if (lines.includes(add) || had.includes(add)) return had;
+
+  return `${had}\n${add}`;
+
+}
+
 export async function savePerson({
   id = null,
   name,
@@ -259,10 +284,32 @@ export async function savePerson({
     return { success: false, error: "That person no longer exists — they may have been removed on another device." };
   }
 
+  // ── Notes accumulate; they do not overwrite ─────────────────────────────
+  //
+  // Voice has no id. "Cooper mentioned a video job up in Schaumburg" arrives
+  // as `notes` on a person who already exists, and writing it straight into
+  // the column threw away "We split VATHOS 50/50." — a durable fact this
+  // table exists to hold, deleted by a sentence that never mentioned it.
+  //
+  // So on the no-id path a note is APPENDED. The edit form does carry an id,
+  // and there the box shows the current text and blank genuinely means blank,
+  // so it still replaces. Same two-callers-two-vocabularies split as `provided`.
+  const mergedNotes = !id && existing?.notes && provided(notes) && notes
+    ? mergeNote(existing.notes, notes)
+    : null;
+
+  // A voice save that re-files someone says so out loud. The model is told not
+  // to guess this field, but "contact" once overwrote "VATHOS co-founder" in
+  // silence, and a relationship is a single value — there is nothing to append
+  // it to. Reporting the change is what makes it correctable in the moment.
+  const refiled = !id && relationship && existing?.relationship && existing.relationship !== relationship
+    ? existing.relationship
+    : null;
+
   const patch = {
     name,
     ...(provided(relationship) && { relationship: relationship || null }),
-    ...(provided(notes) && { notes: notes || null }),
+    ...(provided(notes) && { notes: mergedNotes || notes || null }),
     ...(provided(email) && { email: email || null }),
     ...(provided(phone) && { phone: phone || null }),
     ...(provided(important_date_month) && { important_date_month: important_date_month || null }),
@@ -366,6 +413,13 @@ export async function savePerson({
     dateEventResult?.created || dateEventResult?.updated
       ? `${important_date_label || "Their date"} is on your calendar as an all-day event, repeating every year.`
       : null,
+    // Said out loud because it is the one field here that cannot accumulate.
+    refiled
+      ? `Filed under "${relationship}" now instead of "${refiled}" — say so if that's wrong.`
+      : null,
+    mergedNotes && mergedNotes !== existing?.notes
+      ? "Added to what was already noted about them rather than replacing it."
+      : null,
     staggerOffset > 0
       ? `Check-in moved ${staggerOffset} day${staggerOffset === 1 ? "" : "s"} later so it doesn't land on the same day as someone else.`
       : null
@@ -378,7 +432,17 @@ export async function savePerson({
 
     message: `${existing ? `Updated ${name}.` : `Saved ${name}.`}${remarks ? ` ${remarks}` : ""}`,
 
-    data: { person, task: taskResult?.data || null, staggerOffset }
+    // `id`, not `.data`. upsertYearlyAllDayEvent returns { success, created |
+    // existed | updated, id } and never had a `data` key, so the field this
+    // replaces reported null on every successful save it ever made — while the
+    // identifier it read, `taskResult`, was not declared anywhere in this
+    // function at all. A rename during the recurring-reminders work changed the
+    // body and missed the return, and since the source-reading tests never
+    // execute this line and eslint had no-undef switched off, nothing caught it:
+    // every save_person threw "taskResult is not defined" AFTER the row had
+    // already been written, so the shortcut reported a failure that had in fact
+    // succeeded.
+    data: { person, calendarEvent: dateEventResult?.id || null, staggerOffset }
 
   };
 
