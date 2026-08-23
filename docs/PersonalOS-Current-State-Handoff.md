@@ -130,7 +130,7 @@ The merchant classifier could return `transfers`, and on live data it was callin
 
 ### Then Phase 2, same session — the graph reached what the system says
 
-**Connection-aware context.** `buildRichContext()` retrieved memories by semantic similarity — things *about* a subject — and had no way to reach things *connected* to it. Asking "how is the Trifilm thing going" now also carries its twelve open tasks, the deep thoughts about it and what it has cost, none of which resemble the question and none of which cosine similarity will ever surface.
+**Connection-aware context.** `buildRichContext()` retrieved memories by semantic similarity — things *about* a subject — and had no way to reach things *connected* to it. Asking "how is the print shop thing going" now also carries its twelve open tasks, the deep thoughts about it and what it has cost, none of which resemble the question and none of which cosine similarity will ever surface.
 
 It costs **0 ms and zero queries when the text names nobody on file** (measured, not assumed) — the roster is cached and the match is a regex, so the common case returns before touching the database, and the calls that pass no query at all (observer, brief, nudge review) skip it entirely. Wired into `general_question` and deep thinking.
 

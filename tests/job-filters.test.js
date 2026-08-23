@@ -40,7 +40,7 @@ function functionBody(source, name) {
 
 
 // ---------------------------------------------------------------------------
-// Reading a posting the way Blake would. He wants summer 2027 only, he is
+// Reading a posting the way the owner would. He wants summer 2027 only, he is
 // class of 2029, and he named the disciplines that waste his time. The rule
 // underneath all of it: SILENCE IS NOT A NO — only an explicit statement may
 // rule a posting out, because most early-cycle postings state nothing.

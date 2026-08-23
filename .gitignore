@@ -4,6 +4,11 @@
 node_modules
 .DS_Store
 .claude/settings.local.json
+
+# Per-machine dev-server config. Absolute paths to this laptop's home directory
+# and to sibling projects — useless on any other machine, and the home path
+# carries the owner's name into a public repo.
+.claude/launch.json
 .next
 
 # Device firmware credentials — never in a public repo

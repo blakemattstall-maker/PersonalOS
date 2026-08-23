@@ -3,7 +3,7 @@
 //
 //   node --env-file=.env.local dev/test-tts-wav.mjs
 
-const BASE = process.env.DESK_BASE || "https://personal-os-blake-007c.vercel.app";
+const BASE = process.env.DESK_BASE || "https://web-liart-two-12.vercel.app";
 
 const res = await fetch(`${BASE}/api/tts`, {
   method: "POST",

@@ -11,7 +11,7 @@
 -- as a field; everyone else states it in prose or not at all.
 alter table job_postings add column if not exists deadline date;
 
--- When Blake marked it applied. The status column already records THAT he
+-- When it was marked applied. The status column already records THAT he
 -- applied; this records when, which is the only way to notice silence.
 alter table job_postings add column if not exists applied_at timestamptz;
 

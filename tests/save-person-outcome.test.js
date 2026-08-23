@@ -8,8 +8,8 @@ import { mergeNote } from "../web/tools/people.js";
 
 // What savePerson does to a person who already exists.
 //
-// The bug that opened this file: a capture said "Cooper mentioned there may be
-// a video job up in Schaumburg for $1500", and three separate things went
+// The bug that opened this file: a capture said "Priya mentioned there may be
+// a video job two towns over for $1500", and three separate things went
 // wrong at once.
 //
 //   1. The function threw "taskResult is not defined" from its return
@@ -18,11 +18,11 @@ import { mergeNote } from "../web/tools/people.js";
 //      already succeeded. Twice, because a failure that isn't real repeats
 //      identically when you retry it.
 //
-//   2. The note replaced "We split VATHOS 50/50." instead of joining it. A
-//      sentence about a job deleted the fact that Cooper is a co-founder.
+//   2. The note replaced "We split the company 50/50." instead of joining it. A
+//      sentence about a job deleted the fact that they are a co-founder.
 //
 //   3. The model had filled in relationship: "contact" — a field the user
-//      never mentioned — and "VATHOS co-founder" was overwritten in silence.
+//      never mentioned — and "Northline Print co-founder" was overwritten in silence.
 //
 // (1) is guarded by tests/no-undefined-identifiers.test.js, which runs eslint's
 // no-undef over the whole codebase. (2) and (3) are here.
@@ -40,8 +40,8 @@ const toolDefs = read("web/lib/toolDefinitions.js");
 test("a new note is added to the old one, not written over it", () => {
 
   assert.equal(
-    mergeNote("We split VATHOS 50/50.", "Mentioned a video job in Schaumburg for $1500."),
-    "We split VATHOS 50/50.\nMentioned a video job in Schaumburg for $1500."
+    mergeNote("We split the company 50/50.", "Mentioned a video job two towns over for $1500."),
+    "We split the company 50/50.\nMentioned a video job two towns over for $1500."
   );
 
 });
@@ -51,7 +51,7 @@ test("the same fact said twice is stored once", () => {
 
   // The model routinely restates the standing note alongside the new one.
   // Appending blindly would double the line on every save.
-  const had = "We split VATHOS 50/50.";
+  const had = "We split the company 50/50.";
 
   assert.equal(mergeNote(had, had), had);
   assert.equal(mergeNote(`${had}\nHe lives in Chicago.`, had), `${had}\nHe lives in Chicago.`);

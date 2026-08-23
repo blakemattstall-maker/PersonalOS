@@ -1,7 +1,7 @@
 # PersonalOS — The Plan to Finish
 
 **Date:** 2026-08-09
-**Purpose:** The end-to-end plan for taking PersonalOS from "works for one person" to "done." Written for a future Claude Code session to pick up cold and execute, and for Blake to make decisions against.
+**Purpose:** The end-to-end plan for taking PersonalOS from "works for one person" to "done." Written for a future Claude Code session to pick up cold and execute, and for the owner to make decisions against.
 
 **Read first:** `PersonalOS-Knowledge-Architecture.md` (what the system knows), then `PersonalOS-Current-State-Handoff.md` (what is true right now).
 
@@ -18,7 +18,7 @@
 
 ### The reversal, and why
 
-The first version of this plan was written against "shareable with a few people." Blake reconsidered, and the reconsideration was correct. Recorded here so it isn't re-litigated:
+The first version of this plan was written against "shareable with a few people." The owner reconsidered, and the reconsideration was correct. Recorded here so it isn't re-litigated:
 
 **The middle option is the worst of the three.** It costs the full multi-tenancy price — real auth, `user_id` and RLS on 26 tables, per-user Google and bank connections, every cron rewritten to loop — and buys users who realistically log in twice. Personal-assistant apps have brutal retention even when polished and free. In exchange you take custody of other people's bank transactions and email.
 
@@ -248,7 +248,7 @@ These are two different things and conflating them cost a round of confusion:
 | **`/welcome`** | The signed-out marketing tour. Animated, prerendered, reads no data by design | ✅ Built and good |
 | **Demo account** | The actual dashboard, seeded, that a stranger can click — dismiss a card, switch a money range, open the graph | ❌ Does not exist |
 
-Today a recruiter can read *about* it or take Blake's word. They cannot touch it. **It must be interactive** — a static screenshot adds nothing the tour doesn't already do.
+Today a recruiter can read *about* it or take the owner's word. They cannot touch it. **It must be interactive** — a static screenshot adds nothing the tour doesn't already do.
 
 Implementation notes:
 - `web/app/fixtures.js` already holds ~80% of the seed data, including the insight cards added this session. The work is a public read-only session, not new content.
@@ -342,4 +342,4 @@ Carried forward from the audit; they're what keeps this from rotting.
 - **Google's test-user token expiry** — verify the current behaviour before promising anyone a setup experience. It shapes all of 4C.
 - **Per-user cost ceiling** — what's the actual number? Nothing can be sized until it's chosen.
 - **Does demo mode make §3 unnecessary?** Revisit after execution step 1.
-- **Message reading** — only worth reopening if relationship tracking becomes the feature Blake actually uses daily.
+- **Message reading** — only worth reopening if relationship tracking becomes the feature the owner actually uses daily.

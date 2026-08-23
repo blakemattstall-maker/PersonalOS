@@ -11,7 +11,7 @@ import supabase from "../web/lib/supabase.js";
 // are deliberately absent rather than silently broken — better an honest gap
 // than a source that reports zero forever.
 //
-// Weighted toward media and agencies on purpose: that is where Blake expects
+// Weighted toward media and agencies on purpose: that is where the owner expects
 // this particular summer to land, whatever the longer-term aim.
 //
 //   node scripts/seed-jobs.mjs
@@ -110,7 +110,7 @@ const WATCHLIST = [
   { company: "Discover / Capital One", ats: "workday", token: "capitalone/wd12/Capital_One", category: "local" },
   { company: "Nike", ats: "workday", token: "nike/wd1/nke", category: "brand" },
 
-  // Round two of the watchlist, weighted to Illinois — Blake is at Illinois
+  // Round two of the watchlist, weighted to Illinois — the owner is at Illinois
   // State, and a summer within driving distance is this year's plan. Every
   // token below was probed live before it was written down.
   { company: "AbbVie", ats: "smartrecruiters", token: "abbvie", category: "local" },

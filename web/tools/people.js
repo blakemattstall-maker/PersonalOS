@@ -218,7 +218,7 @@ export async function syncAllImportantDateEvents({ update = false } = {}) {
 // other. Voice has no id: "remember my friend Sarah..." must update Sarah if
 // she exists rather than spawn a duplicate, so it matches on name. The edit
 // form has the opposite problem: matching on name means a CORRECTED name can
-// never match — fixing "Jon Rider" to "Jon Ryder" used to create a second
+// never match — fixing "Dana Whitfeld" to "Dana Whitfield" used to create a second
 // person and leave the misspelt one holding all the history. An id makes a
 // rename just another field change.
 //
@@ -286,10 +286,10 @@ export async function savePerson({
 
   // ── Notes accumulate; they do not overwrite ─────────────────────────────
   //
-  // Voice has no id. "Cooper mentioned a video job up in Schaumburg" arrives
-  // as `notes` on a person who already exists, and writing it straight into
-  // the column threw away "We split VATHOS 50/50." — a durable fact this
-  // table exists to hold, deleted by a sentence that never mentioned it.
+  // Voice has no id. "Priya mentioned a video job two towns over" arrives as
+  // `notes` on a person who already exists, and writing it straight into the
+  // column threw away "We split the company 50/50." — a durable fact this table
+  // exists to hold, deleted by a sentence that never mentioned it.
   //
   // So on the no-id path a note is APPENDED. The edit form does carry an id,
   // and there the box shows the current text and blank genuinely means blank,
@@ -299,9 +299,9 @@ export async function savePerson({
     : null;
 
   // A voice save that re-files someone says so out loud. The model is told not
-  // to guess this field, but "contact" once overwrote "VATHOS co-founder" in
-  // silence, and a relationship is a single value — there is nothing to append
-  // it to. Reporting the change is what makes it correctable in the moment.
+  // to guess this field, but a generic "contact" once overwrote a real answer
+  // in silence, and a relationship is a single value — there is nothing to
+  // append it to. Reporting the change is what makes it correctable.
   const refiled = !id && relationship && existing?.relationship && existing.relationship !== relationship
     ? existing.relationship
     : null;

@@ -1,4 +1,4 @@
-// Reading a job posting the way Blake would, in code.
+// Reading a job posting the way the owner would, in code.
 //
 // Everything here is pure and regex-driven on purpose. These functions decide
 // what reaches his phone and what gets hidden from the feed entirely, so they
@@ -12,7 +12,7 @@
 // statement is allowed to rule something out.
 
 
-// The class Blake graduates with, and the standings that implies. He is a
+// The class the owner graduates with, and the standings that implies. He is a
 // sophomore in the 2026–27 year, so for a summer 2027 internship he is a
 // rising junior.
 export const GRAD_YEAR = 2029;

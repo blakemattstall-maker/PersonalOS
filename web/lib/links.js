@@ -836,7 +836,7 @@ export async function resolveReference({ text, types = null, limit = 8, maxAncho
 // The bridge between the graph and every reasoning call. buildRichContext()
 // already retrieves memories by semantic similarity — things that are ABOUT
 // the same subject. This adds the other axis: things that are CONNECTED to it.
-// Asking "how is the Trifilm thing going" retrieves memories that mention it
+// Asking "how is the print shop thing going" retrieves memories that mention it
 // and now also its twelve open tasks, the two deep thoughts about it and what
 // it has cost, none of which need to resemble the question to be relevant.
 //
@@ -949,8 +949,8 @@ const MIN_TXNS_FOR_ROSTER = 2;
 // file is labelled "Temporary internship home", whose first word is
 // *temporary*. Restricting the fallback to people and projects keeps the
 // behaviour it was written for and removes the three cases it was never meant
-// to cover. A project earns it because "Trifilm" genuinely is what someone
-// calls "Trifilm Exit Conversion".
+// to cover. A project earns it because "Northline" genuinely is what someone
+// calls "Northline Print Exit Conversion".
 const PARTIAL_NAME_TYPES = new Set(["person", "project"]);
 
 

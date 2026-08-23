@@ -5,7 +5,7 @@
 --
 -- What breaks without it: the Jobs tab keeps working exactly as it does today
 -- (title-based filtering), but cannot narrow to Summer 2027, cannot rule out
--- postings that require a graduation year Blake does not have, and cannot sort
+-- postings that require a graduation year the owner does not have, and cannot sort
 -- by pay. The code degrades to the old behaviour rather than failing.
 --
 -- Why these live on the posting rather than being recomputed per request: they

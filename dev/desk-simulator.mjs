@@ -8,7 +8,7 @@
 //
 // BASE defaults to production; override with DESK_BASE for a local server.
 
-const BASE = process.env.DESK_BASE || "https://personal-os-blake-007c.vercel.app";
+const BASE = process.env.DESK_BASE || "https://web-liart-two-12.vercel.app";
 
 const KEY = process.env.API_SECRET;
 

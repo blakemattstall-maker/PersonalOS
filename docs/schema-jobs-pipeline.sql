@@ -28,7 +28,7 @@ create table if not exists job_events (
   -- rejected | withdrawn
   --
   -- "ghosted" is deliberately NOT a stage here. Nobody sends a rejection they
-  -- never wrote, and Blake is not going to hand-mark a hundred silences — it
+  -- never wrote, and nobody is going to hand-mark a hundred silences — it
   -- is derived in code from an application that has heard nothing for weeks.
   stage       text not null,
 

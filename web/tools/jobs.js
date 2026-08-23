@@ -246,7 +246,7 @@ async function fetchAmazon(source) {
 // one unauthenticated GET.
 //
 // Filtered hard on the way in. The dataset is overwhelmingly software and
-// AI/ML — exactly the roles Blake has no chance at — so only its Product
+// AI/ML — exactly the roles this search rules out — so only its Product
 // category, only active rows, and only the Summer 2027 term are taken.
 // Everything else would be noise the scorer then has to fight.
 const SIMPLIFY_URL = "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/.github/scripts/listings.json";

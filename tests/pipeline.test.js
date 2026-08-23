@@ -69,7 +69,7 @@ test("the same stage recorded twice is an edit, not a loop", () => {
 
 test("what leaves a node equals what entered it", () => {
 
-  // The rule that makes a Sankey trustworthy. Build a shape like Blake's own
+  // The rule that makes a Sankey trustworthy. Build a shape like a real
   // chart and check the books balance.
   const m = new Map();
   let id = 0;

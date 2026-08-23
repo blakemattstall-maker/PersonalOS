@@ -47,7 +47,7 @@ const between = (source, from, to) => {
 test("an edit is looked up by id, so a rename cannot fork a person", () => {
 
   // savePerson matched by name only, which meant a corrected name could never
-  // match its own typo — fixing "Jon Rider" to "Jon Ryder" created a second
+  // match its own typo — fixing "Dana Whitfeld" to "Dana Whitfield" created a second
   // person and left the misspelt one holding all the history.
   const body = between(
     peopleSource,
