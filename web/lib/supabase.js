@@ -107,6 +107,70 @@ export async function selectAll(table, columns, { page = 500, max = 10000, modif
 }
 
 
+// A bulk upsert where every row carries the same columns.
+//
+// The second PostgREST trap, and it is quieter than the 1000-row cap because
+// it destroys data rather than hiding it.
+//
+// supabase-js builds the `columns=` parameter from the UNION of the keys across
+// every object in the batch (see postgrest-js PostgrestQueryBuilder: values
+// .reduce((acc, x) => acc.concat(Object.keys(x)))). PostgREST then inserts all
+// of those columns, and a row that lacks one gets NULL — so on a conflict the
+// generated `DO UPDATE SET col = EXCLUDED.col` writes that NULL over whatever
+// the column held.
+//
+// Which means a perfectly ordinary conditional key:
+//
+//     ...(p.deadline ? { deadline: p.deadline } : {})
+//
+// is safe on a single-row insert and silently destructive in a batch. In the
+// jobs poll it wiped every deadline the enrichment pass had read out of a job
+// description, on every one of the 96 polls a day where any posting in the same
+// batch happened to state a deadline of its own.
+//
+// The fix is not to fill the gaps — a NULL you wrote on purpose is still a
+// NULL. It is to send rows of one shape at a time, so a column nobody in the
+// group carries is never named in the write at all.
+export function groupByShape(rows) {
+
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  const groups = new Map();
+
+  for (const row of rows) {
+    // Sorted, so { a, b } and { b, a } are one group rather than two. NUL as
+    // the separator because no column name can contain it.
+    const shape = Object.keys(row).sort().join("\u0000");
+    if (!groups.has(shape)) groups.set(shape, []);
+    groups.get(shape).push(row);
+  }
+
+  return [...groups.values()];
+
+}
+
+
+export async function upsertUniform(table, rows, options = {}) {
+
+  const groups = groupByShape(rows);
+
+  if (groups.length === 0) return { error: null, groups: 0 };
+
+  for (const group of groups) {
+
+    const { error } = await getSupabase().from(table).upsert(group, options);
+
+    // Stop on the first failure rather than pressing on: a partial write across
+    // shapes is harder to reason about than a failed one.
+    if (error) return { error, groups: groups.length };
+
+  }
+
+  return { error: null, groups: groups.length };
+
+}
+
+
 // Everything in the codebase does `supabase.from("table")`. This forwards that
 // to the real client, constructing it on the first property access rather than
 // on import.

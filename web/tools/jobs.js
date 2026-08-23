@@ -1,4 +1,4 @@
-import supabase from "../lib/supabase.js";
+import supabase, { upsertUniform } from "../lib/supabase.js";
 import { mapWithConcurrency } from "../lib/async.js";
 import { logActivity } from "./activityLog.js";
 import {
@@ -751,8 +751,27 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
 
     }
 
-    const rows = postings
-      .filter(p => p.external_id && p.title && p.url)
+    const usable = postings.filter(p => p.external_id && p.title && p.url);
+
+    if (usable.length === 0) return;
+
+    // Which of these have we never seen? Asked before writing, because the
+    // upsert itself cannot tell us — an ON CONFLICT update returns the row
+    // either way, and "new" is the entire signal this feature exists for.
+    //
+    // detail_fetched_at rides along now as well, because it decides whether a
+    // poll is allowed to touch `term`. See below.
+    const { data: known } = await supabase
+      .from("job_postings")
+      .select("external_id, detail_fetched_at")
+      .eq("source_id", source.id)
+      .in("external_id", usable.map(p => p.external_id));
+
+    const seen = new Set((known || []).map(k => k.external_id));
+
+    const enriched = new Set((known || []).filter(k => k.detail_fetched_at).map(k => k.external_id));
+
+    const rows = usable
       .map(p => {
         const { isInternship, score, matched, field } = scorePosting(p, { locationPriority });
         return {
@@ -771,28 +790,30 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
           matched_terms: matched,
           field,
           ...(p.deadline ? { deadline: p.deadline } : {}),
-          // From the title alone for now; the enrichment pass refines it once
-          // the description is in hand.
-          term: classifyTerm({ title: p.title })
+          // From the title alone — and ONLY while that is the best available
+          // answer.
+          //
+          // enrichJobDetails reads the description and re-derives `term` from
+          // it, which is the only way "Summer 2027 cohort" in the body of a
+          // posting titled "Product Management Intern" is ever found. It then
+          // stamps detail_fetched_at and never looks at that row again
+          // (`.is("detail_fetched_at", null)`). So a poll that recomputes term
+          // from the title destroys the better answer permanently: fifteen
+          // minutes later the board still lists the requisition, this line
+          // overwrites "summer_2027" with "unspecified", and nothing will ever
+          // re-derive it. The whole feed filters on term.
+          ...(enriched.has(p.external_id) ? {} : { term: classifyTerm({ title: p.title }) })
         };
       });
 
-    if (rows.length === 0) return;
-
-    // Which of these have we never seen? Asked before writing, because the
-    // upsert itself cannot tell us — an ON CONFLICT update returns the row
-    // either way, and "new" is the entire signal this feature exists for.
-    const { data: known } = await supabase
-      .from("job_postings")
-      .select("external_id")
-      .eq("source_id", source.id)
-      .in("external_id", rows.map(r => r.external_id));
-
-    const seen = new Set((known || []).map(k => k.external_id));
-
-    const { error: writeError } = await supabase
-      .from("job_postings")
-      .upsert(rows, { onConflict: "source_id,external_id", ignoreDuplicates: false });
+    // upsertUniform, not .upsert: `deadline` and `term` are both conditional
+    // keys, and a batch where only some rows carry a column writes NULL into
+    // that column for all the others. See lib/supabase.js.
+    const { error: writeError } = await upsertUniform(
+      "job_postings",
+      rows,
+      { onConflict: "source_id,external_id", ignoreDuplicates: false }
+    );
 
     if (writeError) {
       console.error(`JOBS WRITE FAILED for ${source.company}:`, writeError.message);

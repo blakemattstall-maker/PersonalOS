@@ -829,22 +829,43 @@ Return JSON:
 
   const index = itemIndex(dayData);
 
-  // Re-planning replaces: the old plan's rows and calendar blocks go before
-  // the new ones land, so "plan my dinner again" never stacks two dinners.
+  // Re-planning replaces — but only once there is something to replace it WITH.
+  //
+  // This used to delete every targeted meal's rows and calendar blocks up here,
+  // before a single pick had been validated. Three ways that ate a plan and
+  // gave nothing back:
+  //
+  //   · the planner returns picks whose item names are not on the menu, they
+  //     all die in validation below, and the function returns "Couldn't build a
+  //     plan" — with the dinner it just deleted, and its calendar block, gone;
+  //   · the planner returns `{"meals": []}`, or uses a different key, so `picks`
+  //     is empty and the loop never runs at all;
+  //   · worst, because it reports success: the Plan button sends no `meals`, so
+  //     targets is EVERY remaining meal. Both lunch and dinner are deleted, the
+  //     planner answers for dinner only, and the call returns success describing
+  //     dinner while lunch and its calendar block are gone unmentioned.
+  //
+  // So the delete now happens per meal, after that meal's replacement row has
+  // actually landed. The worst case flips from losing a plan to briefly holding
+  // two, which is visible and fixable rather than silent and not.
   const replaced = [];
+  const removed = new Set();
 
-  for (const target of targets) {
+  const replaceStale = async (meal) => {
 
-    const stale = log.planned.filter(r => r.meal === target);
+    for (const row of log.planned.filter(r => r.meal === meal && !removed.has(r.id))) {
 
-    for (const row of stale) {
+      removed.add(row.id);
+
       await removeLogEntry({ id: row.id }).catch(error =>
         console.error("STALE PLAN REMOVE FAILED:", error.message)
       );
-      replaced.push(target);
+
+      replaced.push(meal);
+
     }
 
-  }
+  };
 
 
   const plans = [];
@@ -946,6 +967,9 @@ Return JSON:
     });
 
     if (!logged.success) return logged;
+
+    // Only now — the new plan for this meal exists, so the old one can go.
+    await replaceStale(meal);
 
     plans.push({
       meal,

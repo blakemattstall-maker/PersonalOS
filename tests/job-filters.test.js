@@ -12,6 +12,33 @@ import { scorePosting } from "../web/tools/jobs.js";
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 
+// One function's body, and nothing after it.
+//
+// `source.slice(source.indexOf("export async function reviewJobDeadlines"))`
+// looks like it reads that function. It reads it and every function below it to
+// the end of the file — and briefJobFacts, 140 lines further down, applies the
+// same three-line eligibility filter. So the test named "reminders apply the
+// same filters as the feed" passed against briefJobFacts's copy: deleting the
+// filter from reviewJobDeadlines entirely left the whole suite green while the
+// closing-soon push went back to announcing Fall 2026 roles as "closes today".
+//
+// Bounded at the next top-level declaration, and loud when it cannot find the
+// function at all.
+function functionBody(source, name) {
+
+  const start = source.indexOf(name);
+
+  assert.ok(start !== -1, `${name} is gone — this test is not reading what it thinks`);
+
+  const after = source.slice(start + name.length);
+
+  const next = after.search(/\nexport (async )?function /);
+
+  return next === -1 ? after : after.slice(0, next);
+
+}
+
+
 // ---------------------------------------------------------------------------
 // Reading a posting the way Blake would. He wants summer 2027 only, he is
 // class of 2029, and he named the disciplines that waste his time. The rule
@@ -198,7 +225,7 @@ test("a deadline is only read when the posting plainly states one", () => {
 test("reminders claim their cooldown before sending, and only for real matches", () => {
 
   const jobs = read("web/tools/jobs.js");
-  const review = jobs.slice(jobs.indexOf("export async function reviewJobDeadlines"));
+  const review = functionBody(jobs, "export async function reviewJobDeadlines");
 
   // Same claim-then-send order as every other alert here.
   const claim = review.indexOf("last_nudged_at: now.toISOString()");
@@ -407,7 +434,7 @@ test("a deadline written day-first, or falling today, is read correctly", () => 
 test("reminders apply the same filters as the feed", () => {
 
   const jobs = read("web/tools/jobs.js");
-  const review = jobs.slice(jobs.indexOf("export async function reviewJobDeadlines"));
+  const review = functionBody(jobs, "export async function reviewJobDeadlines");
 
   // It was about to announce a Fall 2026 role as "closes today" — a posting
   // the feed hides. A reminder about something already ruled out teaches him
