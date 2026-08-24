@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { describeCapture } from "../web/lib/captureNotify.js";
 import { TOOLS } from "../web/lib/toolDefinitions.js";
@@ -215,5 +216,87 @@ test("capture_confirmation is a declared urgency, at the lowest pushing tier", (
 
   assert.ok("capture_confirmation" in URGENCY_TIERS);
   assert.equal(URGENCY_TIERS.capture_confirmation, "digest");
+
+});
+
+
+// ---------------------------------------------------------------------------
+// One answer, one card
+// ---------------------------------------------------------------------------
+
+// A question answered conversationally — the router replies without calling a
+// tool — landed on the dashboard TWICE, 0.8 seconds apart and identical. Two
+// different pieces of code both believed they owned "this answer needs
+// somewhere to live": the capture handler's no-tool-call branch had its own
+// prompt insert, and fileAnswer here was written later to cover the tool
+// answers and quietly covered general_question too. Nobody removed the first.
+
+test("only one place in the codebase files an answer as a prompt", () => {
+
+  const handler = readFileSync(
+    new URL("../web/app/api/capture/handler.js", import.meta.url), "utf8"
+  );
+
+  assert.ok(
+    !/from\("prompts"\)\.insert/.test(handler),
+    "the capture handler is writing prompt rows again — fileAnswer owns that"
+  );
+
+  const notify = readFileSync(
+    new URL("../web/lib/captureNotify.js", import.meta.url), "utf8"
+  );
+
+  assert.equal(
+    (notify.match(/from\("prompts"\)\.insert/g) || []).length,
+    1,
+    "there must be exactly one insert, in fileAnswer"
+  );
+
+});
+
+
+test("a suppressed notification files the answer whatever its length", () => {
+
+  // The gap that made the handler's duplicate look necessary. Length alone is
+  // the wrong test when the push is never shown: at a quiet interruption level
+  // a short answer was filed nowhere and pushed nowhere, and simply vanished.
+  const notify = readFileSync(
+    new URL("../web/lib/captureNotify.js", import.meta.url), "utf8"
+  );
+
+  assert.match(
+    notify,
+    /\(pushSuppressed \|\| String\(r\.result\?\.message \|\| ""\)\.length > WORTH_KEEPING\)/,
+    "fileAnswer must file regardless of length when nothing reaches the phone"
+  );
+
+  // And it has to know that before it files, which means the push decision
+  // comes first.
+  const allowed = notify.indexOf("const allowed = notification ? await pushAllowed");
+  const filed = notify.indexOf("await fileAnswer(results, heard, { pushSuppressed");
+
+  assert.ok(allowed > 0 && filed > allowed,
+    "whether the push will be shown has to be known before the answer is filed");
+
+  // Filing still happens before either early return — a quiet level means
+  // "stop buzzing me", never "throw the answer away".
+  const nothingToReport = notify.indexOf('skipped: "nothing to report"');
+  const byLevel = notify.indexOf('skipped: "interruption level"');
+
+  assert.ok(filed < nothingToReport && filed < byLevel,
+    "fileAnswer must run before every early return");
+
+});
+
+
+test("an empty answer is never filed", () => {
+
+  const notify = readFileSync(
+    new URL("../web/lib/captureNotify.js", import.meta.url), "utf8"
+  );
+
+  // With pushSuppressed short-circuiting the length test, a tool returning an
+  // empty message would otherwise put a blank card on the dashboard.
+  assert.match(notify, /String\(r\.result\?\.message \|\| ""\)\.trim\(\)\.length > 0/);
 
 });

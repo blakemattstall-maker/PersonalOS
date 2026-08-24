@@ -102,10 +102,23 @@ test("a long capture answer is filed, not only pushed", () => {
 
   // Filed regardless of interruption level — turning pushes down must not
   // throw the answer away.
+  //
+  // Asserted on the RETURNS rather than on pushAllowed. The push decision now
+  // deliberately comes first, because whether the notification will be shown at
+  // all is what decides whether a SHORT answer also needs filing; before that,
+  // a quiet level plus a short answer meant the reply was pushed nowhere and
+  // filed nowhere. What has to hold is that nothing returns before the filing.
   const notify = source.slice(source.indexOf("export async function notifyCapture"));
-  const filed = notify.indexOf("fileAnswer");
-  const gate = notify.indexOf("pushAllowed");
-  assert.ok(filed > 0 && filed < gate, "the answer must be filed before the push gate");
+  const filed = notify.indexOf("await fileAnswer(");
+
+  assert.ok(filed > 0, "notifyCapture no longer files the answer");
+
+  for (const early of ['skipped: "nothing to report"', 'skipped: "interruption level"']) {
+    assert.ok(
+      filed < notify.indexOf(early),
+      `the answer must be filed before the ${early} return`
+    );
+  }
 
   // And the Google outage alert leaves a record too.
   assert.match(read("web/lib/google.js"), /from\("prompts"\)\.insert/);

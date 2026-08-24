@@ -10,7 +10,6 @@ import { resumePendingClarification } from "../../../tools/modify.js";
 import { MODELS } from "../../../lib/models.js";
 import { transcribeAudio } from "../../../tools/pitch.js";
 import { notifyCapture } from "../../../lib/captureNotify.js";
-import supabase from "../../../lib/supabase.js";
 
 export default async function handler(req, res) {
 
@@ -197,36 +196,16 @@ Call every tool needed to satisfy the request — if one message asks for two th
       // The router answered conversationally instead of calling a tool. With
       // the Shortcut silent this notification is the entire reply, so it
       // matters most on exactly the path that produces no artefact to link to.
+      //
+      // This ALSO files the answer as a prompt when it needs a home — a push
+      // truncates and is gone once swiped, so a long answer has to live
+      // somewhere. That used to be done here as well, with its own insert
+      // right after this line, and the result was every conversational answer
+      // appearing on the dashboard twice, 0.8 seconds apart. fileAnswer in
+      // lib/captureNotify.js is the one owner of that decision now; it knows
+      // both the length and whether the notification is going to be shown at
+      // all, which is more than this branch could see.
       await notifyCapture([{ tool: "general_question", result: answer }], text);
-
-      // The push notification truncates and disappears once dismissed, which
-      // is the whole complaint this fixes: a real answer with nowhere left to
-      // live once the notification is swiped away. Filed as a prompt — the
-      // same table label_place and the daily digest already use — so the full
-      // text sits in the dashboard's "needs you" queue until read, with its
-      // own read-aloud and its own dismiss. Never allowed to block or fail the
-      // response the phone is waiting on.
-      try {
-
-        // PostgREST resolves with an { error } rather than throwing, so a
-        // try/catch alone would swallow every real failure here and report
-        // success. The catch is still needed for a transport-level throw.
-        const { error: promptError } = await supabase.from("prompts").insert([{
-          kind: "general_question",
-          title: text.length > 90 ? `${text.slice(0, 89)}…` : text,
-          body: answer.message,
-          status: "pending"
-        }]);
-
-        if (promptError) {
-          console.error("GENERAL_QUESTION PROMPT FAILED:", promptError.message);
-        }
-
-      } catch (promptError) {
-
-        console.error("GENERAL_QUESTION PROMPT THREW:", promptError.message);
-
-      }
 
       return res.status(200).json({
         success: true,

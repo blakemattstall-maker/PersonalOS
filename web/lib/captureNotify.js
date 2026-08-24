@@ -237,16 +237,34 @@ const ANSWER_TOOLS = new Set([
 ]);
 
 // Short confirmations ("Created task X") are complete in the notification —
-// filing those would turn the queue into a receipt printer.
+// filing those would turn the queue into a receipt printer. MAX_BODY is 320,
+// so anything under this is readable in full on the lock screen and needs no
+// second home.
 const WORTH_KEEPING = 240;
 
-async function fileAnswer(results, heard) {
+// The one owner of "this answer needs somewhere to live".
+//
+// It was not the only one. The capture handler's no-tool-call branch — the
+// path a conversational reply takes — filed its own prompt row as well, and
+// called this. So every question the router answered without a tool landed on
+// the dashboard TWICE, 0.8 seconds apart, identical. The handler's copy
+// predates this function; the comment above ANSWER_TOOLS even notes that the
+// no-tool branch "already files its reply as a prompt", and then this was
+// written to cover general_question too and nobody removed the older one.
+//
+// `pushSuppressed` closes the gap that made the handler's copy look necessary.
+// Length alone is the wrong test when the notification is never shown at all:
+// at a quiet interruption level a short answer would be filed nowhere and
+// pushed nowhere, and simply vanish. If nothing is going to reach the phone,
+// everything gets filed regardless of length.
+async function fileAnswer(results, heard, { pushSuppressed = false } = {}) {
 
   const answers = results.filter(r =>
     ANSWER_TOOLS.has(r.tool) &&
     !r.error &&
     r.result?.success !== false &&
-    String(r.result?.message || "").length > WORTH_KEEPING
+    String(r.result?.message || "").trim().length > 0 &&
+    (pushSuppressed || String(r.result?.message || "").length > WORTH_KEEPING)
   );
 
   if (answers.length === 0) return;
@@ -286,17 +304,19 @@ export async function notifyCapture(results, heard = null) {
 
   try {
 
+    const notification = describeCapture(results, heard);
+
+    // Whether the phone will actually show this is what decides if a short
+    // answer needs a home of its own, so it has to be known before filing.
+    const allowed = notification ? await pushAllowed("capture_confirmation") : false;
+
     // Filed regardless of the interruption level: turning notifications down
     // means "stop buzzing my phone", never "throw the answer away".
-    await fileAnswer(results, heard);
-
-    const notification = describeCapture(results, heard);
+    await fileAnswer(results, heard, { pushSuppressed: !allowed });
 
     if (!notification) return { sent: 0, skipped: "nothing to report" };
 
-    if (!(await pushAllowed("capture_confirmation"))) {
-      return { sent: 0, skipped: "interruption level" };
-    }
+    if (!allowed) return { sent: 0, skipped: "interruption level" };
 
     return await sendPush(notification);
 
