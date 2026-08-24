@@ -29,6 +29,21 @@ const DEFAULT_RADIUS_M = 120;
 // Without it, a point every 15 minutes would report 32 "visits" to your own bed.
 const REVISIT_GAP_HOURS = 3;
 
+// How long a gap means he actually LEFT the radius.
+//
+// A separate clock from REVISIT_GAP_HOURS, and it has to be: three hours is
+// right for counting visits ("he has been to the gym nine times") and useless
+// for measuring presence. A trigger that waits for ten minutes of dwell is
+// asking whether he is standing in the room now, and under the three-hour rule
+// two pings twenty minutes apart — walking past on the way to class and again
+// on the way back — read as twenty unbroken minutes at the gym.
+//
+// Overland pings roughly every ten minutes, so a gap past two cadences means a
+// stretch with no evidence he was inside the circle, and the presence clock
+// restarts. It does not touch visit_count, which groupIntoVisits still measures
+// the old way.
+const PRESENCE_BREAK_MINUTES = 25;
+
 // Ask about a place only once it's clearly part of the user's routine.
 const VISITS_BEFORE_ASKING = 3;
 
@@ -258,6 +273,22 @@ export async function ingestLocationPoints(rawPoints) {
   let prompted = 0;
   let timezoneChange = null;
 
+  // Every place this batch touched, deduplicated.
+  //
+  // Overland posts a batch of points, so a naive per-point firing would send
+  // one notification per ping — six for one arrival. Collected here and acted
+  // on once, after the loop.
+  //
+  // Every place, not only the new arrivals: a trigger with a dwell only becomes
+  // true on a ping that lands ten minutes AFTER the one that got him there, so
+  // it has to be re-checked while he stays.
+  const touched = new Set();
+
+  // A place whose row would not write is excluded from firing entirely: its
+  // arrived_at and last_seen_at are now unknown, and a trigger decided from
+  // stale values is a notification about a room he is not in.
+  const failedPlaces = new Set();
+
   // Oldest first so revisit detection sees time moving forward.
   const points = rawPoints
     .filter(p => Number.isFinite(p.latitude) && Number.isFinite(p.longitude))
@@ -281,12 +312,41 @@ export async function ingestLocationPoints(rawPoints) {
 
       const visitCount = place.visit_count + (isNewVisit ? 1 : 0);
 
-      await supabase
+      // arrived_at is when this stretch of PRESENCE began, and it is neither
+      // last_seen_at nor the start of the visit. last_seen_at moves every ten
+      // minutes while he stands in the room, so it can never say how long he
+      // has been there; and the three-hour visit rule is far too loose, because
+      // under it a walk past the gym at 8:00 and another at 8:20 look like
+      // twenty unbroken minutes of training.
+      const gapMinutes = place.last_seen_at
+        ? DateTime.fromJSDate(recordedAt).diff(DateTime.fromISO(place.last_seen_at), "minutes").minutes
+        : Infinity;
+
+      const restartsPresence = isNewVisit || gapMinutes >= PRESENCE_BREAK_MINUTES || !place.arrived_at;
+
+      const { error: placeError } = await supabase
         .from("places")
-        .update({ last_seen_at: recordedAt.toISOString(), visit_count: visitCount })
+        .update({
+          last_seen_at: recordedAt.toISOString(),
+          visit_count: visitCount,
+          ...(restartsPresence ? { arrived_at: recordedAt.toISOString() } : {})
+        })
         .eq("id", place.id);
 
-      place = { ...place, visit_count: visitCount };
+      // Checked, because this write became load-bearing the moment a trigger
+      // depended on it. A silent failure leaves last_seen_at stale, so the next
+      // ping recomputes a fresh arrival, restarts the presence clock and can
+      // push again — the claim-before-push rule broken one layer down.
+      if (placeError) {
+        console.error("PLACE UPDATE FAILED:", placeError.message);
+        failedPlaces.add(place.id);
+      }
+
+      place = {
+        ...place,
+        visit_count: visitCount,
+        arrived_at: restartsPresence ? recordedAt.toISOString() : place.arrived_at
+      };
 
     } else if (await shouldCreatePlace(point.latitude, point.longitude, recordedAt)) {
 
@@ -298,6 +358,9 @@ export async function ingestLocationPoints(rawPoints) {
           radius_meters: DEFAULT_RADIUS_M,
           visit_count: 2,
           needs_label: true,
+          // Or the first trigger ever attached to this place waits forever for
+          // a presence clock that never started.
+          arrived_at: recordedAt.toISOString(),
           last_seen_at: recordedAt.toISOString()
         }])
         .select()
@@ -343,9 +406,38 @@ export async function ingestLocationPoints(rawPoints) {
     if (!error) stored += 1;
 
 
+    if (place?.id) touched.add(place.id);
+
     if (place?.needs_label && place.visit_count >= VISITS_BEFORE_ASKING) {
       if (await raiseLabelPrompt(place, tz)) prompted += 1;
     }
+
+  }
+
+
+  // Standing reminders tied to being somewhere. Awaited rather than fired and
+  // forgotten: this runs inside a serverless request, and background work there
+  // is killed the moment the response is sent. Never allowed to fail the
+  // ingest — a location POST that 500s makes Overland retry the whole batch.
+  let triggersFired = 0;
+  let triggersChecked = 0;
+  let triggersSkipped = null;
+
+  try {
+
+    const { runPlaceTriggers } = await import("./triggers.js");
+
+    const result = await runPlaceTriggers({
+      placeIds: [...touched].filter(id => !failedPlaces.has(id))
+    });
+
+    triggersFired = result?.fired || 0;
+    triggersChecked = result?.checked || 0;
+    triggersSkipped = result?.skipped || null;
+
+  } catch (error) {
+
+    console.error("PLACE TRIGGERS FAILED:", error.message);
 
   }
 
@@ -362,6 +454,12 @@ export async function ingestLocationPoints(rawPoints) {
     stored,
     newPlaces,
     labelPromptsRaised: prompted,
+    // Logged verbatim into activity_logs by the ingest handler and rendered on
+    // the settings diagnostics panel, so "checked 2, fired 0" is visibly
+    // different from "this has not run since Tuesday".
+    triggersChecked,
+    triggersFired,
+    ...(triggersSkipped ? { triggersSkipped } : {}),
     timezoneChange
   };
 

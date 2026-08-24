@@ -610,6 +610,57 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
               </ul>
             </div>
 
+            {/* Standing reminders, and the two ways they die quietly: the
+                clock half stops being called, or every one is checked and none
+                ever matches. Both read as "a quiet week" without a count next
+                to a timestamp — which is how a location sync and a Canvas sync
+                each went dead for weeks on this app. */}
+            {diag.triggers && (
+              <div className="border-t border-[var(--line)] pt-3">
+                <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">
+                  Standing reminders
+                </div>
+
+                {diag.triggers.active === null ? (
+                  <p className="mt-1 text-xs text-ink-soft">
+                    Not set up yet — run docs/schema-triggers.sql.
+                  </p>
+                ) : diag.triggers.active === 0 ? (
+                  <p className="mt-1 text-xs text-ink-soft">
+                    None yet. Say what you want reminding about and when, and one gets made.
+                  </p>
+                ) : (
+                  <>
+                    <p className="mt-1 text-xs text-ink-soft">
+                      {diag.triggers.active} active
+                      {diag.triggers.neverFired > 0 && (
+                        <span className="text-ember">
+                          {" "}· {diag.triggers.neverFired} never fired
+                        </span>
+                      )}
+                      {" · last swept "}
+                      {diag.triggers.lastSweepAt
+                        ? `${diag.triggers.lastSweepAgeHours}h ago`
+                        : <span className="text-ember">never — the cron is not running</span>}
+                    </p>
+                    <ul className="mt-2 space-y-0.5 text-xs text-ink-soft">
+                      {diag.triggers.list.map(t => (
+                        <li key={t.label}>
+                          <span className="text-ink">{t.label}</span>
+                          {" — "}
+                          {t.kind === "place_arrival" ? "on arriving"
+                            : t.kind === "before_event" ? "before a matching event"
+                            : "at a set time"}
+                          {", "}
+                          {t.fired > 0 ? `fired ${t.fired}×` : "not yet fired"}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Supabase DDL can't be run from code, so every schema change is
                 a .sql file pasted in by hand — and every feature that depends
                 on a pending one degrades silently instead of failing. Without

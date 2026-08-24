@@ -415,8 +415,53 @@ async function enrichJobs() {
 }
 
 
+// Standing reminders whose moment is a clock rather than a place.
+//
+// Its own cron slot, deliberately NOT folded into checkJobs. If it threw from
+// inside the job poller the cron handler would return 500, the GitHub workflow
+// assertion would fail, and the internship poll would go red every fifteen
+// minutes until someone noticed — one feature taking down another.
+//
+// Place-arrival triggers are not here: those fire from the location ingest,
+// where the arrival actually happens, and waiting up to fifteen minutes to tell
+// him he is at the gym would miss the point.
+async function runTriggers() {
+
+  const { runEventTriggers, runTimeTriggers } = await import("../../../../tools/triggers.js");
+
+  // Each half isolated from the other: a dead Google refresh token must not
+  // stop a time-of-day reminder that needs no calendar at all.
+  const events = await runEventTriggers().catch(error => {
+    console.error("EVENT TRIGGERS FAILED:", error.message);
+    return { checked: 0, fired: 0, error: error.message };
+  });
+
+  const times = await runTimeTriggers().catch(error => {
+    console.error("TIME TRIGGERS FAILED:", error.message);
+    return { checked: 0, fired: 0, error: error.message };
+  });
+
+  // A heartbeat every run, not only when something fires. "Checked 3, fired 0"
+  // and "the pass has not run since Tuesday" look identical without it, and
+  // silent degradation is the failure this codebase keeps having.
+  const { logActivity } = await import("../../../../tools/activityLog.js");
+
+  await logActivity({
+    action: "triggers_checked",
+    input: null,
+    output: { events, times },
+    success: !events.error && !times.error,
+    source: "cron"
+  }).catch(() => {});
+
+  return { events, times };
+
+}
+
+
 const JOBS = {
   morningBrief,
+  runTriggers,
   checkJobs,
   enrichJobs,
   briefPush,

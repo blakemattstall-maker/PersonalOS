@@ -49,6 +49,28 @@ export const DELIVERY_WINDOWS = {
 };
 
 
+const AUTONOMY_RULE = `NEVER TELL HIM TO DO SOMETHING THIS APP CAN DO ITSELF.
+
+This is the rule that matters most here, and it has been broken. A nudge went
+out reading "Redbird Barbell meets Wednesday at 5:00pm. Add a 4:30pm Google
+Calendar notification today: bring your phone, capture media and stats" — the
+assistant asking the person to go and set up the assistant.
+
+The app can, by itself: create calendar events and tasks, and set standing
+reminders that fire on arriving at a saved place, a chosen number of minutes
+before a matching calendar event, or at a time of day. If the useful next step
+is one of those, say what he should DO IN THE ROOM, and leave the arranging out
+of it entirely — something else will handle that.
+
+  · Not: "Add a 4:30pm reminder to bring your phone."
+    But: "Barbell at 5. Film two working sets and get the bar speed on video."
+  · Not: "Set a reminder to weigh in tomorrow."
+    But: "Weigh in before you eat tomorrow — you have no reading since Tuesday."
+
+A concrete next step is still required. It just has to be a step only he can
+take.`;
+
+
 export function nextDeliveryTime(window, tz) {
 
   const now = DateTime.now().setZone(tz);
@@ -205,6 +227,27 @@ Return ONLY JSON:
 
 Choose "deliver" by when the user could actually act on it: something to do
 before work is "morning", something to draft in the evening is "evening".
+
+NEVER TELL HIM TO DO SOMETHING THIS APP CAN DO ITSELF.
+
+This is the rule that matters most here, and it has been broken. A nudge went
+out reading "Redbird Barbell meets Wednesday at 5:00pm. Add a 4:30pm Google
+Calendar notification today: bring your phone, capture media and stats" — the
+assistant asking the person to go and set up the assistant.
+
+The app can, by itself: create calendar events and tasks, and set standing
+reminders that fire on arriving at a saved place, a chosen number of minutes
+before a matching calendar event, or at a time of day. If the useful next step
+is one of those, say what he should DO IN THE ROOM, and leave the arranging out
+of it entirely — something else will handle that.
+
+  · Not: "Add a 4:30pm reminder to bring your phone."
+    But: "Barbell at 5. Film two working sets and get the bar speed on video."
+  · Not: "Set a reminder to weigh in tomorrow."
+    But: "Weigh in before you eat tomorrow — you have no reading since Tuesday."
+
+A concrete next step is still required. It just has to be a step only he can
+take.
 `
       },
 
@@ -250,6 +293,11 @@ async function chooseWhatToSend(candidates) {
           `about one thing is the single fastest way to make someone mute this app.\n\n` +
           `Keep the blunt, specific voice of the originals. Do not soften and do not ` +
           `summarise into vagueness.\n\n` +
+          // This function does not merely pick — it rewrites, and is told to keep
+          // "every concrete action from the ones you dropped". A do-not-instruct
+          // rule living only in the writer would be laundered straight back in
+          // here, which is why it is repeated rather than referenced.
+          `${AUTONOMY_RULE}\n\n` +
           `Return ONLY JSON: {"send":[{"index":number,"message":"","deliver":"morning|midday|afternoon|evening","merged_from":[number]}]}\n` +
           `"index" is the candidate whose intention the nudge should be attached to.`
       },

@@ -11,6 +11,37 @@ import { MODELS } from "../../../lib/models.js";
 import { transcribeAudio } from "../../../tools/pitch.js";
 import { notifyCapture } from "../../../lib/captureNotify.js";
 
+// Everything durable in what he just said, folded into the reply.
+//
+// Three exit paths return from this handler, not one — the resumed
+// clarification, the no-tool-call conversational answer, and the normal tool
+// loop — and the utterance that exposed the whole gap ("I'm racing my roommate
+// to a muscle-up") took the middle one. A pass bolted onto the end of the tool
+// loop would have missed exactly the case it was written for, so it goes
+// through here and every path calls it.
+//
+// Awaited, not fired and forgotten: background work in a serverless function is
+// killed the moment the response is sent. Never throws — tools/extract.js
+// swallows its own failures — because a fact not saved must not become a
+// capture that failed.
+//
+// It appends to the message rather than adding a result. `result.message` is a
+// hard contract: the desk firmware and the Action Button Shortcut both read it
+// aloud, and an extra entry in `results` would also make "2 things done" say
+// three.
+async function withExtraction(text, results, message) {
+
+  const { extractDurableFacts } = await import("../../../tools/extract.js");
+
+  const extracted = await extractDurableFacts(text, results);
+
+  if (!extracted?.summary) return message;
+
+  return message ? `${message} ${extracted.summary}` : extracted.summary;
+
+}
+
+
 export default async function handler(req, res) {
 
   if (!requireAuth(req, res)) return;
@@ -81,13 +112,20 @@ export default async function handler(req, res) {
 
       if (resumed.handled) {
 
-        await notifyCapture([{ tool: "clarification", result: resumed.result }], text);
+        const answered = {
+          ...resumed.result,
+          message: await withExtraction(text, [{ tool: "clarification", result: resumed.result }], resumed.result.message)
+        };
+
+        const settled = [{ tool: "clarification", result: answered }];
+
+        await notifyCapture(settled, text);
 
         return res.status(200).json({
-          success: resumed.result.success,
-          results: [{ tool: "clarification", result: resumed.result }],
+          success: answered.success,
+          results: settled,
           tool: "clarification",
-          result: resumed.result
+          result: answered
         });
 
       }
@@ -205,6 +243,8 @@ Call every tool needed to satisfy the request — if one message asks for two th
       // lib/captureNotify.js is the one owner of that decision now; it knows
       // both the length and whether the notification is going to be shown at
       // all, which is more than this branch could see.
+      answer.message = await withExtraction(text, [{ tool: "general_question", result: answer }], answer.message);
+
       await notifyCapture([{ tool: "general_question", result: answer }], text);
 
       return res.status(200).json({
@@ -283,6 +323,18 @@ Call every tool needed to satisfy the request — if one message asks for two th
       .join(" ");
 
 
+    const spokenWithExtras = await withExtraction(text, results, spokenMessage);
+
+    // The extraction line rides on the LAST result rather than becoming its own
+    // entry, so describeCapture speaks it without "2 things done" turning into
+    // three.
+    if (spokenWithExtras !== spokenMessage && results.length > 0) {
+      const last = results[results.length - 1];
+      if (last.result?.message) {
+        last.result = { ...last.result, message: `${last.result.message} ${spokenWithExtras.slice(spokenMessage.length).trim()}` };
+      }
+    }
+
     // Awaited rather than fired and forgotten. A capture that reports nothing
     // is indistinguishable from one that never arrived, and background work in
     // a serverless function can be killed the moment the response is sent.
@@ -307,7 +359,7 @@ Call every tool needed to satisfy the request — if one message asks for two th
 
       result: results.length === 1
         ? results[0]?.result
-        : { ...(results[0]?.result || { success: !anyFailure }), message: spokenMessage }
+        : { ...(results[0]?.result || { success: !anyFailure }), message: spokenWithExtras }
 
     });
 

@@ -231,6 +231,43 @@ export async function buildDiagnostics() {
   };
 
 
+  // Standing reminders, and the two ways they die quietly: the clock half stops
+  // being called, or every trigger is checked and none ever matches. Both look
+  // exactly like "a quiet week" without a count next to a timestamp.
+  const { data: activeTriggers } = await supabase
+    .from("triggers").select("id, label, kind, last_fired_at, fire_count").eq("active", true)
+    .then(r => r, () => ({ data: null }));
+
+  // latest() takes no filter and returns a bare column value, so the sweep's
+  // own row is read directly.
+  const { data: sweeps } = await supabase
+    .from("activity_logs")
+    .select("created_at, success, output")
+    .eq("action", "triggers_checked")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .then(r => r, () => ({ data: null }));
+
+  const lastSweep = sweeps?.[0] || null;
+
+  const triggers = {
+    active: activeTriggers?.length ?? null,
+    // null rather than 0 when the table is missing, so "not set up yet" and
+    // "set up and doing nothing" are not the same reading.
+    neverFired: activeTriggers ? activeTriggers.filter(t => !t.last_fired_at).length : null,
+    lastSweepAt: lastSweep?.created_at || null,
+    lastSweepAgeHours: ageHours(lastSweep?.created_at),
+    lastSweepOk: lastSweep ? lastSweep.success !== false : null,
+    lastSweepDetail: lastSweep?.output || null,
+    list: (activeTriggers || []).slice(0, 8).map(t => ({
+      label: t.label,
+      kind: t.kind,
+      fired: t.fire_count,
+      lastAt: t.last_fired_at
+    }))
+  };
+
+
   return {
     success: true,
     checkedAt: new Date().toISOString(),
@@ -238,6 +275,7 @@ export async function buildDiagnostics() {
     location,
     push,
     jobs,
+    triggers,
     schema,
     counts,
     settings: { interruption_level: settings.interruption_level, persisted: settings.persisted !== false }

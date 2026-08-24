@@ -366,10 +366,15 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     // today's data it costs a signal slot and adds nothing; the moment two real
     // weeks exist for a metric, week-over-week movement rides into every
     // reasoning call for free. Computed in lib/trends.js, never by the model.
-    trendSignal()
+    trendSignal(),
+    // What the app has standing instructions to do on its own. Without this
+    // line the nudge writer cannot know a reminder already exists and will
+    // cheerfully tell him to go and set one up — the exact failure the trigger
+    // engine was built to end.
+    import("../tools/triggers.js").then(m => m.triggerSignal())
   ]);
 
-  const [finance, completions, overdue, intentions, relationships, projects, presence, body, nutrition, trends] =
+  const [finance, completions, overdue, intentions, relationships, projects, presence, body, nutrition, trends, standing] =
     results.map(r => (r.status === "fulfilled" ? r.value : null));
 
   // A rejected signal is a bug, not a quiet week — allSettled keeps it from
@@ -391,7 +396,8 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     presence && `Where he has been: ${presence}`,
     body && `Body: ${body}`,
     nutrition && `Food: ${nutrition}`,
-    trends && `Trends: ${trends}`
+    trends && `Trends: ${trends}`,
+    standing && `Already handled: ${standing}`
   ].filter(Boolean);
 
   return lines.length ? lines.join("\n") : null;

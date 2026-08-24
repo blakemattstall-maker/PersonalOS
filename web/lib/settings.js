@@ -134,7 +134,16 @@ export const URGENCY_TIERS = {
   // it is the app answering him, and since the Shortcut went silent it is the
   // only answer a capture gets. Still gated rather than unconditional: silent
   // has to mean silent, or the dial is a suggestion.
-  capture_confirmation: "digest"
+  capture_confirmation: "digest",
+
+  // A standing reminder the owner set up himself, firing at the moment he
+  // chose — arriving at the gym, half an hour before a meeting. Tiered above
+  // nudges because unlike a nudge it is time-critical by construction: the
+  // whole value is that it lands while he is standing there, and an hour later
+  // it is worth nothing. The CARD is written whatever this says; only the buzz
+  // is gated, so turning the dial down means "stop interrupting me", never
+  // "stop keeping track".
+  check_in: "digest_plus_urgent"
 };
 
 

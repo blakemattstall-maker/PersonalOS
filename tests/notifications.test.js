@@ -25,7 +25,13 @@ function sourceFiles(dir, found = []) {
 
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
 
-    if (entry.name === "node_modules" || entry.name === ".next" || entry.name.startsWith(".")) {
+    // "tests" excluded alongside the build output: nothing in here pushes, and
+    // a test that MENTIONS pushAllowed — `fire.indexOf("pushAllowed(")` — reads
+    // to the scanner below as a call site passing whatever quoted text comes
+    // next in the file. The author already special-cased this file for the same
+    // reason; the rule is simply that source is scanned and tests are not.
+    if (entry.name === "node_modules" || entry.name === ".next"
+        || entry.name === "tests" || entry.name.startsWith(".")) {
       continue;
     }
 

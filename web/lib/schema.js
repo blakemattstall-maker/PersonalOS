@@ -31,6 +31,14 @@ import { probeTable } from "./tableProbe.js";
 const MIGRATIONS = [
 
   {
+    file: "docs/schema-triggers.sql",
+    purpose: "standing reminders the app runs itself — arriving somewhere, before a matching calendar event, at a time of day",
+    tables: ["triggers", "trigger_fires", "trigger_logs"],
+    columns: [["places", "arrived_at"]],
+    breaksWithout: "Nothing fires on its own and nothing can be logged against a reminder. Captures still answer and still save memories and projects; they simply cannot set a reminder up."
+  },
+
+  {
     file: "docs/schema-jobs-pipeline.sql",
     purpose: "application outcomes — the events a pipeline chart is built from",
     tables: ["job_events"],

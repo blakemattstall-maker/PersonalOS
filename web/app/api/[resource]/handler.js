@@ -138,6 +138,16 @@ async function data(req, res) {
         }));
       }
 
+      // A trigger fired and asked something. Routed WITHOUT label_place's
+      // `answer !== "dismissed"` guard, deliberately: for a place name a
+      // dismissal must not be written as the label, but for a check-in "I was
+      // there and did nothing" is real data about a standing reminder, and the
+      // recorder is the thing that knows the difference.
+      if (prompt?.kind === "check_in") {
+        const { recordTriggerResponse } = await import("../../../tools/triggers.js");
+        return res.status(200).json(await recordTriggerResponse({ prompt_id: id, answer }));
+      }
+
       // The staleness sweep raised its hand about a stored claim; the user
       // just ruled on it. update/retire/keep — applied in tools/staleness.js,
       // which is the only code allowed to touch the underlying row.

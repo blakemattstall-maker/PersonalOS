@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { answerPromptAction } from "./actions.js";
 import ReadAloud from "./ReadAloud.js";
-import { ItemCard, Body, btn, field } from "./ui.js";
+import { ItemCard, Body, btn, field as fieldClass } from "./ui.js";
 import { speakable } from "../lib/linkify.js";
 
 
@@ -18,7 +18,41 @@ const HEADINGS = {
   digest: "Something worth noticing",
   relationship_checkin: "Time to check in",
   general_question: "You asked",
-  stale_review: "This looks out of date"
+  stale_review: "This looks out of date",
+  check_in: "Checking in"
+};
+
+
+// Which kinds want typed words back, and what the box should say.
+//
+// This used to be one boolean testing for label_place, which meant every kind
+// added afterwards silently rendered a "Got it" button and nothing else. That
+// is not hypothetical: relationship_checkin has had a server-side recorder
+// since it shipped — answerRelationshipCheckin, expecting a real answer — and
+// no way whatsoever to type one. The card offered a dismiss, which submitted
+// the literal string "dismissed" into a function built to read a reply.
+//
+// So the strings live with the kind. The placeholder, the label the screen
+// reader announces and the button all come from here rather than being
+// hardcoded to naming a place.
+const ANSWERABLE = {
+  label_place: {
+    placeholder: "e.g. Schroeder Hall — math 9am, english 3pm",
+    aria: "Name this place",
+    action: "Save name"
+  },
+  relationship_checkin: {
+    placeholder: "e.g. texted him Sunday, catching up next week",
+    aria: "Say what happened with them",
+    action: "Save"
+  },
+  check_in: {
+    // The question itself is on the card, so the box asks for the shape of the
+    // answer rather than repeating it.
+    placeholder: "e.g. 5 negatives, 2 assisted",
+    aria: "Log what you did",
+    action: "Log it"
+  }
 };
 
 
@@ -40,11 +74,28 @@ export default function PromptCard({ item }) {
   // constraint guaranteeing that stays true forever, and a place-labelling
   // prompt with no way to actually label it is a dead end, not a degraded
   // experience. If it carries a place to name, it gets the input.
-  const needsAnswer = promptKind === "label_place" || !!item.payload?.place_id;
+  const field = ANSWERABLE[promptKind] || (item.payload?.place_id ? ANSWERABLE.label_place : null);
+
+  const needsAnswer = Boolean(field);
+
+  // What the recorder said back.
+  //
+  // This return value used to be thrown away, and answerPlaceLabel has been
+  // returning a confirmation nobody has ever read. It matters more for a
+  // check-in: "Logged. 7 pull ups — best 7, up 2 from your first" is the
+  // progress he asked to be tracked, and the moment he wants to see it is the
+  // moment he finishes typing.
+  const [saved, setSaved] = useState(null);
 
   const submit = (value) => {
     startTransition(async () => {
-      await answerPromptAction(item.id, value);
+      const result = await answerPromptAction(item.id, value);
+      if (result?.message && result?.success !== false) {
+        setSaved(result.message);
+        // Left on screen rather than refreshing it away: the card vanishes on
+        // the next load anyway, and the reply is the whole reward for typing.
+        return;
+      }
       router.refresh();
     });
   };
@@ -109,19 +160,43 @@ export default function PromptCard({ item }) {
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && answer.trim()) submit(answer); }}
-              placeholder="e.g. Schroeder Hall — math 9am, english 3pm"
+              placeholder={field.placeholder}
               disabled={isPending}
-              aria-label="Name this place"
-              className={field("flex-1")}
+              aria-label={field.aria}
+              className={fieldClass("flex-1")}
             />
             <button
               onClick={() => answer.trim() && submit(answer)}
               disabled={isPending || !answer.trim()}
               className={`${btn("ember", "md")} shrink-0`}
             >
-              {isPending ? "Saving…" : "Save name"}
+              {isPending ? "Saving…" : field.action}
             </button>
           </div>
+
+          {/* What came back. For a check-in this is the progress line — the
+              whole reason the question was worth answering. */}
+          {saved && (
+            <p className="pos-data mt-3 rounded-item bg-[var(--sunken)] px-3.5 py-2.5 text-[0.82rem] leading-relaxed text-moss">
+              {saved}
+            </p>
+          )}
+
+          {/* A check-in has to be dismissible without typing. Standing at the
+              gym having done none of it is a real answer, and a card with no
+              way out but a lie is a card that gets ignored. The recorder knows
+              a dismissal from a log and writes no series entry for it. */}
+          {promptKind === "check_in" && !saved && (
+            <div className="mt-3">
+              <button
+                onClick={() => submit("dismissed")}
+                disabled={isPending}
+                className={btn("ghost")}
+              >
+                Not today
+              </button>
+            </div>
+          )}
 
           {item.payload?.maps_url && (
             <a
