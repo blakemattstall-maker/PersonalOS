@@ -494,3 +494,21 @@ test("no nudge writer may tell him to do what the app can do itself", () => {
   assert.match(read("web/tools/accountability.js"), /Never tell him to set up a reminder/);
 
 });
+
+
+test("the progress line reports the number he led with, not an arbitrary one", () => {
+
+  // Frequency alone tied and broke the wrong way in a real run: "5 negatives,
+  // 2 assisted" then "8 negatives, 1 assisted" reported "1 assisted — best 2,
+  // down 1 from your first", describing a session that went 5 to 8 negatives
+  // with fewer assists as if he had gone backwards on both.
+  const progress = fn(triggers, "export async function progressFor(");
+
+  assert.match(progress, /tally\[b\] - tally\[a\] \|\| lead\[a\] - lead\[b\]/,
+    "ties must break on the order he said them in");
+
+  // jsonb does not preserve key order — Postgres sorts the keys — so the order
+  // has to be re-derived from the response text, which does.
+  assert.match(progress, /parseNumbers\(r\.response\)/);
+
+});

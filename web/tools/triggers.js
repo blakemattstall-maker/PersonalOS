@@ -560,15 +560,36 @@ export async function progressFor(triggerId) {
 
   const entries = data.length;
 
-  // The most-used unit across the series, so a line about pull-ups does not
-  // suddenly become a line about minutes because one entry mentioned both.
+  // Which number is the POINT of the entry.
+  //
+  // Frequency alone is not enough and got this visibly wrong: "5 negatives, 2
+  // assisted" then "8 negatives, 1 assisted" tallies both units twice, the tie
+  // broke arbitrarily on "assisted", and the line read "1 assisted — best 2,
+  // down 1 from your first" — reporting a session that went 5 to 8 negatives
+  // with fewer assists as if he had gone backwards on both counts.
+  //
+  // The tie-break is the order he said them in: people lead with the number
+  // that matters. That order cannot come from `numbers`, because jsonb does not
+  // preserve key order — Postgres sorts the keys — so it is re-derived from the
+  // response text, which does.
+  const order = data.map(r => Object.keys(parseNumbers(r.response) || {}));
+
   const tally = {};
 
-  for (const row of data) {
-    for (const key of Object.keys(row.numbers || {})) tally[key] = (tally[key] || 0) + 1;
+  for (const keys of order) {
+    for (const key of keys) tally[key] = (tally[key] || 0) + 1;
   }
 
-  const unit = Object.entries(tally).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  // Average position across the entries that mention it: lower is more often
+  // the thing he led with.
+  const lead = {};
+
+  for (const key of Object.keys(tally)) {
+    const spots = order.map(keys => keys.indexOf(key)).filter(i => i >= 0);
+    lead[key] = spots.reduce((a, b) => a + b, 0) / spots.length;
+  }
+
+  const unit = Object.keys(tally).sort((a, b) => tally[b] - tally[a] || lead[a] - lead[b])[0] || null;
 
   if (!unit) return { entries, line: `${entries} logged so far.` };
 
@@ -576,7 +597,15 @@ export async function progressFor(triggerId) {
     .filter(r => typeof r.numbers?.[unit] === "number")
     .map(r => ({ value: r.numbers[unit], at: r.occurred_at }));
 
-  if (series.length < 2) return { entries, unit, line: `First ${unit.replace(/_/g, " ")} logged.` };
+  if (series.length < 2) {
+    return {
+      entries,
+      unit,
+      line: series.length
+        ? `First one on the board — ${series[0].value} ${unit.replace(/_/g, " ")}.`
+        : "First one on the board."
+    };
+  }
 
   const latest = series[0].value;
   const best = Math.max(...series.map(s => s.value));
