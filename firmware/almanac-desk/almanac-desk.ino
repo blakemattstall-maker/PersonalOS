@@ -33,6 +33,12 @@
 #include "es8311.h"
 #include "secrets.h"
 
+// After pins.h, deliberately: WAKE_WORD is defined there, and a guard placed
+// above its own definition is simply false.
+#if WAKE_WORD
+#include "ESP_SR.h"
+#endif
+
 
 // ---------------------------------------------------------------------------
 // Display
@@ -130,6 +136,82 @@ bool audioInit() {
 }
 
 
+// The microphone's state, and the ledger.
+//
+// micArmed is not a software flag that merely ignores audio: muting calls
+// i2s.end(), which stops the bit clock the codec needs to hand over any
+// samples at all. Muted means the hardware is not sampling, not that
+// something downstream is politely discarding.
+bool micArmed = true;
+
+// Every recording sent today, counted so the screen can show it. Nothing
+// this device uploads should be invisible to somebody standing next to it.
+int asksSent = 0;
+
+volatile bool wakeFired = false;
+
+#if WAKE_WORD
+
+// The wake word engine only ever sets a flag. Everything that follows —
+// recording, uploading, speaking — happens on the main loop where it is
+// visible and interruptible, rather than inside an audio callback.
+void onSrEvent(sr_event_t event, int command_id, int phrase_id) {
+  if (event == SR_EVENT_WAKEWORD) wakeFired = true;
+}
+
+#endif
+
+
+// Start and stop listening, at the hardware level.
+//
+// Arming brings the I2S clock up and hands the stream to the wake word
+// engine. Disarming ends both, which stops the codec being clocked at all —
+// the difference between "we ignore the microphone" and "the microphone is
+// not running", which is the only version of a mute worth having in a room
+// somebody else lives in.
+bool armMic() {
+
+#if WAKE_WORD
+
+  if (!audioConfigure(RECORD_RATE)) return false;
+
+  ESP_SR.onEvent(onSrEvent);
+
+  // "MN": the ES8311 puts the microphone in the left slot of a stereo frame,
+  // and the right slot carries nothing we want the detector to hear.
+  if (!ESP_SR.begin(i2s, NULL, 0, SR_CHANNELS_STEREO, SR_MODE_WAKEWORD, "MN")) {
+    Serial.println("[mic] wake word engine failed to start");
+    return false;
+  }
+
+  Serial.println("[mic] armed - wake word listening on-device");
+
+#endif
+
+  micArmed = true;
+
+  return true;
+
+}
+
+
+void disarmMic() {
+
+#if WAKE_WORD
+  ESP_SR.end();
+#endif
+
+  i2s.end();
+
+  micArmed = false;
+
+  wakeFired = false;
+
+  Serial.println("[mic] DISARMED - i2s stopped, codec no longer clocked");
+
+}
+
+
 // ---------------------------------------------------------------------------
 // What the server said last — everything the screen renders.
 // ---------------------------------------------------------------------------
@@ -150,6 +232,8 @@ Phase phase = BOOTING;
 // device cannot see inside the PNG it is showing, so the two must be changed
 // together. Kept as named constants rather than magic numbers so that
 // coupling is at least visible from here.
+const int EYE_TOP = 170;                      // the eye on the resting face
+const int EYE_BOTTOM = 320;
 const int CARD_TOP = 300;                     // the ember/moss card
 const int TALK_BAR_TOP = LCD_HEIGHT - 52;     // the hairline and "hold to talk"
 
@@ -216,7 +300,17 @@ void ackNudge(const String &id) {
 // cable: change the renderer, deploy, and the next poll looks different.
 // ---------------------------------------------------------------------------
 
-PNG png;
+// Allocated only while decoding, never while the network is busy.
+//
+// A PNG object carries zlib's 32KB sliding window plus its line buffers —
+// about 40KB of internal RAM, held permanently when it was a global. That
+// was free until the wake word engine moved in and took most of the internal
+// heap for its models: TLS then had ~51KB to work with, needs roughly 40-50
+// to handshake, and every screen fetch failed with a bare connection error.
+//
+// The decoder is not needed until the download has finished, so it does not
+// exist until then. Same peak memory, very different shape.
+PNG *png = nullptr;
 
 
 // PNGdec keeps the current and previous scanline in one fixed internal
@@ -298,8 +392,8 @@ static int pngDrawLine(PNGDRAW *draw) {
 
   if (!frame || draw->y < 0 || draw->y >= LCD_HEIGHT) return 0;
 
-  png.getLineAsRGB565(draw, frame + ((size_t)draw->y * LCD_WIDTH),
-                      PNG_RGB565_BIG_ENDIAN, 0xffffffff);
+  png->getLineAsRGB565(draw, frame + ((size_t)draw->y * LCD_WIDTH),
+                       PNG_RGB565_BIG_ENDIAN, 0xffffffff);
 
   // Non-zero keeps the decoder going; returning 0 would abort mid-image.
   return 1;
@@ -315,7 +409,13 @@ bool fetchScreen() {
   WiFiClientSecure client;
   HTTPClient http;
 
-  if (!httpBegin(http, client, "/api/desk?screen=1")) return false;
+  // The device owns the microphone's state, so it tells the renderer what to
+  // draw rather than the other way round.
+  char path[64];
+  snprintf(path, sizeof(path), "/api/desk?screen=1&mic=%s&asks=%d",
+           micArmed ? "on" : "off", asksSent);
+
+  if (!httpBegin(http, client, path)) return false;
 
   // The nudge id travels with the picture instead of in a second request, so
   // a tap can never resolve something other than what is on the glass.
@@ -373,10 +473,21 @@ bool fetchScreen() {
 
   Serial.printf("[screen] declared=%d written=%d got=%u\n", declared, written, (unsigned)got);
 
-  const int rc = png.openRAM(buf, got, pngDrawLine);
+  // The socket is closed by now, so the decoder can have the RAM that TLS
+  // was using.
+  png = new PNG();
+
+  if (!png) {
+    Serial.println("[screen] could not allocate the decoder");
+    free(buf);
+    return false;
+  }
+
+  const int rc = png->openRAM(buf, got, pngDrawLine);
 
   if (rc != PNG_SUCCESS) {
     Serial.printf("[screen] openRAM failed %d\n", rc);
+    delete png; png = nullptr;
     free(buf);
     return false;
   }
@@ -385,7 +496,9 @@ bool fetchScreen() {
     frame = (uint16_t *)heap_caps_malloc((size_t)LCD_WIDTH * LCD_HEIGHT * 2, MALLOC_CAP_SPIRAM);
     if (!frame) {
       Serial.println("[screen] no PSRAM for the framebuffer");
-      png.close();
+      png->close();
+      delete png;
+      png = nullptr;
       free(buf);
       return false;
     }
@@ -395,7 +508,7 @@ bool fetchScreen() {
 
   const unsigned long t0 = millis();
 
-  const int decoded = png.decode(NULL, 0);
+  const int decoded = png->decode(NULL, 0);
 
   const unsigned long tDecode = millis() - t0;
 
@@ -406,11 +519,14 @@ bool fetchScreen() {
     gfx->draw16bitBeRGBBitmap(0, 0, frame, LCD_WIDTH, LCD_HEIGHT);
   }
 
-  Serial.printf("[screen] %dx%d type=%d -> %u lines, decode %lums, blit %lums\n",
-                png.getWidth(), png.getHeight(), png.getPixelType(),
-                (unsigned)linesDrawn, tDecode, millis() - t1);
+  Serial.printf("[screen] %dx%d type=%d -> %u lines, decode %lums, blit %lums, heap %u\n",
+                png->getWidth(), png->getHeight(), png->getPixelType(),
+                (unsigned)linesDrawn, tDecode, millis() - t1, (unsigned)ESP.getFreeHeap());
 
-  png.close();
+  png->close();
+
+  delete png;
+  png = nullptr;
 
   free(buf);
 
@@ -504,6 +620,43 @@ bool stillHeld() {
   TouchPoint t = readTouch();
   return t.touched && t.y >= TALK_BAR_TOP;
 }
+
+// A fixed window, used after a wake word: there is no button being held to
+// tell us when the sentence ended, and an open-ended microphone is exactly
+// the thing this device promises not to be. Six seconds, then it stops
+// whether or not anyone spoke.
+size_t recordFixed(int16_t *mono, size_t maxSamples) {
+
+  // PSRAM, not a static array: 8KB of internal RAM held forever is 8KB the
+  // TLS handshake does not have.
+  int32_t *stereo = (int32_t *)heap_caps_malloc(2048 * sizeof(int32_t), MALLOC_CAP_SPIRAM);
+
+  if (!stereo) return 0;
+
+  size_t written = 0;
+
+  const unsigned long start = millis();
+
+  while (written < maxSamples && millis() - start < 7'000UL) {
+
+    const size_t want = min((size_t)2048, maxSamples - written) * 2 * sizeof(int16_t);
+    const size_t got = i2s.readBytes((char *)stereo, want);
+
+    const int16_t *samples = (const int16_t *)stereo;
+
+    for (size_t i = 0; i + 1 < got / sizeof(int16_t); i += 2) {
+      mono[written++] = samples[i];
+      if (written >= maxSamples) break;
+    }
+
+  }
+
+  free(stereo);
+
+  return written;
+
+}
+
 
 // 16kHz stereo 16-bit, downmixed to mono on the fly. 10s hard cap.
 size_t recordWhileHeld(int16_t *mono, size_t maxSamples) {
@@ -715,10 +868,19 @@ void speak(const String &text) {
 
 }
 
-void voiceFlow() {
+void voiceFlow(bool fromWake = false) {
 
   phase = LISTENING;
-  drawPhase("listening", "release to send", C_TIDE);
+  // Unmissable on purpose. Anyone in the room can see the moment this
+  // device starts recording, which is the point — a listening indicator that
+  // needs explaining is not an indicator.
+  drawPhase("listening", fromWake ? "speak now" : "release to send", C_EMBER);
+
+#if WAKE_WORD
+  // The detector and the recorder cannot share the I2S stream, so the engine
+  // steps aside for the length of the conversation and is restarted after.
+  if (fromWake) ESP_SR.end();
+#endif
 
   const size_t MAX_SAMPLES = RECORD_RATE * 10;
 
@@ -726,7 +888,9 @@ void voiceFlow() {
 
   if (!mono) { phase = IDLE; fetchScreen(); return; }
 
-  const size_t samples = recordWhileHeld(mono, MAX_SAMPLES);
+  const size_t samples = fromWake
+    ? recordFixed(mono, RECORD_RATE * 6)   // six seconds, then it stops itself
+    : recordWhileHeld(mono, MAX_SAMPLES);
 
   // How loud was it, really.
   //
@@ -768,6 +932,8 @@ void voiceFlow() {
   phase = THINKING;
   drawPhase("thinking", "", C_INK_SOFT);
 
+  asksSent++;
+
   const String reply = sendCapture(mono, samples);
   free(mono);
 
@@ -776,6 +942,11 @@ void voiceFlow() {
   speak(reply);
 
   phase = IDLE;
+#if WAKE_WORD
+  // Back to listening for the wake word only — never left recording.
+  if (fromWake && micArmed) armMic();
+#endif
+
   // The capture may well have changed what is waiting, so the screen is
   // re-fetched rather than restored from before the conversation.
   fetchScreen();
@@ -946,6 +1117,10 @@ void setup() {
 
   Serial.printf("[boot] audio init: %s\n", audioOk ? "ok" : "FAILED");
 
+#if WAKE_WORD
+  if (audioOk) armMic();
+#endif
+
   if (!audioOk) {
     gfx->setCursor(24, 140);
     gfx->setTextColor(C_EMBER);
@@ -994,10 +1169,30 @@ void loop() {
     if (!ok) drawOffline("almanac unreachable");
   }
 
+#if WAKE_WORD
+  // A wake word was heard on-device. Nothing has been recorded or sent yet;
+  // that starts here, in the open, with the screen showing it.
+  if (wakeFired) {
+    wakeFired = false;
+    if (micArmed) {
+      voiceFlow(true);
+      return;
+    }
+  }
+#endif
+
   // Inputs. The BOOT side button and the bottom bar both start a capture;
-  // a tap on the nudge card resolves it.
+  // a tap on the nudge card resolves it. The button works whether or not the
+  // microphone is armed for wake words — holding it is an explicit act, and
+  // it re-arms the hardware just for that recording.
   if (digitalRead(BOOT_BTN) == LOW) {
-    voiceFlow();
+    if (!micArmed) {
+      audioConfigure(RECORD_RATE);
+      voiceFlow();
+      i2s.end();
+    } else {
+      voiceFlow();
+    }
     return;
   }
 
@@ -1008,6 +1203,21 @@ void loop() {
     if (t.y >= TALK_BAR_TOP) {
       voiceFlow();
       return;
+    }
+
+    // The eye is the mute switch. Tapping the thing that looks like it is
+    // watching you is the one gesture nobody needs told to them, and it is
+    // the control most worth making obvious in a shared room.
+    if (t.y >= EYE_TOP && t.y < EYE_BOTTOM) {
+
+      if (micArmed) disarmMic(); else armMic();
+
+      fetchScreen();
+
+      delay(400);
+
+      return;
+
     }
 
     if (t.y >= CARD_TOP && t.y < TALK_BAR_TOP && state.nudgeId.length()) {

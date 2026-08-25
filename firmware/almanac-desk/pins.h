@@ -22,6 +22,20 @@
 // display problem is being chased; off for normal use.
 #define SELF_TEST 0
 
+// On-device wake word.
+//
+// The engine ("Hi ESP", the only model Espressif ships prebuilt in the
+// Arduino core) runs entirely on this chip. Read esp32-hal-sr.c if you want
+// to check rather than trust: it allocates one small chunk buffer in
+// internal RAM and contains no file writes, no sockets and no network calls
+// of any kind. Audio is examined and overwritten, never kept, never sent.
+// Bytes only leave this device after a wake word or a button, and only then
+// for the few seconds that follow.
+//
+// Requires PartitionScheme=esp_sr_16 so the model blob has somewhere to
+// live; that scheme's upload flags flash it automatically.
+#define WAKE_WORD 1
+
 // AMOLED over QSPI. Reset is NOT on an ESP32 pin — the panel's reset, the
 // display power rail and the touch reset all live on a TCA9554 IO expander
 // (see tca9554.h), which is why the expander dance in setup() is mandatory.

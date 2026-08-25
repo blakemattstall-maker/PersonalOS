@@ -39,7 +39,14 @@ export async function GET(request, context) {
     // enough that no ordinary dashboard call should pay to load it.
     const { renderDeskScreen } = await import("./deskScreen.js");
 
-    return renderDeskScreen({ preview: new URL(request.url).searchParams.get("preview") });
+    const params = new URL(request.url).searchParams;
+
+    return renderDeskScreen({
+      preview: params.get("preview"),
+      // The device owns the microphone's state; the renderer only draws it.
+      mic: params.get("mic") === "off" ? "off" : "on",
+      asks: Math.max(0, Math.min(99, Number(params.get("asks")) || 0))
+    });
 
   }
 

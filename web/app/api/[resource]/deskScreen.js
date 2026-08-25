@@ -107,6 +107,40 @@ const label = (color = C.inkSoft) => ({
 // The iris drifts with the minute, which is the only animation a screen
 // repainted once a minute can honestly have: over an hour it looks around
 // the room instead of staring.
+function ClosedEye({ size = 132 }) {
+
+  // A shut eye, not a crossed-out icon. Someone glancing over should be able
+  // to tell the microphone is off without knowing what any symbol means, and
+  // an eye that is simply closed reads that way instantly.
+  return (
+    <div
+      style={{
+        display: "flex",
+        position: "relative",
+        width: size,
+        height: size,
+        alignItems: "center",
+        justifyContent: "center"
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: size,
+          height: size,
+          borderRadius: size,
+          border: `1px solid ${C.line}`
+        }}
+      />
+      <div style={{ display: "flex", width: size - 52, height: 3, background: C.inkSoft, borderRadius: 3 }} />
+    </div>
+  );
+
+}
+
+
 function Eye({ accent, awake }) {
 
   const minute = new Date().getMinutes();
@@ -191,7 +225,7 @@ function Eye({ accent, awake }) {
 }
 
 
-function RestingFace({ state }) {
+function RestingFace({ state, mic, asks }) {
 
   const waiting = state.attention.count > 0;
 
@@ -235,14 +269,24 @@ function RestingFace({ state }) {
       <div style={{ display: "flex", flexGrow: 1 }} />
 
       <div style={{ display: "flex", justifyContent: "center" }}>
-        <Eye accent={accent} awake={waiting} />
+        {mic === "off" ? <ClosedEye /> : <Eye accent={accent} awake={waiting} />}
       </div>
 
       <div style={{ display: "flex", flexGrow: 1 }} />
 
-      {/* One line of state, and only when there is state. Silence is the
-          resting face's whole point. */}
-      {waiting ? (
+      {/* The microphone's state outranks everything else on this face. It
+          lives in a shared room, and someone else's ability to see at a
+          glance whether it is listening matters more than the next event. */}
+      {mic === "off" ? (
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <div style={{ display: "flex", fontFamily: "Body", fontSize: 13, letterSpacing: 1.4, color: C.inkSoft }}>
+            MIC OFF
+          </div>
+          <div style={{ display: "flex", fontFamily: "Mono", fontSize: 12, color: C.line, marginLeft: 10 }}>
+            tap to arm
+          </div>
+        </div>
+      ) : waiting ? (
         <div style={{ display: "flex", alignItems: "center" }}>
           <div style={{ width: 8, height: 8, borderRadius: 8, background: C.ember, display: "flex" }} />
           <div style={{ display: "flex", fontFamily: "Body", fontSize: 14, color: C.ember, marginLeft: 10 }}>
@@ -258,6 +302,15 @@ function RestingFace({ state }) {
       ) : (
         <div style={{ display: "flex", fontFamily: "Mono", fontSize: 13, color: C.inkSoft }}>
           nothing scheduled
+        </div>
+      )}
+
+      {/* Every recording this device has sent today, counted in the open. A
+          number that stays at zero all day is the claim "it is not quietly
+          uploading" made checkable rather than promised. */}
+      {mic !== "off" && (
+        <div style={{ display: "flex", fontFamily: "Mono", fontSize: 11, color: C.line, marginTop: 7 }}>
+          {asks === 0 ? "nothing sent today" : `${asks} sent today`}
         </div>
       )}
 
@@ -442,7 +495,7 @@ function AnswerScreen({ spec }) {
 
 // ---------------------------------------------------------------------------
 
-export async function renderDeskScreen({ preview = null } = {}) {
+export async function renderDeskScreen({ preview = null, mic = "on", asks = 0 } = {}) {
 
   const [state, answer] = await Promise.all([
     buildDeskState(),
@@ -503,7 +556,7 @@ export async function renderDeskScreen({ preview = null } = {}) {
             of the glass, which is what happened the first time an answer ran
             long: the "hold to talk" hint simply vanished. */}
         <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, overflow: "hidden" }}>
-          {answer ? <AnswerScreen spec={answer.spec} /> : <RestingFace state={state} />}
+          {answer ? <AnswerScreen spec={answer.spec} /> : <RestingFace state={state} mic={mic} asks={asks} />}
         </div>
 
         <div
@@ -517,7 +570,7 @@ export async function renderDeskScreen({ preview = null } = {}) {
           }}
         >
           <div style={{ display: "flex", fontSize: 12, color: C.inkSoft }}>
-            {answer ? "hold to ask again" : "hold to talk"}
+            {mic === "off" ? "microphone off" : answer ? "hold to ask again" : "say \u201chi E-S-P\u201d or hold"}
           </div>
           <div
             style={{
