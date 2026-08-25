@@ -274,7 +274,12 @@ private:
 
 // PNGdec's line callback is a plain C function pointer, so the target has to
 // be reachable without a closure.
+volatile uint32_t linesDrawn = 0;
+
 static int pngDrawLine(PNGDRAW *draw) {
+
+  linesDrawn++;
+
 
   uint16_t line[LCD_WIDTH];
 
@@ -358,10 +363,15 @@ bool fetchScreen() {
     return false;
   }
 
-  Serial.printf("[screen] png %dx%d bpp=%d type=%d\n",
-                png.getWidth(), png.getHeight(), png.getBpp(), png.getPixelType());
+  linesDrawn = 0;
+
+  const unsigned long t0 = millis();
 
   const int decoded = png.decode(NULL, 0);
+
+  Serial.printf("[screen] %dx%d type=%d -> %u lines in %lums\n",
+                png.getWidth(), png.getHeight(), png.getPixelType(),
+                (unsigned)linesDrawn, millis() - t0);
 
   png.close();
 
