@@ -238,7 +238,7 @@ function Eye({ accent, awake }) {
 }
 
 
-function RestingFace({ state, mic, asks }) {
+function RestingFace({ state, mic, asks, tts }) {
 
   const waiting = state.attention.count > 0;
 
@@ -516,7 +516,7 @@ function AnswerScreen({ spec }) {
 
 // ---------------------------------------------------------------------------
 
-export async function renderDeskScreen({ preview = null, mic = "on", asks = 0 } = {}) {
+export async function renderDeskScreen({ preview = null, mic = "on", asks = 0, tts = "on" } = {}) {
 
   const [state, answer] = await Promise.all([
     buildDeskState(),
@@ -577,7 +577,7 @@ export async function renderDeskScreen({ preview = null, mic = "on", asks = 0 } 
             of the glass, which is what happened the first time an answer ran
             long: the "hold to talk" hint simply vanished. */}
         <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, overflow: "hidden" }}>
-          {answer ? <AnswerScreen spec={answer.spec} /> : <RestingFace state={state} mic={mic} asks={asks} />}
+          {answer ? <AnswerScreen spec={answer.spec} /> : <RestingFace state={state} mic={mic} asks={asks} tts={tts} />}
         </div>
 
         <div
@@ -590,9 +590,45 @@ export async function renderDeskScreen({ preview = null, mic = "on", asks = 0 } 
             borderTop: `1px solid ${C.line}`
           }}
         >
-          <div style={{ display: "flex", fontSize: 12, color: C.inkSoft }}>
-            {mic === "off" ? "microphone off" : answer ? "hold to ask again" : `say \u201c${WAKE_WORD}\u201d or hold`}
-          </div>
+          {/* On the resting face this is the speech switch, and the device
+              treats the whole footer strip as its tap target. It lives here
+              rather than in the column above because that column clips: the
+              switch was drawn, pushed past the bottom edge, and invisible.
+
+              On an answer screen the footer says what a tap does instead,
+              since there a tap dismisses. */}
+          {answer ? (
+            <div style={{ display: "flex", fontSize: 12, color: C.inkSoft }}>
+              tap to dismiss
+            </div>
+          ) : mic === "off" ? (
+            <div style={{ display: "flex", fontSize: 12, color: C.inkSoft }}>
+              microphone off
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div
+                style={{
+                  display: "flex",
+                  width: 7,
+                  height: 7,
+                  borderRadius: 7,
+                  background: tts === "off" ? C.line : C.moss
+                }}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  fontFamily: "Mono",
+                  fontSize: 12,
+                  color: tts === "off" ? C.inkSoft : C.moss,
+                  marginLeft: 8
+                }}
+              >
+                {tts === "off" ? "voice off" : "voice on"}
+              </div>
+            </div>
+          )}
           <div
             style={{
               display: "flex",

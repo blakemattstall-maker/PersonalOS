@@ -178,6 +178,102 @@ async function withExtraction(text, results, message) {
 }
 
 
+// Spoken controls, answered without the router.
+//
+// The screen has a tap target for dismissing an answer, which is a nice
+// accelerator and a bad requirement: this is meant to be usable with your
+// hands full. These are matched rather than routed because they are not
+// questions — sending "never mind" to a planning engine invites it to
+// helpfully do something, which is precisely what it did: "never mind"
+// produced a screen reading "Previous request ignored", and "go back to
+// home" pulled up his hometown.
+//
+// Returns a response body to send, or null to carry on routing.
+async function handleDeskCommand(text) {
+
+  if (typeof text !== "string") return null;
+
+  // The wake word is usually transcribed along with the command, and a
+  // transcriber adds punctuation and filler an anchored match will not
+  // survive: "Jarvis, never mind." never equalled "never mind".
+  const said = text
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .replace(/\b(jarvis|hey|ok|okay|um|uh|please|can you|could you|just)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const DISMISS = new RegExp(
+    "^(" + [
+      "never ?mind", "nevermind", "forget it", "forget that",
+      "go back", "go back home", "go home", "back", "home",
+      "back to home", "back to the home ?screen", "home ?screen",
+      "dismiss( that| it)?", "clear( that| it| the screen)?",
+      "close( that| it)?", "hide( that| it)?",
+      "put (that|it) away", "get rid of (that|it)", "take (that|it) away",
+      "cancel", "stop", "quit", "exit",
+      "thats all", "thats it", "were done", "done", "im done",
+      "thank you", "thanks", "nothing", "no thanks"
+    ].join("|") + ")$"
+  );
+
+  if (DISMISS.test(said)) {
+
+    try {
+      const { clearDeskScreen } = await import("../../../lib/deskScreens.js");
+      await clearDeskScreen();
+    } catch (error) {
+      console.error("DESK dismiss failed:", error.message);
+    }
+
+    // Silent on purpose. Acknowledging "never mind" out loud is the
+    // assistant taking the last word.
+    return { success: true, tool: "desk_control", result: { success: true, message: "" } };
+
+  }
+
+  const REPEAT = /^(repeat( that)?|say that again|what did you say|again)$/;
+
+  if (REPEAT.test(said)) {
+
+    try {
+
+      const { loadDeskContext } = await import("../../../lib/deskScreens.js");
+
+      const previous = await loadDeskContext();
+
+      if (previous?.answer) {
+        return {
+          success: true,
+          tool: "desk_control",
+          result: { success: true, message: boundForSpeech(previous.answer) }
+        };
+      }
+
+    } catch (error) {
+      console.error("DESK repeat failed:", error.message);
+    }
+
+    return { success: true, tool: "desk_control", result: { success: true, message: "" } };
+
+  }
+
+  // Speech on and off, by voice as well as by the button on the screen.
+  if (/^(be quiet|quiet|mute|stop talking|no (more )?(voice|talking|audio|sound)|voice off|dont talk)$/.test(said)) {
+    return { success: true, tool: "desk_control", speech: "off",
+             result: { success: true, message: "" } };
+  }
+
+  if (/^(speak|talk|voice on|unmute|you can talk|start talking)$/.test(said)) {
+    return { success: true, tool: "desk_control", speech: "on",
+             result: { success: true, message: "Voice is back on." } };
+  }
+
+  return null;
+
+}
+
+
 export default async function handler(req, res) {
 
   if (!requireAuth(req, res)) return;
@@ -227,91 +323,9 @@ export default async function handler(req, res) {
 
     let { text } = req.body;
 
-    // Spoken controls, answered without the router.
-    //
-    // The screen has a tap target for dismissing an answer, which is a nice
-    // accelerator and a bad requirement: this is meant to be usable with
-    // your hands full and your eyes elsewhere. These are matched here rather
-    // than routed because they are not questions — sending "never mind" to a
-    // planning engine invites it to helpfully do something.
-    if (isDesk && typeof text === "string") {
-
-      // The wake word is often transcribed along with the command, and a
-      // transcriber adds punctuation and filler that an anchored match will
-      // not survive: "Jarvis, never mind." never equalled "never mind".
-      const said = text
-        .toLowerCase()
-        .replace(/[^a-z\s]/g, " ")
-        .replace(/\b(jarvis|hey|ok|okay|um|uh|please)\b/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-
-      // People do not dismiss things in one agreed phrase. "Put that away",
-      // "get rid of that", "go home", "close it" all mean the same thing, and
-      // sending any of them to a planning engine produced a screen that said
-      // "Putting that aside" — an assistant narrating instead of acting.
-      const DISMISS = new RegExp(
-        "^(" + [
-          "never ?mind", "nevermind", "forget it", "forget that",
-          "go back", "go home", "back", "home",
-          "dismiss( that| it)?", "clear( that| it| the screen)?",
-          "close( that| it)?", "hide( that| it)?",
-          "put (that|it) away", "get rid of (that|it)", "take (that|it) away",
-          "cancel", "stop", "quit", "exit",
-          "thats all", "thats it", "were done", "done", "im done",
-          "thank you", "thanks", "nothing", "no thanks"
-        ].join("|") + ")$"
-      );
-
-      if (DISMISS.test(said)) {
-
-        try {
-          const { clearDeskScreen } = await import("../../../lib/deskScreens.js");
-          await clearDeskScreen();
-        } catch (error) {
-          console.error("DESK dismiss failed:", error.message);
-        }
-
-        return res.status(200).json({
-          success: true,
-          tool: "desk_control",
-          // Silent on purpose: acknowledging "never mind" out loud is the
-          // assistant getting the last word.
-          result: { success: true, message: "" }
-        });
-
-      }
-
-      const REPEAT = /^(repeat( that)?|say that again|what did you say|again)$/;
-
-      if (REPEAT.test(said)) {
-
-        try {
-
-          const { loadDeskContext } = await import("../../../lib/deskScreens.js");
-
-          const previous = await loadDeskContext();
-
-          if (previous?.answer) {
-            return res.status(200).json({
-              success: true,
-              tool: "desk_control",
-              result: { success: true, message: boundForSpeech(previous.answer) }
-            });
-          }
-
-        } catch (error) {
-          console.error("DESK repeat failed:", error.message);
-        }
-
-        return res.status(200).json({
-          success: true,
-          tool: "desk_control",
-          result: { success: true, message: "I haven't said anything yet." }
-        });
-
-      }
-
+    if (isDesk && typeof text === "string" && text.trim()) {
+      const handled = await handleDeskCommand(text);
+      if (handled) return res.status(200).json(handled);
     }
 
     let transcription = null;
@@ -341,6 +355,14 @@ export default async function handler(req, res) {
       }
 
       text = result.text;
+
+      // Only now is there anything to match against. This check used to sit
+      // above transcription, where `text` is always empty for a spoken
+      // capture, so it never ran for the one surface it was written for.
+      if (isDesk) {
+        const handled = await handleDeskCommand(text);
+        if (handled) return res.status(200).json(handled);
+      }
 
       transcription = { model: result.model, text };
 

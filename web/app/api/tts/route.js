@@ -160,14 +160,54 @@ function downsampleWav24to16(wav) {
 
   const out = Buffer.alloc(outSamples * 2);
 
+  // Low-pass FIRST, then decimate.
+  //
+  // The first version interpolated straight down from 24k to 16k with no
+  // filter. Everything above 8kHz then folds back into the audible band as
+  // aliasing, which is why the speaker "significantly got worse" — a real
+  // artefact, not the lower rate itself. Speech at 16k should sound like a
+  // phone call, and a phone call sounds fine.
+  //
+  // A short windowed-sinc kernel at ~7kHz. Nine taps is cheap and enough:
+  // the content above it is sibilance, not intelligibility.
+  const TAPS = 9;
+  const cutoff = 7000 / 24000;   // fraction of the 24k sample rate
+
+  const kernel = [];
+  let sum = 0;
+
+  for (let i = 0; i < TAPS; i++) {
+    const x = i - (TAPS - 1) / 2;
+    const sinc = x === 0 ? 2 * cutoff : Math.sin(2 * Math.PI * cutoff * x) / (Math.PI * x);
+    // Hamming window, so the kernel does not ring.
+    const w = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (TAPS - 1));
+    kernel.push(sinc * w);
+    sum += sinc * w;
+  }
+
+  for (let i = 0; i < TAPS; i++) kernel[i] /= sum;
+
+  const sampleAt = (i) => {
+    if (i < 0 || i >= inSamples) return 0;
+    return pcm.readInt16LE(i * 2);
+  };
+
+  const filtered = (centre) => {
+    let acc = 0;
+    for (let k = 0; k < TAPS; k++) {
+      acc += kernel[k] * sampleAt(centre + k - (TAPS - 1) / 2);
+    }
+    return acc;
+  };
+
   for (let i = 0; i < outSamples; i++) {
 
     const src = i * 1.5;
     const a = Math.floor(src);
-    const b = Math.min(a + 1, inSamples - 1);
     const t = src - a;
 
-    const sample = pcm.readInt16LE(a * 2) * (1 - t) + pcm.readInt16LE(b * 2) * t;
+    // Interpolate between two FILTERED neighbours.
+    const sample = filtered(a) * (1 - t) + filtered(a + 1) * t;
 
     out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(sample))), i * 2);
 

@@ -45,7 +45,8 @@ export async function GET(request, context) {
       preview: params.get("preview"),
       // The device owns the microphone's state; the renderer only draws it.
       mic: params.get("mic") === "off" ? "off" : "on",
-      asks: Math.max(0, Math.min(99, Number(params.get("asks")) || 0))
+      asks: Math.max(0, Math.min(99, Number(params.get("asks")) || 0)),
+      tts: params.get("tts") === "off" ? "off" : "on"
     });
 
   }

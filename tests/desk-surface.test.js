@@ -91,8 +91,36 @@ test("a deferred tool on the desk still answers out loud", () => {
 
 
 test("follow-up context is desk-only and never leaks into a phone capture", () => {
+
   assert.match(HANDLER, /let deskContext = null/);
-  const at = HANDLER.indexOf("loadDeskContext");
-  const before = HANDLER.slice(0, at);
-  assert.match(before.slice(-300), /if \(isDesk\)/);
+
+  // The context is loaded in two places now — the routing path, and the
+  // "say that again" command. What matters is that neither can run for a
+  // phone capture: the routing load is guarded, and the command handler is
+  // only ever called behind the desk check.
+  const routingLoad = HANDLER.indexOf("deskContext = await loadDeskContext");
+  assert.ok(routingLoad > 0, "the routing path should load context");
+  assert.match(HANDLER.slice(Math.max(0, routingLoad - 300), routingLoad), /if \(isDesk\)/);
+
+  const calls = [...HANDLER.matchAll(/await handleDeskCommand\(/g)];
+  assert.ok(calls.length >= 2, "commands should be checked on both input paths");
+
+  for (const call of calls) {
+    assert.match(
+      HANDLER.slice(Math.max(0, call.index - 200), call.index),
+      /isDesk/,
+      "a phone capture must never be intercepted by a desk command"
+    );
+  }
+
+});
+
+
+test("desk commands are matched only once the words exist", () => {
+  // This check originally sat above transcription, where text is always
+  // empty for a spoken capture — so it never ran for the only surface that
+  // sends speech, and every "never mind" reached the planning engine.
+  const transcribeAt = HANDLER.indexOf("text = result.text");
+  const commandAt = HANDLER.indexOf("await handleDeskCommand(text)", transcribeAt);
+  assert.ok(commandAt > transcribeAt, "commands must be checked after transcription");
 });

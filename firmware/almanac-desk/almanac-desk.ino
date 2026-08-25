@@ -168,6 +168,11 @@ int asksSent = 0;
 
 volatile bool wakeFired = false;
 
+// Whether answers are spoken at all. There is a button for this on the
+// resting face and a pair of voice commands, because wanting the screen
+// without the noise is a normal thing to want in a shared room.
+bool ttsEnabled = true;
+
 #if WAKE_WORD
 
 // The wake word engine only ever sets a flag. Everything that follows —
@@ -198,6 +203,36 @@ void onSrEvent(sr_event_t event, int command_id, int phrase_id) {
 // the difference between "we ignore the microphone" and "the microphone is
 // not running", which is the only version of a mute worth having in a room
 // somebody else lives in.
+// Campus first, hotspot second.
+//
+// Carrying a phone hotspot around to keep a desk device online is a chore,
+// and the campus network is right there. isunet is WPA2-Enterprise, which
+// the ESP32 does support — it just needs an identity and password instead of
+// a shared key. If that is refused (expired password, a RADIUS mood, not on
+// campus) it falls back to the hotspot rather than sitting offline.
+void connectWiFi(bool preferFallback = false) {
+
+  WiFi.disconnect(true);
+
+  delay(100);
+
+#if WIFI_ENTERPRISE
+
+  if (!preferFallback) {
+    Serial.printf("[wifi] trying %s as %s (WPA2-Enterprise)\n", WIFI_EAP_SSID, WIFI_EAP_IDENTITY);
+    WiFi.begin(WIFI_EAP_SSID, WPA2_AUTH_PEAP, WIFI_EAP_IDENTITY, WIFI_EAP_USERNAME, WIFI_EAP_PASSWORD);
+    return;
+  }
+
+#endif
+
+  Serial.printf("[wifi] trying %s\n", WIFI_SSID);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+}
+
+
 bool armMic() {
 
 #if WAKE_WORD
@@ -265,6 +300,9 @@ Phase phase = BOOTING;
 // coupling is at least visible from here.
 const int EYE_TOP = 170;                      // the eye on the resting face
 const int EYE_BOTTOM = 320;
+// The footer strip. On the resting face it is the speech switch; on an
+// answer screen a tap anywhere dismisses, so this only matters when resting.
+const int FOOTER_TOP = 396;
 const int CARD_TOP = 300;                     // the ember/moss card
 const int TALK_BAR_TOP = LCD_HEIGHT - 52;     // the hairline and "hold to talk"
 
@@ -459,8 +497,8 @@ bool fetchScreen() {
   // The device owns the microphone's state, so it tells the renderer what to
   // draw rather than the other way round.
   char path[64];
-  snprintf(path, sizeof(path), "/api/desk?screen=1&mic=%s&asks=%d",
-           micArmed ? "on" : "off", asksSent);
+  snprintf(path, sizeof(path), "/api/desk?screen=1&mic=%s&asks=%d&tts=%s",
+           micArmed ? "on" : "off", asksSent, ttsEnabled ? "on" : "off");
 
   if (!httpBegin(http, client, path)) return false;
 
@@ -850,6 +888,13 @@ String sendCapture(const int16_t *mono, size_t samples) {
 
       if (!deserializeJson(doc, http.getString())) {
         reply = String((const char *)(doc["result"]["message"] | ""));
+
+      // "be quiet" / "you can talk" come back as a control decision rather
+      // than an answer, so the device does not have to parse intent itself.
+      const char *speechFlag = doc["speech"] | "";
+
+      if (strcmp(speechFlag, "off") == 0) ttsEnabled = false;
+      if (strcmp(speechFlag, "on") == 0) ttsEnabled = true;
         if (!reply.length()) reply = "Done.";
       } else {
         reply = "I did something, but the reply didn't parse.";
@@ -908,6 +953,11 @@ static int findMarker(const uint8_t *hay, size_t len, const char *needle) {
 void speak(const String &text) {
 
   if (!text.length()) return;
+
+  if (!ttsEnabled) {
+    Serial.println("[tts] muted - screen only");
+    return;
+  }
 
   // No reconfiguration. The server sends 16kHz mono, which is exactly what
   // the bus is already running for the microphone, so playback borrows it as
@@ -1001,7 +1051,13 @@ void speak(const String &text) {
 
     const size_t bytesLeft = total - pos;
 
-    const size_t n = min(bytesLeft / sizeof(int16_t), (size_t)1024);
+    // Small enough that a press lands between two of them.
+    //
+    // Playing a kilo-sample at a time meant up to 64ms inside a blocking
+    // write, and the touch check was additionally gated to once every 60ms —
+    // so a tap had to be lucky, and it took two or three to register. A
+    // sixteenth of a second of audio per pass, checked every pass.
+    const size_t n = min(bytesLeft / sizeof(int16_t), (size_t)256);
 
     if (n == 0) break;
 
@@ -1011,18 +1067,12 @@ void speak(const String &text) {
     pos += n * sizeof(int16_t);
     played += n;
 
-    // Between buffers, so stopping is a button and not a label.
-    if (millis() - lastCheck > 60) {
+    // Every pass, not on a timer.
+    if (digitalRead(BOOT_BTN) == LOW) stopSpeaking = true;
 
-      lastCheck = millis();
+    TouchPoint t = readTouch();
 
-      if (digitalRead(BOOT_BTN) == LOW) stopSpeaking = true;
-
-      TouchPoint t = readTouch();
-
-      if (t.touched) stopSpeaking = true;
-
-    }
+    if (t.touched) stopSpeaking = true;
 
   }
 
@@ -1424,7 +1474,7 @@ void setup() {
 
   Serial.printf("[wifi] target SSID visible on 2.4GHz: %s\n", targetSeen ? "YES" : "NO");
 
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  connectWiFi();
 
   gfx->setCursor(24, 112);
   gfx->setTextColor(C_INK_SOFT);
@@ -1500,13 +1550,17 @@ void loop() {
       lastAttempt = millis();
       attempts++;
 
-      Serial.printf("[wifi] retry %d (status=%d)\n", attempts, WiFi.status());
+      // Alternate, so a campus password that stopped working does not strand
+      // the device and neither does leaving the building.
+      const bool useFallback = (attempts % 2) == 0;
 
-      WiFi.disconnect();
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+      Serial.printf("[wifi] retry %d on %s (status=%d)\n",
+                    attempts, useFallback ? WIFI_SSID : WIFI_EAP_SSID, WiFi.status());
 
-      char note[64];
-      snprintf(note, sizeof(note), "looking for %s", WIFI_SSID);
+      connectWiFi(useFallback);
+
+      char note[72];
+      snprintf(note, sizeof(note), "looking for %s", useFallback ? WIFI_SSID : WIFI_EAP_SSID);
       drawOffline(note);
 
     }
@@ -1593,6 +1647,21 @@ void loop() {
       fetchScreen();
 
       delay(250);
+
+      return;
+
+    }
+
+    // The voice switch. Speech off means the screen still answers.
+    if (!state.showingAnswer && t.y >= FOOTER_TOP) {
+
+      ttsEnabled = !ttsEnabled;
+
+      Serial.printf("[tts] %s by button\n", ttsEnabled ? "on" : "off");
+
+      fetchScreen();
+
+      delay(300);
 
       return;
 
