@@ -15,6 +15,22 @@ import { TOOLS } from "../../../lib/toolDefinitions.js";
 const DEFERRED_TOOLS = ["start_deep_thinking"];
 
 
+// Does this sentence reach back at something already on screen?
+//
+// "Tell me more about the first one" needs the previous answer; "what is on
+// my calendar" emphatically does not, and handing it one invites the model to
+// answer the old question again.
+function looksLikeFollowUp(text) {
+
+  const said = (text || "").toLowerCase();
+
+  if (said.trim().split(/\s+/).length <= 3) return true;
+
+  return /\b(that|those|this|these|it|its|the (first|second|third|last|other)|him|her|them|they|again|instead|more about|expand|why not|which one)\b/.test(said);
+
+}
+
+
 // Markdown is for eyes.
 //
 // The answering tools format for a dashboard, so a good answer comes back
@@ -81,6 +97,13 @@ async function prepareDeskReply({ question, answer, results = [], waiting = fals
     });
 
     await stashDeskScreen(spec, { question, answer });
+
+    // The composer wrote a line meant to be said out loud, which is not the
+    // dashboard answer with its markdown removed — it leads with what
+    // actually decides the next move and leaves the names and numbers to the
+    // screen. Only fall back to flattening the written answer if that half
+    // is missing.
+    if (spec?.speech) return spec.speech;
 
   } catch (error) {
     console.error("DESK SCREEN compose failed:", error.message);
@@ -176,6 +199,70 @@ export default async function handler(req, res) {
     }
 
     let { text } = req.body;
+
+    // Spoken controls, answered without the router.
+    //
+    // The screen has a tap target for dismissing an answer, which is a nice
+    // accelerator and a bad requirement: this is meant to be usable with
+    // your hands full and your eyes elsewhere. These are matched here rather
+    // than routed because they are not questions — sending "never mind" to a
+    // planning engine invites it to helpfully do something.
+    if (isDesk && typeof text === "string") {
+
+      const said = text.toLowerCase().replace(/[^a-z\s]/g, "").trim();
+
+      const DISMISS = /^(never ?mind|nevermind|go back|dismiss|clear( that| the screen)?|close( that)?|forget it|cancel|stop|thats all|thank you|thanks)$/;
+
+      if (DISMISS.test(said)) {
+
+        try {
+          const { clearDeskScreen } = await import("../../../lib/deskScreens.js");
+          await clearDeskScreen();
+        } catch (error) {
+          console.error("DESK dismiss failed:", error.message);
+        }
+
+        return res.status(200).json({
+          success: true,
+          tool: "desk_control",
+          // Silent on purpose: acknowledging "never mind" out loud is the
+          // assistant getting the last word.
+          result: { success: true, message: "" }
+        });
+
+      }
+
+      const REPEAT = /^(repeat( that)?|say that again|what did you say|again)$/;
+
+      if (REPEAT.test(said)) {
+
+        try {
+
+          const { loadDeskContext } = await import("../../../lib/deskScreens.js");
+
+          const previous = await loadDeskContext();
+
+          if (previous?.answer) {
+            return res.status(200).json({
+              success: true,
+              tool: "desk_control",
+              result: { success: true, message: boundForSpeech(previous.answer) }
+            });
+          }
+
+        } catch (error) {
+          console.error("DESK repeat failed:", error.message);
+        }
+
+        return res.status(200).json({
+          success: true,
+          tool: "desk_control",
+          result: { success: true, message: "I haven't said anything yet." }
+        });
+
+      }
+
+    }
 
     let transcription = null;
 
@@ -330,11 +417,21 @@ question genuinely deserves one — it will be answered immediately as well.` : 
 
         {
           role: "user",
-          content: deskContext
-            ? `The desk screen is currently showing the answer to: "${deskContext.question}"\n\n` +
-              `That answer was: ${deskContext.answer}\n\n` +
-              `They are now saying, and may be referring back to it ` +
-              `("that role", "the second one", "draft an email to him"):\n${text}`
+          // Context is offered, not imposed.
+          //
+          // The first version prefixed every desk question with the previous
+          // answer and told the model they were related. One weak answer then
+          // poisoned everything after it: asked a fresh question, the model
+          // read the stale answer as the established position and restated it
+          // — "there isn't a recommendation yet" — instead of answering. So
+          // it is attached only when the new words actually reach backwards,
+          // and even then it is labelled as background that may be irrelevant.
+          content: (deskContext && looksLikeFollowUp(text))
+            ? `[Background — the desk was just asked "${deskContext.question}" and answered:\n` +
+              `${deskContext.answer}\n` +
+              `Use this ONLY to resolve what the new request points at. If the new ` +
+              `request stands on its own, ignore all of it and answer afresh.]\n\n` +
+              `${text}`
             : text
         }
 
@@ -491,12 +588,44 @@ question genuinely deserves one — it will be answered immediately as well.` : 
     // Only when the caller says it is the desk: a capture from the phone
     // Shortcut has no screen waiting on it, and paying for a layout nobody
     // will look at is waste.
+    // A deferred tool still owes the room an answer.
+    //
+    // start_deep_thinking does the right thing — it starts real analysis and
+    // puts the result on the dashboard — but on its own it leaves somebody
+    // standing at a speaker having been told to go look at a website.
+    //
+    // This has to happen BEFORE the screen and the spoken line are composed,
+    // which is the ordering bug it shipped with: the composer ran first, saw
+    // only "I'll have a breakdown ready in a few minutes", and faithfully
+    // wrote speech about having nothing to say yet. The dashboard work still
+    // proceeds untouched; the question is also answered now.
+    let answerForDesk = spokenWithExtras;
+
+    if (isDesk && results.some(r => DEFERRED_TOOLS.includes(r.tool))) {
+
+      try {
+
+        const { answerQuestion } = await import("../../../tools/answer.js");
+
+        const immediate = await answerQuestion({ question: transcription?.text || text });
+
+        if (immediate?.message) {
+          answerForDesk = `${immediate.message}\n\n(A fuller breakdown is also being worked through for the dashboard.)`;
+        }
+
+      } catch (error) {
+        console.error("DESK immediate answer failed:", error.message);
+      }
+
+    }
+
+
     let deskSpoken = null;
 
     if (isDesk) {
       deskSpoken = await prepareDeskReply({
         question: transcription?.text || text,
-        answer: spokenWithExtras,
+        answer: answerForDesk,
         results,
         waiting: Boolean(results.some(r => r.result?.data?.waiting))
       });
@@ -513,32 +642,6 @@ question genuinely deserves one — it will be answered immediately as well.` : 
     // desk device was being tested.
     if (!isDesk) {
       await notifyCapture(results, transcription?.text || text);
-    }
-
-
-    // A deferred tool still owes the room an answer.
-    //
-    // start_deep_thinking does the right thing — it starts real analysis and
-    // puts the result on the dashboard — but on its own it leaves somebody
-    // standing at a speaker having been told to go look at a website. So the
-    // dashboard work proceeds untouched, and the question is ALSO answered
-    // now from what is already known.
-    if (isDesk && results.some(r => DEFERRED_TOOLS.includes(r.tool))) {
-
-      try {
-
-        const { answerQuestion } = await import("../../../tools/answer.js");
-
-        const immediate = await answerQuestion({ question: transcription?.text || text });
-
-        if (immediate?.message) {
-          spokenMessage = `${immediate.message} I'm also working through it properly — the full breakdown will be on your dashboard.`;
-        }
-
-      } catch (error) {
-        console.error("DESK immediate answer failed:", error.message);
-      }
-
     }
 
 

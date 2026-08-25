@@ -486,7 +486,7 @@ function AnswerScreen({ spec }) {
         </div>
       )}
 
-      {spec.blocks.map((block, i) => {
+      {(spec.blocks || []).map((block, i) => {
         if (block.kind === "stat") return <Stat key={i} block={block} accent={accent} />;
         if (block.kind === "bar") return <Bar key={i} block={block} accent={accent} />;
         if (block.kind === "rows") return <Rows key={i} block={block} />;

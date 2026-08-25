@@ -190,10 +190,28 @@ export async function designDeskScreen({ question, answer, facts = "", waiting =
           `You lay out one small screen on a desk device — 368x448, dark, read ` +
           `at a glance. You are given a question that was just asked out loud, ` +
           `the answer that was just spoken back, and the underlying figures.\n\n` +
-          `Return ONLY a JSON object in exactly this vocabulary:\n${SCREEN_VOCABULARY}\n\n` +
-          `The spoken answer already said the sentence. The screen is for what ` +
-          `the ear is bad at: numbers, comparisons, lists, proportions. Do not ` +
-          `transcribe the answer into a note block and call it a screen.`
+          `You write BOTH halves of the reply: what the screen shows, and what ` +
+          `the voice says. They are different jobs and must not duplicate each ` +
+          `other.\n\n` +
+          `Return ONLY a JSON object with a "speech" string and the screen in ` +
+          `exactly this vocabulary:\n${SCREEN_VOCABULARY}\n\n` +
+          `THE SCREEN is for what the ear is bad at: names, numbers, lists, ` +
+          `proportions, anything he will want to look back at. Do not ` +
+          `transcribe the answer into a note block and call it a screen.\n\n` +
+          `THE SPEECH is a person telling him the thing. Rules:\n` +
+          `- Never read the screen aloud. "Microsoft, product marketing. ` +
+          `Amazon, product marketing" is a list being recited at someone; ` +
+          `"Microsoft is the one to move on first, their summer applications ` +
+          `open in the next few weeks" is an answer.\n` +
+          `- Lead with the thing that actually decides what he does next — ` +
+          `what is urgent, what is at risk, what he is getting wrong.\n` +
+          `- Plain spoken English. No markdown, no bullet points, no headings, ` +
+          `no colons introducing lists. Contractions are good. It is read ` +
+          `aloud by a voice in a room, not printed.\n` +
+          `- Two to four sentences. If the detail matters it is already on the ` +
+          `screen; say what the screen cannot, which is what it MEANS.\n` +
+          `- Blunt and specific, his standing instruction. Never soften, never ` +
+          `pad, never announce what you are about to say.`
       },
       {
         role: "user",
@@ -207,7 +225,22 @@ export async function designDeskScreen({ question, answer, facts = "", waiting =
   });
 
   try {
-    return sanitiseSpec(JSON.parse(response.choices[0].message.content), { waiting });
+
+    const raw = JSON.parse(response.choices[0].message.content);
+
+    const spec = sanitiseSpec(raw, { waiting });
+
+    // The spoken half travels with the screen it belongs to. Falling back to
+    // null rather than to the dashboard answer is deliberate: the caller
+    // knows what to say if this half is missing, and a silent failure that
+    // quietly starts reading markdown aloud again is exactly the regression
+    // this whole change exists to prevent.
+    const speech = typeof raw?.speech === "string" && raw.speech.trim().length > 8
+      ? raw.speech.replace(/\s+/g, " ").trim().slice(0, 900)
+      : null;
+
+    return spec ? { ...spec, speech } : (speech ? { speech, blocks: [], accent: "tide" } : null);
+
   } catch {
     return null;
   }

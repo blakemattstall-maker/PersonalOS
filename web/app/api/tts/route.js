@@ -82,6 +82,19 @@ const DEFAULT_INSTRUCTIONS =
   "excitement. Pause properly at full stops.";
 
 
+// The desk device is a voice in the room, not a briefing in an earbud.
+//
+// Same model and voice the app already uses — gpt-4o-mini-tts with sage,
+// which is why this never sounded like a synthesiser — but the delivery is
+// different when the listener is two feet away and just asked a question out
+// loud: a person answering, not a bulletin being read.
+const DESK_INSTRUCTIONS =
+  "You are answering someone standing a couple of feet away who just asked " +
+  "you a question out loud. Speak like a sharp friend replying in the moment " +
+  "— unhurried, conversational, real sentence rhythm. Not a presenter, not a " +
+  "bulletin, no rising announcer energy. Pause properly at full stops.";
+
+
 // Split on sentence boundaries so a chunk never breaks mid-word — the seam
 // between two audio files is audible, and it is far less noticeable at a full
 // stop than in the middle of a clause.
@@ -119,7 +132,7 @@ function chunk(text) {
 }
 
 
-async function synthesize({ input, voice, speed, model, format = "mp3" }) {
+async function synthesize({ input, voice, speed, model, format = "mp3", instructions = null }) {
 
   const body = {
     model,
@@ -129,7 +142,7 @@ async function synthesize({ input, voice, speed, model, format = "mp3" }) {
     speed
   };
 
-  if (model === PRIMARY_MODEL) body.instructions = DEFAULT_INSTRUCTIONS;
+  if (model === PRIMARY_MODEL) body.instructions = instructions || DEFAULT_INSTRUCTIONS;
 
   const res = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
@@ -205,6 +218,10 @@ export async function POST(request) {
   // getting MP3 — it is a tenth the bytes over the network.
   const format = payload?.format === "wav" ? "wav" : "mp3";
 
+  // The desk asks to be read to differently; everything else keeps the
+  // delivery the app has always used.
+  const instructions = payload?.surface === "desk" ? DESK_INSTRUCTIONS : null;
+
   const parts = chunk(text);
 
   let model = PRIMARY_MODEL;
@@ -217,7 +234,7 @@ export async function POST(request) {
 
       try {
 
-        buffers.push(await synthesize({ input: part, voice, speed, model, format }));
+        buffers.push(await synthesize({ input: part, voice, speed, model, format, instructions }));
 
       } catch (error) {
 
@@ -225,7 +242,7 @@ export async function POST(request) {
         // isn't available to this account it will fail identically every time.
         if (model === PRIMARY_MODEL && (error.status === 400 || error.status === 404)) {
           model = FALLBACK_MODEL;
-          buffers.push(await synthesize({ input: part, voice, speed, model, format }));
+          buffers.push(await synthesize({ input: part, voice, speed, model, format, instructions }));
         } else {
           throw error;
         }

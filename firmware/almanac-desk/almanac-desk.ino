@@ -889,6 +889,8 @@ void speak(const String &text) {
   JsonDocument req;
   req["text"] = text;
   req["format"] = "wav";
+  // Asks for the in-room delivery rather than the walking-briefing one.
+  req["surface"] = "desk";
 
   String body;
   serializeJson(req, body);
