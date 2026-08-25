@@ -3,6 +3,10 @@ import { executeTool } from "../../../lib/router.js";
 import { requireAuth } from "../../../lib/auth.js";
 import { enforceLimit } from "../../../lib/ratelimit.js";
 import { TOOLS } from "../../../lib/toolDefinitions.js";
+
+// Tools that promise an answer later. Fine everywhere else, unusable on a
+// device whose entire job is to answer out loud, now.
+const DEFERRED_TOOLS = ["start_deep_thinking"];
 import { DateTime } from "luxon";
 import { getUserTimezone } from "../../../lib/profile.js";
 import { getPendingClarification, clearPendingClarification } from "../../../tools/pending.js";
@@ -71,6 +75,10 @@ export default async function handler(req, res) {
     // Transcription happens before anything else, so the entire pipeline below
     // — pending clarifications, routing, tool execution — is identical either
     // way and there is only one path to keep working.
+    // Where this capture came from decides which tools are usable and
+    // whether the answer has to be speakable.
+    const isDesk = req.body?.surface === "desk";
+
     let { text } = req.body;
 
     let transcription = null;
@@ -211,7 +219,14 @@ FIRST decide which of these the user is doing:
    choose a range: "today" is today only; "this week" runs through the
    coming Sunday; if unclear use today through 7 days out.
 
-Call every tool needed to satisfy the request — if one message asks for two things, make two calls.`
+Call every tool needed to satisfy the request — if one message asks for two things, make two calls.
+${isDesk ? `
+THIS REQUEST CAME FROM THE DESK DEVICE. The user spoke it out loud and is
+standing in front of a small screen and a speaker, waiting to be answered
+now. Answer from what is already known rather than starting anything that
+finishes later. When nothing more specific fits, general_question can answer
+from the full profile, memories and current figures — prefer that to saying
+nothing useful. Never promise that something will appear on the dashboard.` : ""}`
 
         },
 
@@ -224,7 +239,18 @@ Call every tool needed to satisfy the request — if one message asks for two th
       ],
 
 
-      tools: TOOLS,
+      // The desk cannot use a tool whose answer arrives later.
+      //
+      // Asked what internships to apply for, the router reasonably chose
+      // start_deep_thinking — whose own description says the result is saved
+      // for the dashboard and "not read back immediately". That is right for
+      // a phone capture and useless to somebody standing in front of a
+      // speaker waiting to be told something. Filtering the list is
+      // deterministic; a line in the prompt asking it to please not is a
+      // suggestion the model is free to weigh against everything else.
+      tools: isDesk
+        ? TOOLS.filter(t => !DEFERRED_TOOLS.includes(t.function?.name))
+        : TOOLS,
 
       tool_choice: "auto"
 
@@ -359,7 +385,7 @@ Call every tool needed to satisfy the request — if one message asks for two th
     // will look at is waste. Best-effort throughout — a screen that fails to
     // compose costs the picture, never the action that was already taken or
     // the words that are about to be spoken.
-    if (req.body?.surface === "desk") {
+    if (isDesk) {
 
       try {
 
@@ -397,6 +423,30 @@ Call every tool needed to satisfy the request — if one message asks for two th
     if (req.body?.surface !== "desk") {
       await notifyCapture(results, transcription?.text || text);
     }
+
+
+    // Spoken aloud, so it has to end somewhere.
+    //
+    // A real answer to "what internships should I apply to" runs for
+    // paragraphs, which is right on a dashboard and punishing from a speaker
+    // on a desk. The screen carries the structure; the voice carries as much
+    // as a person will actually stand and listen to, cut at a sentence.
+    const speakable = (() => {
+
+      if (!isDesk) return spokenMessage;
+
+      const LIMIT = 700;
+
+      if (!spokenMessage || spokenMessage.length <= LIMIT) return spokenMessage;
+
+      const cut = spokenMessage.slice(0, LIMIT);
+
+      const lastStop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+
+      return `${lastStop > 200 ? cut.slice(0, lastStop + 1) : cut}` +
+             ` There's more on the screen.`;
+
+    })();
 
 
     return res.status(200).json({

@@ -1192,7 +1192,16 @@ void setup() {
 
   Serial.printf("[boot] wifi ok, ip=%s\n", WiFi.localIP().toString().c_str());
 
-  configTzTime(TZ_INFO, "pool.ntp.org", "time.nist.gov");
+  // No SNTP, deliberately.
+  //
+  // Nothing on this device reads a local clock any more — the time on screen
+  // is drawn by the server, in the user's timezone, as part of the picture.
+  // SNTP was left running to maintain a clock nobody looks at, and its
+  // periodic re-sync is the best suspect for the occasional unexplained
+  // reboot: the one captured crash was an lwIP assert
+  // ("Required to lock TCPIP core functionality") inside udp_new_ip_type,
+  // which is the UDP path SNTP uses. Removing the only thing that needed it
+  // is better than locking around it.
 
   const bool audioOk = audioInit();
 
@@ -1325,10 +1334,45 @@ void setup() {
 void loop() {
 
   if (phase == OFFLINE) {
-    // Keep trying quietly; the dorm router reboots more often than this will.
-    if (WiFi.status() == WL_CONNECTED) { phase = IDLE; fetchScreen(); }
-    delay(1000);
+
+    // Actually try again, rather than waiting to be rescued.
+    //
+    // This used to poll WiFi.status() forever and never call begin() a
+    // second time, so a failed association — or a hotspot that slept while
+    // the device was unplugged — parked it offline permanently with nothing
+    // on screen to say why. That is the normal case for a thing you carry
+    // around: it leaves the network and comes back.
+    static unsigned long lastAttempt = 0;
+    static int attempts = 0;
+
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.printf("[wifi] reconnected, ip=%s\n", WiFi.localIP().toString().c_str());
+      attempts = 0;
+      phase = IDLE;
+      fetchScreen();
+      return;
+    }
+
+    if (millis() - lastAttempt > 15'000UL) {
+
+      lastAttempt = millis();
+      attempts++;
+
+      Serial.printf("[wifi] retry %d (status=%d)\n", attempts, WiFi.status());
+
+      WiFi.disconnect();
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+      char note[64];
+      snprintf(note, sizeof(note), "looking for %s", WIFI_SSID);
+      drawOffline(note);
+
+    }
+
+    delay(500);
+
     return;
+
   }
 
   if (phase != IDLE) { delay(50); return; }
@@ -1339,6 +1383,13 @@ void loop() {
 
     Serial.println("[poll] polling /api/desk...");
     lastPoll = nowMs;
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("[wifi] connection lost");
+      phase = OFFLINE;
+      drawOffline("reconnecting");
+      return;
+    }
+
     const bool ok = fetchScreen();
     Serial.printf("[poll] %s - attention=%d heap=%u\n", ok ? "ok" : "FAILED",
                   state.attentionCount, (unsigned)ESP.getFreeHeap());
