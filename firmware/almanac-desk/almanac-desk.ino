@@ -1,9 +1,9 @@
 // Almanac desk companion — Waveshare ESP32-S3-Touch-AMOLED-1.8.
 //
-// What it does: polls GET /api/desk once a minute and renders the answer —
-// the clock, the ember/clear state, the next thing on the calendar with a
-// countdown, the brief's lead line, and the current nudge. Tap the nudge to
-// resolve it everywhere. Hold the bottom bar (or the side BOOT button) to
+// What it does: once a minute it fetches GET /api/desk?screen=1 — a PNG the
+// server renders in Almanac's own typefaces — and blits it to the panel. The
+// nudge id rides along in a response header, so tapping the card resolves
+// exactly what is on the glass. Hold the bottom bar (or the side BOOT button) to
 // talk: audio goes to POST /api/capture, which transcribes and routes it
 // through the whole app, and the reply comes back out of the speaker via
 // POST /api/tts as raw WAV — no decoder on this side, just bytes to I2S.
@@ -24,6 +24,7 @@
 #include "mbedtls/base64.h"
 #include "Arduino_GFX_Library.h"
 #include "ESP_I2S.h"
+#include <PNGdec.h>
 
 #include "pins.h"
 #include "theme.h"
@@ -135,17 +136,8 @@ bool audioInit() {
 
 struct DeskState {
   bool valid = false;
-  bool calendarOk = false;
   int attentionCount = 0;
   String nudgeId;
-  String nudgeMessage;
-  String nextTitle;
-  String nextAt;
-  int nextInMin = -1;
-  int remaining = 0;
-  bool eveningFree = false;
-  String briefLead;
-  bool briefUnread = false;
 };
 
 DeskState state;
@@ -154,14 +146,14 @@ enum Phase { BOOTING, IDLE, LISTENING, THINKING, SPEAKING, OFFLINE };
 
 Phase phase = BOOTING;
 
-// Where the nudge card was last drawn, so a tap can be matched to it.
-int nudgeTop = -1, nudgeBottom = -1;
-
-// The hold-to-talk bar at the bottom of the idle screen.
-const int TALK_BAR_TOP = LCD_HEIGHT - 56;
+// Tap zones. These mirror the server-side layout in deskScreen.js — the
+// device cannot see inside the PNG it is showing, so the two must be changed
+// together. Kept as named constants rather than magic numbers so that
+// coupling is at least visible from here.
+const int CARD_TOP = 300;                     // the ember/moss card
+const int TALK_BAR_TOP = LCD_HEIGHT - 52;     // the hairline and "hold to talk"
 
 unsigned long lastPoll = 0;
-unsigned long lastClockDraw = 0;
 
 const unsigned long POLL_MS = 60'000UL;
 
@@ -186,51 +178,6 @@ bool httpBegin(HTTPClient &http, WiFiClientSecure &client, const String &path) {
 
 }
 
-bool pollDesk() {
-
-  WiFiClientSecure client;
-  HTTPClient http;
-
-  if (!httpBegin(http, client, "/api/desk")) return false;
-
-  const int code = http.GET();
-
-  if (code != 200) {
-    Serial.printf("[poll] HTTP %d\n", code);
-    http.end();
-    return false;
-  }
-
-  JsonDocument doc;
-
-  const DeserializationError err = deserializeJson(doc, http.getString());
-
-  http.end();
-
-  if (err) {
-    Serial.printf("[poll] JSON: %s\n", err.c_str());
-    return false;
-  }
-
-  state.valid = true;
-  state.attentionCount = doc["attention"]["count"] | 0;
-  state.nudgeId = String((const char *)(doc["attention"]["nudge"]["id"] | ""));
-  state.nudgeMessage = String((const char *)(doc["attention"]["nudge"]["message"] | ""));
-
-  state.calendarOk = !doc["calendar"].isNull();
-  state.nextTitle = String((const char *)(doc["calendar"]["next"]["title"] | ""));
-  state.nextAt = String((const char *)(doc["calendar"]["next"]["at"] | ""));
-  state.nextInMin = doc["calendar"]["next"]["startsInMin"] | -1;
-  state.remaining = doc["calendar"]["remaining"] | 0;
-  state.eveningFree = doc["calendar"]["eveningFree"] | false;
-
-  state.briefLead = String((const char *)(doc["brief"]["lead"] | ""));
-  state.briefUnread = doc["brief"]["unread"] | false;
-
-  return true;
-
-}
-
 void ackNudge(const String &id) {
 
   WiFiClientSecure client;
@@ -250,189 +197,252 @@ void ackNudge(const String &id) {
 
 
 // ---------------------------------------------------------------------------
-// Rendering — full redraw on state change, clock-only touch-ups in between.
-// AMOLED burn-in care: dim at night, and the whole layout shifts a pixel or
-// two with the minute so nothing sits still for hours.
+// The screen, fetched rather than drawn.
+//
+// Every pixel of the idle screen is rendered by the server (see
+// web/app/api/[resource]/deskScreen.js) and arrives here as a PNG. The device
+// decodes it a line at a time and pushes it straight at the panel.
+//
+// The reason is typography. Arduino_GFX's built-in font is a 5x7 bitmap with
+// no anti-aliasing, so "bigger" means "blockier" — at the size a desk clock
+// needs, every diagonal is a staircase. The server already has Almanac's
+// three real typefaces and a CSS renderer, and a 368x448 PNG of a mostly
+// black screen is about 23KB, which is nothing once a minute.
+//
+// It also means the UI can be redesigned without touching this file, or the
+// cable: change the renderer, deploy, and the next poll looks different.
 // ---------------------------------------------------------------------------
 
-int wobble() {
-  struct tm t;
-  if (!getLocalTime(&t, 0)) return 0;
-  return t.tm_min % 3;
-}
+PNG png;
 
-// Naive word wrap for the 6x8 built-in font at a given size.
-void printWrapped(const String &text, int x, int &y, int size, uint16_t color, int maxLines) {
 
-  const int charW = 6 * size;
-  const int lineH = 8 * size + 4;
-  const int perLine = (LCD_WIDTH - 2 * x) / charW;
+// PNGdec keeps the current and previous scanline in one fixed internal
+// buffer, but only checks ONE line against its size (png.inl: "iPitch >=
+// PNG_MAX_BUFFERED_PIXELS"). At 368px RGBA a line is 1472 bytes, so the two
+// it actually stores need ~2976 — comfortably past the 2562-byte default,
+// which is sized for 320px-wide images. It does not refuse: it writes over
+// the end of the buffer and into its own state, and the symptom is a decode
+// that fails while parsing chunks with nothing to suggest memory was the
+// problem. build_opt.h raises the ceiling for every translation unit; this
+// assert makes a missing flag a build error rather than a corrupted heap.
+static_assert(PNG_MAX_BUFFERED_PIXELS >= (LCD_WIDTH * 4 + 1) * 2 + 32,
+              "PNG_MAX_BUFFERED_PIXELS too small for this panel width - see build_opt.h");
 
-  gfx->setTextSize(size);
-  gfx->setTextColor(color);
 
-  int lineStart = 0, lines = 0;
+// A Stream that only knows how to be written into.
+//
+// This exists because of a subtle, silent failure: the response is
+// Transfer-Encoding: chunked, and reading straight from getStreamPtr() hands
+// you the raw socket — chunk-size headers in hexadecimal interleaved through
+// the body. The bytes arrive, the length looks plausible, and the PNG decoder
+// rejects the result with no clue why. HTTPClient::writeToStream() is the API
+// that strips that framing, and it wants somewhere to write, so: here.
+class BufferSink : public Stream {
 
-  while (lineStart < (int)text.length() && lines < maxLines) {
+public:
 
-    int lineEnd = min((int)text.length(), lineStart + perLine);
+  BufferSink(uint8_t *buffer, size_t capacity) : buf(buffer), cap(capacity) {}
 
-    if (lineEnd < (int)text.length()) {
-      const int space = text.lastIndexOf(' ', lineEnd);
-      if (space > lineStart) lineEnd = space;
-    }
+  size_t len = 0;
 
-    gfx->setCursor(x, y);
-    gfx->print(text.substring(lineStart, lineEnd));
-
-    y += lineH;
-    lines++;
-
-    lineStart = lineEnd;
-    while (lineStart < (int)text.length() && text[lineStart] == ' ') lineStart++;
-
+  size_t write(uint8_t c) override {
+    if (len >= cap) return 0;
+    buf[len++] = c;
+    return 1;
   }
 
+  size_t write(const uint8_t *data, size_t size) override {
+    const size_t n = (len + size > cap) ? (cap - len) : size;
+    memcpy(buf + len, data, n);
+    len += n;
+    return n;
+  }
+
+  // Write-only: the read half of Stream is required by the interface and
+  // never called by writeToStream().
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+
+private:
+
+  uint8_t *buf;
+  size_t cap;
+
+};
+
+// PNGdec's line callback is a plain C function pointer, so the target has to
+// be reachable without a closure.
+static int pngDrawLine(PNGDRAW *draw) {
+
+  uint16_t line[LCD_WIDTH];
+
+  png.getLineAsRGB565(draw, line, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
+
+  gfx->draw16bitBeRGBBitmap(0, draw->y, line, draw->iWidth, 1);
+
+  // Non-zero keeps the decoder going; returning 0 would abort mid-image.
+  return 1;
+
 }
 
-void drawClock(bool full) {
 
-  struct tm t;
+// Downloaded whole before decoding: PNG is a compressed stream, so it cannot
+// be drawn as it arrives, and 8MB of PSRAM makes buffering the entire file
+// the simple correct choice rather than a compromise.
+bool fetchScreen() {
 
-  if (!getLocalTime(&t, 0)) return;
+  WiFiClientSecure client;
+  HTTPClient http;
 
-  char hhmm[6], date[24];
+  if (!httpBegin(http, client, "/api/desk?screen=1")) return false;
 
-  // 12-hour, no leading zero — a desk clock, not a log line.
-  int h = t.tm_hour % 12; if (h == 0) h = 12;
-  snprintf(hhmm, sizeof(hhmm), "%d:%02d", h, t.tm_min);
-  strftime(date, sizeof(date), "%a %b %e", &t);
+  // The nudge id travels with the picture instead of in a second request, so
+  // a tap can never resolve something other than what is on the glass.
+  const char *wanted[] = { "x-almanac-nudge", "x-almanac-count" };
+  http.collectHeaders(wanted, 2);
 
-  const int w = wobble();
+  const int code = http.GET();
 
-  if (!full) gfx->fillRect(0, 0, LCD_WIDTH, 92, C_BLACK);
+  if (code != 200) {
+    Serial.printf("[screen] HTTP %d\n", code);
+    http.end();
+    return false;
+  }
 
-  gfx->setTextSize(9);
-  gfx->setTextColor(C_WHITE);
-  gfx->setCursor(16 + w, 12 + w);
-  gfx->print(hhmm);
+  // Vercel streams the image chunked, so Content-Length is absent and
+  // getSize() reports -1. The length is therefore discovered by reading to
+  // the end of the stream rather than trusted up front — the first version
+  // believed getSize() and refused every single fetch as "implausible size".
+  const int declared = http.getSize();
 
-  gfx->setTextSize(2);
-  gfx->setTextColor(C_INK_SOFT);
-  gfx->setCursor(20 + w, 78);
-  gfx->print(date);
+  const size_t CAP = 400000;
 
-  // Night: the panel is an OLED in a dorm someone sleeps in.
-  gfx->setBrightness(t.tm_hour >= 23 || t.tm_hour < 7 ? 40 : 220);
+  uint8_t *buf = (uint8_t *)heap_caps_malloc(CAP, MALLOC_CAP_SPIRAM);
+
+  if (!buf) {
+    Serial.println("[screen] out of PSRAM");
+    http.end();
+    return false;
+  }
+
+  BufferSink sink(buf, CAP);
+
+  const int written = http.writeToStream(&sink);
+
+  const size_t got = sink.len;
+
+  if (written < 0) {
+    Serial.printf("[screen] transfer error %d after %u bytes\n", written, (unsigned)got);
+  }
+
+  state.nudgeId = http.header("x-almanac-nudge");
+  state.attentionCount = http.header("x-almanac-count").toInt();
+
+  http.end();
+
+  if (got < 100) {
+    Serial.printf("[screen] short read %u\n", (unsigned)got);
+    free(buf);
+    return false;
+  }
+
+  Serial.printf("[screen] declared=%d written=%d got=%u\n", declared, written, (unsigned)got);
+
+  const int rc = png.openRAM(buf, got, pngDrawLine);
+
+  if (rc != PNG_SUCCESS) {
+    Serial.printf("[screen] openRAM failed %d\n", rc);
+    free(buf);
+    return false;
+  }
+
+  Serial.printf("[screen] png %dx%d bpp=%d type=%d\n",
+                png.getWidth(), png.getHeight(), png.getBpp(), png.getPixelType());
+
+  const int decoded = png.decode(NULL, 0);
+
+  png.close();
+
+  free(buf);
+
+  if (decoded != PNG_SUCCESS) {
+    Serial.printf("[screen] decode failed %d\n", decoded);
+    return false;
+  }
+
+  state.valid = true;
+
+  return true;
 
 }
 
-void drawIdle() {
+
+// The one screen still drawn locally: what to show when the server cannot be
+// reached. Deliberately plain — it exists to say "the picture is stale and
+// here is why", not to reimplement the design offline.
+void drawOffline(const char *why) {
 
   gfx->fillScreen(C_BLACK);
 
-  drawClock(true);
+  gfx->setTextSize(3);
+  gfx->setTextColor(C_EMBER);
+  gfx->setCursor(24, 190);
+  gfx->print("offline");
 
-  int y = 100;
-
-  // The ember rule, physical: orange exists on this screen only when
-  // something is waiting. A clear queue is a quiet moss line, not a trophy.
-  if (state.attentionCount > 0) {
-    gfx->fillRoundRect(16, y, LCD_WIDTH - 32, 44, 8, C_EMBER);
-    gfx->setTextSize(3);
-    gfx->setTextColor(C_BLACK);
-    gfx->setCursor(28, y + 11);
-    gfx->printf("%d waiting", state.attentionCount);
-  } else {
-    gfx->drawRoundRect(16, y, LCD_WIDTH - 32, 44, 8, C_MOSS);
-    gfx->setTextSize(3);
-    gfx->setTextColor(C_MOSS);
-    gfx->setCursor(28, y + 11);
-    gfx->print("clear");
-  }
-
-  y += 62;
-
-  if (!state.calendarOk) {
-
-    printWrapped("calendar unreachable", 20, y, 2, C_INK_SOFT, 1);
-
-  } else if (state.nextTitle.length()) {
-
-    gfx->setTextSize(2);
-    gfx->setTextColor(C_INK_SOFT);
-    gfx->setCursor(20, y);
-    gfx->print("NEXT");
-    y += 26;
-
-    printWrapped(state.nextTitle, 20, y, 3, C_WHITE, 2);
-
-    gfx->setTextSize(2);
-    gfx->setTextColor(C_TIDE);
-    gfx->setCursor(20, y + 2);
-    if (state.nextInMin >= 0 && state.nextInMin < 600) {
-      gfx->printf("in %d min", state.nextInMin);
-      gfx->setTextColor(C_INK_SOFT);
-      gfx->printf("  %s", state.nextAt.c_str());
-    } else {
-      gfx->printf("%s", state.nextAt.c_str());
-    }
-    y += 30;
-
-  } else {
-
-    String done = String("done for today") + (state.eveningFree ? " - evening free" : "");
-    printWrapped(done, 20, y, 2, C_MOSS, 1);
-
-  }
-
-  y += 10;
-
-  if (state.briefLead.length()) {
-    printWrapped(state.briefLead, 20, y, 2, C_INK_SOFT, 4);
-  }
-
-  // The nudge card. Bordered ember because it is, definitionally, the thing
-  // waiting on him. Tapping it resolves it everywhere.
-  if (state.nudgeMessage.length()) {
-
-    nudgeTop = max(y + 6, TALK_BAR_TOP - 132);
-
-    gfx->drawRoundRect(12, nudgeTop, LCD_WIDTH - 24, TALK_BAR_TOP - nudgeTop - 10, 8, C_EMBER);
-
-    int ny = nudgeTop + 12;
-    printWrapped(state.nudgeMessage, 24, ny, 2, C_WHITE, 4);
-
-    gfx->setTextSize(1);
-    gfx->setTextColor(C_INK_SOFT);
-    gfx->setCursor(24, TALK_BAR_TOP - 26);
-    gfx->print("tap to resolve");
-
-    nudgeBottom = TALK_BAR_TOP - 10;
-
-  } else {
-    nudgeTop = nudgeBottom = -1;
-  }
-
-  gfx->drawFastHLine(0, TALK_BAR_TOP, LCD_WIDTH, C_LINE);
   gfx->setTextSize(2);
   gfx->setTextColor(C_INK_SOFT);
-  gfx->setCursor(20, TALK_BAR_TOP + 18);
-  gfx->print("hold here to talk");
+  gfx->setCursor(24, 230);
+  gfx->print(why);
 
 }
 
+
+// The transient voice states, drawn locally on purpose: "listening" has to
+// appear the instant a finger lands, and a network round trip to render it
+// would be slower than the thing it is acknowledging. One or two words in the
+// built-in font is a fair trade for feeling immediate — and unlike the idle
+// screen, nobody looks at these for more than a few seconds.
 void drawPhase(const char *big, const char *small, uint16_t color) {
 
   gfx->fillScreen(C_BLACK);
+
   gfx->setTextSize(4);
   gfx->setTextColor(color);
-  gfx->setCursor(24, LCD_HEIGHT / 2 - 40);
+  gfx->setCursor(24, LCD_HEIGHT / 2 - 48);
   gfx->print(big);
 
   if (small && small[0]) {
-    int y = LCD_HEIGHT / 2 + 8;
-    printWrapped(String(small), 24, y, 2, C_INK_SOFT, 6);
+
+    // Naive wrap at the built-in font's fixed 12px advance (size 2).
+    const int perLine = (LCD_WIDTH - 48) / 12;
+
+    gfx->setTextSize(2);
+    gfx->setTextColor(C_INK_SOFT);
+
+    String rest(small);
+    int y = LCD_HEIGHT / 2 + 4;
+
+    while (rest.length() && y < LCD_HEIGHT - 30) {
+
+      int cut = min((int)rest.length(), perLine);
+
+      if (cut < (int)rest.length()) {
+        const int space = rest.lastIndexOf(' ', cut);
+        if (space > 0) cut = space;
+      }
+
+      gfx->setCursor(24, y);
+      gfx->print(rest.substring(0, cut));
+
+      rest = rest.substring(cut);
+      rest.trim();
+
+      y += 22;
+
+    }
+
   }
 
 }
@@ -665,14 +675,14 @@ void voiceFlow() {
 
   int16_t *mono = (int16_t *)heap_caps_malloc(MAX_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
-  if (!mono) { phase = IDLE; drawIdle(); return; }
+  if (!mono) { phase = IDLE; fetchScreen(); return; }
 
   const size_t samples = recordWhileHeld(mono, MAX_SAMPLES);
 
   if (samples < RECORD_RATE / 2) {  // under half a second of audio
     free(mono);
     phase = IDLE;
-    drawIdle();
+    fetchScreen();
     return;
   }
 
@@ -687,8 +697,9 @@ void voiceFlow() {
   speak(reply);
 
   phase = IDLE;
-  pollDesk();  // the capture may have changed what's waiting
-  drawIdle();
+  // The capture may well have changed what is waiting, so the screen is
+  // re-fetched rather than restored from before the conversation.
+  fetchScreen();
 
 }
 
@@ -827,9 +838,11 @@ void setup() {
     delay(1500);
   }
 
-  const bool pollOk = pollDesk();
+  const bool pollOk = fetchScreen();
 
-  Serial.printf("[boot] first /api/desk poll: %s\n", pollOk ? "ok" : "FAILED");
+  Serial.printf("[boot] first screen fetch: %s\n", pollOk ? "ok" : "FAILED");
+
+  if (!pollOk) drawOffline("could not reach almanac");
 
   // Without this, loop()'s own "lastPoll == 0 means never polled" check reads
   // as true on its very first pass regardless of how recently the line above
@@ -838,7 +851,6 @@ void setup() {
   lastPoll = millis();
 
   phase = IDLE;
-  drawIdle();
 
   Serial.println("[boot] reached idle - setup complete");
 
@@ -848,7 +860,7 @@ void loop() {
 
   if (phase == OFFLINE) {
     // Keep trying quietly; the dorm router reboots more often than this will.
-    if (WiFi.status() == WL_CONNECTED) { phase = IDLE; pollDesk(); drawIdle(); }
+    if (WiFi.status() == WL_CONNECTED) { phase = IDLE; fetchScreen(); }
     delay(1000);
     return;
   }
@@ -861,15 +873,10 @@ void loop() {
 
     Serial.println("[poll] polling /api/desk...");
     lastPoll = nowMs;
-    const bool ok = pollDesk();
+    const bool ok = fetchScreen();
     Serial.printf("[poll] %s - attention=%d heap=%u\n", ok ? "ok" : "FAILED",
                   state.attentionCount, (unsigned)ESP.getFreeHeap());
-    if (ok) drawIdle();
-  }
-
-  if (nowMs - lastClockDraw > 10'000UL) {
-    lastClockDraw = nowMs;
-    drawClock(false);
+    if (!ok) drawOffline("almanac unreachable");
   }
 
   // Inputs. The BOOT side button and the bottom bar both start a capture;
@@ -888,17 +895,15 @@ void loop() {
       return;
     }
 
-    if (nudgeTop >= 0 && t.y >= nudgeTop && t.y <= nudgeBottom && state.nudgeId.length()) {
+    if (t.y >= CARD_TOP && t.y < TALK_BAR_TOP && state.nudgeId.length()) {
 
       ackNudge(state.nudgeId);
 
-      // Optimistic: the card leaves the screen now, the poll confirms.
-      state.nudgeMessage = "";
-      state.attentionCount = max(0, state.attentionCount - 1);
-      drawIdle();
-
-      pollDesk();
-      drawIdle();
+      // Re-fetch rather than patch: the server decides what is waiting, and
+      // asking it again is both simpler and correct if something else
+      // resolved in the meantime.
+      state.nudgeId = "";
+      fetchScreen();
 
       delay(300);  // debounce the finger that is still descending
 

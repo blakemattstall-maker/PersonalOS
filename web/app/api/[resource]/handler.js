@@ -28,6 +28,7 @@ import { fullGraph } from "../../../lib/links.js";
 import { getDiningDay, syncDiningMenus } from "../../../tools/dining.js";
 import { getDiningLog, logMealItems, removeLogEntry, answerDiningQuestion, planMeals } from "../../../tools/mealPlan.js";
 import { enforceLimit } from "../../../lib/ratelimit.js";
+import { buildDeskState } from "../../../lib/deskState.js";
 import { getEvents } from "../../../tools/googleCalendar.js";
 import { analyseDay } from "../../../lib/eventKind.js";
 import { getUserTimezone } from "../../../lib/profile.js";
@@ -233,97 +234,9 @@ async function desk(req, res) {
 
   if (req.method === "GET") {
 
-    const tz = await getUserTimezone();
-
-    const now = DateTime.now().setZone(tz);
-
-    const todayISO = now.toFormat("yyyy-MM-dd");
-
-    const [nudges, prompts, insights, brief, calendar] = await Promise.all([
-
-      getPendingNudges().catch(() => []),
-
-      supabase
-        .from("prompts")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending")
-        .then(r => r.count || 0)
-        .catch(() => 0),
-
-      pendingInsights({ limit: 10 }).catch(() => []),
-
-      getMostRecentBrief().catch(() => null),
-
-      getEvents({ startDate: todayISO, endDate: todayISO, maxResults: 50 })
-        .then(r => r.events || [])
-        .catch(() => null)
-
-    ]);
-
-
-    const time = (iso) => DateTime.fromISO(iso).setZone(tz).toFormat("h:mma").toLowerCase();
-
-    let calendarOut = null;
-
-    if (calendar) {
-
-      const day = analyseDay(calendar);
-
-      const upcoming = calendar
-        .filter(e => !e.allDay && e.start && DateTime.fromISO(e.start).setZone(tz) > now)
-        .sort((a, b) => new Date(a.start) - new Date(b.start));
-
-      const next = upcoming[0] || null;
-
-      const eveningStart = now.set({ hour: 18, minute: 0, second: 0, millisecond: 0 });
-
-      calendarOut = {
-
-        next: next ? {
-          title: next.title,
-          kind: next.kind,
-          at: time(next.start),
-          startsInMin: Math.max(0, Math.round(DateTime.fromISO(next.start).diff(now, "minutes").minutes))
-        } : null,
-
-        remaining: upcoming.length,
-
-        lastEnd: day.lastEnd ? time(day.lastEnd) : null,
-
-        eveningFree: !calendar.some(e =>
-          !e.allDay && e.end && DateTime.fromISO(e.end).setZone(tz) > eveningStart
-        )
-
-      };
-
-    }
-
-
-    // The ember rule, as a number. Anything the app raised that is still
-    // waiting on him counts; zero means the ring rests moss.
-    const attentionCount = nudges.length + prompts + insights.length;
-
-    // The brief's opening sentence is written to be the one that matters —
-    // same split briefPush uses for the phone notification.
-    const lead = brief?.content ? (brief.content.split(/(?<=[.!?])\s/)[0] || null) : null;
-
-    return res.status(200).json({
-
-      success: true,
-
-      ts: now.toISO(),
-      tz,
-
-      attention: {
-        count: attentionCount,
-        nudge: nudges[0] ? { id: nudges[0].id, message: nudges[0].message } : null
-      },
-
-      calendar: calendarOut,
-
-      brief: brief ? { lead, unread: Boolean(brief.unread) } : null
-
-    });
+    // Built by lib/deskState.js so the JSON here and the rendered screen
+    // (?screen, see route.js) can never disagree about what is waiting.
+    return res.status(200).json(await buildDeskState());
 
   }
 
