@@ -29,8 +29,10 @@ const KEY = "desk_screen";
 
 // Long enough to read an answer and glance back at it; short enough that a
 // question asked and wandered away from does not leave the desk showing
-// yesterday's macros.
-const TTL_SECONDS = 150;
+// yesterday's macros. Two and a half minutes turned out to be far too long
+// in practice — an answer you have finished reading is clutter, and the way
+// back is a tap now, so this only has to cover "I looked away for a moment".
+const TTL_SECONDS = 75;
 
 
 export const BLOCK_KINDS = ["stat", "bar", "rows", "note", "chips"];

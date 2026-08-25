@@ -220,6 +220,8 @@ struct DeskState {
   bool valid = false;
   int attentionCount = 0;
   String nudgeId;
+  // "resting" or "answer" — what a tap means depends on it.
+  bool showingAnswer = false;
 };
 
 DeskState state;
@@ -264,6 +266,22 @@ bool httpBegin(HTTPClient &http, WiFiClientSecure &client, const String &path) {
   return true;
 
 }
+
+void dismissAnswer() {
+
+  WiFiClientSecure client;
+  HTTPClient http;
+
+  if (!httpBegin(http, client, "/api/desk")) return;
+
+  http.addHeader("Content-Type", "application/json");
+
+  http.POST("{\"action\":\"dismiss\"}");
+
+  http.end();
+
+}
+
 
 void ackNudge(const String &id) {
 
@@ -419,8 +437,8 @@ bool fetchScreen() {
 
   // The nudge id travels with the picture instead of in a second request, so
   // a tap can never resolve something other than what is on the glass.
-  const char *wanted[] = { "x-almanac-nudge", "x-almanac-count", "x-almanac-next" };
-  http.collectHeaders(wanted, 3);
+  const char *wanted[] = { "x-almanac-nudge", "x-almanac-count", "x-almanac-next", "x-almanac-view" };
+  http.collectHeaders(wanted, 4);
 
   const int code = http.GET();
 
@@ -458,6 +476,8 @@ bool fetchScreen() {
 
   state.nudgeId = http.header("x-almanac-nudge");
   state.attentionCount = http.header("x-almanac-count").toInt();
+
+  state.showingAnswer = http.header("x-almanac-view") == "answer";
 
   const long nextIn = http.header("x-almanac-next").toInt();
 
@@ -1205,16 +1225,48 @@ void loop() {
       return;
     }
 
+    // On a composed answer, a tap anywhere above the talk bar means "done
+    // with this" — not "mute", which is what the resting face's zones would
+    // otherwise have said, and which is a genuinely bad thing to do by
+    // accident in a shared room.
+    if (state.showingAnswer) {
+
+      // Drawn before the network call, not after. Waiting on a round trip to
+      // acknowledge a touch is what made every control feel broken: the tap
+      // registered immediately and the glass sat unchanged for two seconds,
+      // so it read as a missed press and got pressed again.
+      drawPhase("", "putting that away", C_INK_SOFT);
+
+      dismissAnswer();
+
+      state.showingAnswer = false;
+
+      fetchScreen();
+
+      delay(250);
+
+      return;
+
+    }
+
     // The eye is the mute switch. Tapping the thing that looks like it is
     // watching you is the one gesture nobody needs told to them, and it is
     // the control most worth making obvious in a shared room.
     if (t.y >= EYE_TOP && t.y < EYE_BOTTOM) {
 
-      if (micArmed) disarmMic(); else armMic();
+      // Same rule: the hardware changes state and the screen says so
+      // instantly, before anything touches the network.
+      if (micArmed) {
+        disarmMic();
+        drawPhase("mic off", "the microphone is not running", C_INK_SOFT);
+      } else {
+        armMic();
+        drawPhase("mic on", "listening for the wake word", C_MOSS);
+      }
+
+      delay(700);
 
       fetchScreen();
-
-      delay(400);
 
       return;
 

@@ -612,6 +612,13 @@ export async function renderDeskScreen({ preview = null, mic = "on", asks = 0 } 
       "x-almanac-count": String(state.attention.count),
       "x-almanac-nudge": state.attention.nudge?.id || "",
       "x-almanac-next": String(nextIn),
+      // Which face is on the glass. The device cannot see inside the PNG it
+      // is showing, and what a tap should DO depends entirely on that: on the
+      // resting face the middle of the screen is the mute switch, on an
+      // answer it is "put this away". Without this the device applied the
+      // resting layout's zones to every screen, so dismissing an answer
+      // silently muted the microphone instead.
+      "x-almanac-view": answer ? "answer" : "resting",
       "cache-control": "no-store"
     }
   });
