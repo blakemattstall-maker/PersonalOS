@@ -4,9 +4,91 @@ import { requireAuth } from "../../../lib/auth.js";
 import { enforceLimit } from "../../../lib/ratelimit.js";
 import { TOOLS } from "../../../lib/toolDefinitions.js";
 
-// Tools that promise an answer later. Fine everywhere else, unusable on a
-// device whose entire job is to answer out loud, now.
+// Tools whose real output lands later, on the dashboard.
+//
+// These were briefly removed from the desk's tool list, which fixed the
+// symptom ("it'll be on your dashboard in a few minutes" spoken at someone
+// standing in front of a speaker) and broke something more important:
+// starting a deep analysis by voice, and having it show up on the dashboard
+// like anything else, is a thing worth being able to do. So they stay
+// available everywhere, and the desk earns an immediate answer alongside.
 const DEFERRED_TOOLS = ["start_deep_thinking"];
+
+
+// Markdown is for eyes.
+//
+// The answering tools format for a dashboard, so a good answer comes back
+// full of **bold**, bullets and headings. Read aloud that becomes "asterisk
+// asterisk Microsoft". The screen carries the structure; the voice needs
+// sentences.
+function forSpeech(value) {
+  return (value || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\n{2,}/g, ". ")
+    .replace(/\n/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\.\s*\./g, ".")
+    .trim();
+}
+
+
+// A real answer runs for paragraphs, which is right on a dashboard and
+// punishing from a speaker. Cut at a sentence and point at the screen.
+function boundForSpeech(value) {
+
+  const clean = forSpeech(value);
+
+  const LIMIT = 700;
+
+  if (!clean || clean.length <= LIMIT) return clean;
+
+  const cut = clean.slice(0, LIMIT);
+
+  const lastStop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+
+  return `${lastStop > 200 ? cut.slice(0, lastStop + 1) : cut} There's more on the screen.`;
+
+}
+
+
+// Everything the desk needs after an answer exists: a screen laid out for it,
+// and the exchange remembered so the next question can refer back to it.
+//
+// Called from BOTH return paths. The conversational one — where the router
+// answers without calling a tool — used to return raw markdown and compose
+// nothing, which is why a follow-up came back as unreadable asterisks on the
+// resting face instead of a designed screen.
+async function prepareDeskReply({ question, answer, results = [], waiting = false }) {
+
+  try {
+
+    const { designDeskScreen, stashDeskScreen } = await import("../../../lib/deskScreens.js");
+
+    const spec = await designDeskScreen({
+      question,
+      answer,
+      facts: results
+        .map(r => r.result?.data ? `${r.tool}: ${JSON.stringify(r.result.data).slice(0, 900)}` : null)
+        .filter(Boolean)
+        .join("\n"),
+      waiting
+    });
+
+    await stashDeskScreen(spec, { question, answer });
+
+  } catch (error) {
+    console.error("DESK SCREEN compose failed:", error.message);
+  }
+
+  return boundForSpeech(answer);
+
+}
 import { DateTime } from "luxon";
 import { getUserTimezone } from "../../../lib/profile.js";
 import { getPendingClarification, clearPendingClarification } from "../../../tools/pending.js";
@@ -79,6 +161,20 @@ export default async function handler(req, res) {
     // whether the answer has to be speakable.
     const isDesk = req.body?.surface === "desk";
 
+    // What the desk is showing right now, so "tell me more about that role"
+    // has something to point at. Absent for every other surface, and absent
+    // once it has gone stale.
+    let deskContext = null;
+
+    if (isDesk) {
+      try {
+        const { loadDeskContext } = await import("../../../lib/deskScreens.js");
+        deskContext = await loadDeskContext();
+      } catch (error) {
+        console.error("DESK context unavailable:", error.message);
+      }
+    }
+
     let { text } = req.body;
 
     let transcription = null;
@@ -144,7 +240,8 @@ export default async function handler(req, res) {
 
         const settled = [{ tool: "clarification", result: answered }];
 
-        await notifyCapture(settled, text);
+        // Same rule as the main path: the desk answered out loud in the room.
+        if (!isDesk) await notifyCapture(settled, text);
 
         return res.status(200).json({
           success: answered.success,
@@ -221,36 +318,30 @@ FIRST decide which of these the user is doing:
 
 Call every tool needed to satisfy the request — if one message asks for two things, make two calls.
 ${isDesk ? `
-THIS REQUEST CAME FROM THE DESK DEVICE. The user spoke it out loud and is
-standing in front of a small screen and a speaker, waiting to be answered
-now. Answer from what is already known rather than starting anything that
-finishes later. When nothing more specific fits, general_question can answer
-from the full profile, memories and current figures — prefer that to saying
-nothing useful. Never promise that something will appear on the dashboard.` : ""}`
+THIS REQUEST CAME FROM THE DESK DEVICE. It was spoken out loud, and the user
+is standing in front of a small screen and a speaker expecting to be answered
+now. Prefer tools that answer from what is already known; when nothing more
+specific fits, general_question can answer from the full profile, memories
+and current figures. Starting a deep analysis is still allowed when the
+question genuinely deserves one — it will be answered immediately as well.` : ""}`
 
         },
 
 
         {
-          role:"user",
-          content:text
+          role: "user",
+          content: deskContext
+            ? `The desk screen is currently showing the answer to: "${deskContext.question}"\n\n` +
+              `That answer was: ${deskContext.answer}\n\n` +
+              `They are now saying, and may be referring back to it ` +
+              `("that role", "the second one", "draft an email to him"):\n${text}`
+            : text
         }
 
       ],
 
 
-      // The desk cannot use a tool whose answer arrives later.
-      //
-      // Asked what internships to apply for, the router reasonably chose
-      // start_deep_thinking — whose own description says the result is saved
-      // for the dashboard and "not read back immediately". That is right for
-      // a phone capture and useless to somebody standing in front of a
-      // speaker waiting to be told something. Filtering the list is
-      // deterministic; a line in the prompt asking it to please not is a
-      // suggestion the model is free to weigh against everything else.
-      tools: isDesk
-        ? TOOLS.filter(t => !DEFERRED_TOOLS.includes(t.function?.name))
-        : TOOLS,
+      tools: TOOLS,
 
       tool_choice: "auto"
 
@@ -288,7 +379,25 @@ nothing useful. Never promise that something will appear on the dashboard.` : ""
       // all, which is more than this branch could see.
       answer.message = await withExtraction(text, [{ tool: "general_question", result: answer }], answer.message);
 
-      await notifyCapture([{ tool: "general_question", result: answer }], text);
+      if (!isDesk) await notifyCapture([{ tool: "general_question", result: answer }], text);
+
+      // The desk answers out loud and on a screen, on every path that
+      // produces an answer — including this one, which returns before the
+      // tool machinery below ever runs.
+      if (isDesk) {
+
+        const spoken = await prepareDeskReply({
+          question: transcription?.text || text,
+          answer: answer.message
+        });
+
+        return res.status(200).json({
+          success: true,
+          tool: "general_question",
+          result: { ...answer, message: spoken }
+        });
+
+      }
 
       return res.status(200).json({
         success: true,
@@ -356,7 +465,7 @@ nothing useful. Never promise that something will appear on the dashboard.` : ""
     // only ever reported the first one back, so the phone said "Created event"
     // and stayed silent about the reminder. Stitch every message together so
     // the spoken reply covers everything that actually happened.
-    const spokenMessage = results
+    let spokenMessage = results
       // Named, not anonymous: "That one failed" leaves the useful half out.
       .map(r => r.result?.message || (r.error ? `Couldn't ${String(r.tool || "do that").replace(/_/g, " ")}: ${r.error}` : null))
       .filter(Boolean)
@@ -379,36 +488,18 @@ nothing useful. Never promise that something will appear on the dashboard.` : ""
     }
 
     // The desk device asks for a picture of the answer, not just the answer.
-    //
     // Only when the caller says it is the desk: a capture from the phone
     // Shortcut has no screen waiting on it, and paying for a layout nobody
-    // will look at is waste. Best-effort throughout — a screen that fails to
-    // compose costs the picture, never the action that was already taken or
-    // the words that are about to be spoken.
+    // will look at is waste.
+    let deskSpoken = null;
+
     if (isDesk) {
-
-      try {
-
-        const { designDeskScreen, stashDeskScreen } = await import("../../../lib/deskScreens.js");
-
-        const spec = await designDeskScreen({
-          question: transcription?.text || text,
-          answer: spokenMessage,
-          // Ember is only available to the composer when something genuinely
-          // is waiting; see sanitiseSpec.
-          waiting: Boolean(results.some(r => r.result?.data?.waiting)),
-          facts: results
-            .map(r => r.result?.data ? `${r.tool}: ${JSON.stringify(r.result.data).slice(0, 900)}` : null)
-            .filter(Boolean)
-            .join("\n")
-        });
-
-        await stashDeskScreen(spec);
-
-      } catch (error) {
-        console.error("DESK SCREEN compose failed:", error.message);
-      }
-
+      deskSpoken = await prepareDeskReply({
+        question: transcription?.text || text,
+        answer: spokenWithExtras,
+        results,
+        waiting: Boolean(results.some(r => r.result?.data?.waiting))
+      });
     }
 
 
@@ -420,8 +511,34 @@ nothing useful. Never promise that something will appear on the dashboard.` : ""
     // so a phone notification saying the same thing is the app talking over
     // itself. This is also what was sending mystery notifications while the
     // desk device was being tested.
-    if (req.body?.surface !== "desk") {
+    if (!isDesk) {
       await notifyCapture(results, transcription?.text || text);
+    }
+
+
+    // A deferred tool still owes the room an answer.
+    //
+    // start_deep_thinking does the right thing — it starts real analysis and
+    // puts the result on the dashboard — but on its own it leaves somebody
+    // standing at a speaker having been told to go look at a website. So the
+    // dashboard work proceeds untouched, and the question is ALSO answered
+    // now from what is already known.
+    if (isDesk && results.some(r => DEFERRED_TOOLS.includes(r.tool))) {
+
+      try {
+
+        const { answerQuestion } = await import("../../../tools/answer.js");
+
+        const immediate = await answerQuestion({ question: transcription?.text || text });
+
+        if (immediate?.message) {
+          spokenMessage = `${immediate.message} I'm also working through it properly — the full breakdown will be on your dashboard.`;
+        }
+
+      } catch (error) {
+        console.error("DESK immediate answer failed:", error.message);
+      }
+
     }
 
 
@@ -431,24 +548,6 @@ nothing useful. Never promise that something will appear on the dashboard.` : ""
     // paragraphs, which is right on a dashboard and punishing from a speaker
     // on a desk. The screen carries the structure; the voice carries as much
     // as a person will actually stand and listen to, cut at a sentence.
-    const speakable = (() => {
-
-      if (!isDesk) return spokenMessage;
-
-      const LIMIT = 700;
-
-      if (!spokenMessage || spokenMessage.length <= LIMIT) return spokenMessage;
-
-      const cut = spokenMessage.slice(0, LIMIT);
-
-      const lastStop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
-
-      return `${lastStop > 200 ? cut.slice(0, lastStop + 1) : cut}` +
-             ` There's more on the screen.`;
-
-    })();
-
-
     return res.status(200).json({
 
       success: !anyFailure,
@@ -465,9 +564,12 @@ nothing useful. Never promise that something will appear on the dashboard.` : ""
       // what it always did; only the multi-action case rewrites the message.
       tool: results[0]?.tool,
 
-      result: results.length === 1
+      // The phone's contract is unchanged: one tool returns exactly what
+      // that tool said. The desk always gets the stitched, length-bounded
+      // version, because it has to be read aloud in a room.
+      result: (results.length === 1 && !isDesk)
         ? results[0]?.result
-        : { ...(results[0]?.result || { success: !anyFailure }), message: spokenWithExtras }
+        : { ...(results[0]?.result || { success: !anyFailure }), message: deskSpoken ?? spokenWithExtras }
 
     });
 

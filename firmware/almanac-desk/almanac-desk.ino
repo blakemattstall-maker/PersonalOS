@@ -833,88 +833,159 @@ String sendCapture(const int16_t *mono, size_t samples) {
 // Stream WAV TTS straight to the codec. The header is scanned for its "data"
 // chunk rather than assumed to be 44 bytes, and declared sizes are ignored —
 // the server may have concatenated chunks, so the stream plays to its end.
+// True while audio is playing, so a touch can stop it.
+volatile bool stopSpeaking = false;
+
+
+// Find a 4-byte marker in binary data.
+//
+// This exists because the first version searched for "data" using an Arduino
+// String, and a String built from binary truncates at the first NUL. A WAV
+// header is full of NULs — the marker was frequently never found, the audio
+// was never played, and the device sat silently having "spoken". Bytes get
+// searched as bytes.
+static int findMarker(const uint8_t *hay, size_t len, const char *needle) {
+
+  for (size_t i = 0; i + 4 <= len; i++) {
+    if (hay[i] == needle[0] && hay[i + 1] == needle[1]
+     && hay[i + 2] == needle[2] && hay[i + 3] == needle[3]) {
+      return (int)i;
+    }
+  }
+
+  return -1;
+
+}
+
+
+// Speak, and be stoppable.
+//
+// Any touch or a press of BOOT ends playback immediately. Being unable to
+// stop a paragraph of speech is bad on a desk and worse when the wake word
+// fired by accident, which it sometimes will.
 void speak(const String &text) {
 
   if (!text.length()) return;
 
-  if (!audioConfigure(PLAYBACK_RATE)) return;
+  if (!audioConfigure(PLAYBACK_RATE)) {
+    Serial.println("[tts] could not configure playback");
+    return;
+  }
+
+  stopSpeaking = false;
 
   WiFiClientSecure client;
   HTTPClient http;
 
-  if (httpBegin(http, client, "/api/tts")) {
+  if (!httpBegin(http, client, "/api/tts")) {
+    Serial.println("[tts] could not reach the server");
+    audioConfigure(RECORD_RATE);
+    return;
+  }
 
-    http.addHeader("Content-Type", "application/json");
-    http.setTimeout(60'000);
+  http.addHeader("Content-Type", "application/json");
+  http.setTimeout(60'000);
 
-    JsonDocument req;
-    req["text"] = text;
-    req["format"] = "wav";
+  JsonDocument req;
+  req["text"] = text;
+  req["format"] = "wav";
 
-    String body;
-    serializeJson(req, body);
+  String body;
+  serializeJson(req, body);
 
-    const int code = http.POST(body);
+  const int code = http.POST(body);
 
-    if (code == 200) {
+  if (code != 200) {
+    Serial.printf("[tts] HTTP %d\n", code);
+    http.end();
+    audioConfigure(RECORD_RATE);
+    return;
+  }
 
-      WiFiClient *stream = http.getStreamPtr();
+  WiFiClient *stream = http.getStreamPtr();
 
-      static uint8_t buf[4096];
+  const int declared = http.getSize();
 
-      bool inData = false;
-      String header;
+  Serial.printf("[tts] playing, %d bytes declared\n", declared);
 
-      while (http.connected()) {
+  uint8_t chunk[2048];
+  int16_t out[2048];
 
-        const size_t got = stream->readBytes(buf, sizeof(buf));
+  bool inData = false;
 
-        if (got == 0) break;
+  size_t played = 0;
 
-        size_t offset = 0;
+  unsigned long lastCheck = millis();
 
-        if (!inData) {
+  while (http.connected() || stream->available()) {
 
-          // Accumulate until the "data" marker; audio starts 8 bytes after it.
-          header.concat((const char *)buf, got);
-
-          const int at = header.indexOf("data");
-
-          if (at < 0) continue;
-
-          const size_t audioStartsAt = at + 8;
-
-          if (header.length() <= (int)audioStartsAt) continue;
-
-          // Bytes already read past the marker belong to this buffer's tail.
-          offset = got - (header.length() - audioStartsAt);
-          inData = true;
-
-        }
-
-        // Mono source, stereo slots: duplicate each sample for both ears.
-        const int16_t *samples = (const int16_t *)(buf + offset);
-        const size_t n = (got - offset) / sizeof(int16_t);
-
-        static int16_t out[4096];
-
-        for (size_t i = 0; i < n; i++) { out[i * 2] = samples[i]; out[i * 2 + 1] = samples[i]; }
-
-        i2s.write((uint8_t *)out, n * 2 * sizeof(int16_t));
-
-      }
-
-    } else {
-      Serial.printf("[tts] HTTP %d\n", code);
+    if (stopSpeaking) {
+      Serial.println("[tts] stopped by touch");
+      break;
     }
 
-    http.end();
+    const size_t got = stream->readBytes(chunk, sizeof(chunk));
+
+    if (got == 0) break;
+
+    size_t offset = 0;
+
+    if (!inData) {
+
+      // The header is small and arrives in the first read; scanning this
+      // buffer for the marker is enough in practice, and if it is not there
+      // the whole response is not a WAV worth playing.
+      const int at = findMarker(chunk, got, "data");
+
+      if (at < 0) continue;
+
+      offset = (size_t)at + 8;   // skip "data" plus its 4-byte length
+
+      if (offset >= got) continue;
+
+      inData = true;
+
+    }
+
+    const int16_t *samples = (const int16_t *)(chunk + offset);
+
+    const size_t n = (got - offset) / sizeof(int16_t);
+
+    // Mono source, stereo slots: duplicate each sample for both ears.
+    for (size_t i = 0; i < n && i * 2 + 1 < 2048; i++) {
+      out[i * 2] = samples[i];
+      out[i * 2 + 1] = samples[i];
+    }
+
+    i2s.write((uint8_t *)out, min(n, (size_t)1024) * 2 * sizeof(int16_t));
+
+    played += n;
+
+    // Poll for a stop request between buffers rather than after the whole
+    // thing, which is the difference between a stop button and a label.
+    if (millis() - lastCheck > 60) {
+
+      lastCheck = millis();
+
+      if (digitalRead(BOOT_BTN) == LOW) stopSpeaking = true;
+
+      TouchPoint t = readTouch();
+
+      if (t.touched) stopSpeaking = true;
+
+    }
 
   }
+
+  http.end();
+
+  Serial.printf("[tts] done, %u samples%s\n",
+                (unsigned)played, stopSpeaking ? " (interrupted)" : "");
 
   audioConfigure(RECORD_RATE);
 
 }
+
 
 void voiceFlow(bool fromWake = false) {
 
@@ -1019,7 +1090,16 @@ void voiceFlow(bool fromWake = false) {
   free(mono);
 
   phase = SPEAKING;
-  drawPhase("", reply.c_str(), C_WHITE);
+
+  // The composed screen first, then the voice over the top of it.
+  //
+  // This used to paint the raw reply as plain text, speak, and only fetch
+  // the designed screen afterwards — so the ugly intermediate was the thing
+  // you looked at while it talked, and the good one only appeared if you
+  // touched it. The server has already laid the answer out by the time the
+  // capture returns; there is nothing to wait for.
+  fetchScreen();
+
   speak(reply);
 
   phase = IDLE;
@@ -1028,9 +1108,9 @@ void voiceFlow(bool fromWake = false) {
   if (fromWake && micArmed) armMic();
 #endif
 
-  // The capture may well have changed what is waiting, so the screen is
-  // re-fetched rather than restored from before the conversation.
-  fetchScreen();
+  // Only re-fetch if the answer was interrupted — otherwise the screen
+  // painted before speaking is still the current one.
+  if (stopSpeaking) fetchScreen();
 
 }
 

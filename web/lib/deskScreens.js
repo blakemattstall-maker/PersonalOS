@@ -34,6 +34,12 @@ const KEY = "desk_screen";
 // back is a tap now, so this only has to cover "I looked away for a moment".
 const TTL_SECONDS = 75;
 
+// How long a spoken exchange stays available to refer back to. Long enough
+// to read an answer, think, and ask a follow-up about "that role" or "the
+// second one"; short enough that tomorrow's question is not answered in
+// terms of yesterday's.
+const CONTEXT_TTL_SECONDS = 15 * 60;
+
 
 export const BLOCK_KINDS = ["stat", "bar", "rows", "note", "chips"];
 
@@ -212,11 +218,23 @@ export async function designDeskScreen({ question, answer, facts = "", waiting =
 // Stored with its own expiry rather than a timer: serverless has nowhere to
 // keep a countdown, and a timestamp means the screen reverts correctly even
 // if nothing runs in between.
-export async function stashDeskScreen(spec) {
+export async function stashDeskScreen(spec, exchange = null) {
 
-  if (!spec) return { stored: false };
+  if (!spec && !exchange) return { stored: false };
 
-  const value = { spec, expires_at: new Date(Date.now() + TTL_SECONDS * 1000).toISOString() };
+  // The screen expires; the conversation does not.
+  //
+  // Dismissing an answer used to delete the only record that it happened,
+  // so "tell me more about that role" had nothing to refer to and the whole
+  // exchange was unreachable a tap later. The picture still comes down on
+  // its own schedule — a stale answer staring at you is clutter — but what
+  // was asked and said stays readable for long enough to talk about.
+  const value = {
+    spec,
+    expires_at: new Date(Date.now() + TTL_SECONDS * 1000).toISOString(),
+    exchange: exchange || null,
+    exchange_expires_at: new Date(Date.now() + CONTEXT_TTL_SECONDS * 1000).toISOString()
+  };
 
   const { error } = await supabase
     .from("app_settings")
@@ -242,15 +260,55 @@ export async function loadDeskScreen() {
 
   if (error || !data?.value) return null;
 
-  const { spec, expires_at } = data.value;
+  const { spec, expires_at, dismissed } = data.value;
 
-  if (!spec || !expires_at || new Date(expires_at) < new Date()) return null;
+  if (!spec || dismissed || !expires_at || new Date(expires_at) < new Date()) return null;
 
   return { spec, expiresAt: expires_at };
 
 }
 
 
+// What was last asked and answered here, for a follow-up to hang off.
+export async function loadDeskContext() {
+
+  const { data, error } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", KEY)
+    .maybeSingle();
+
+  if (error || !data?.value) return null;
+
+  const { exchange, exchange_expires_at } = data.value;
+
+  if (!exchange || !exchange_expires_at) return null;
+
+  if (new Date(exchange_expires_at) < new Date()) return null;
+
+  return exchange;
+
+}
+
+
 export async function clearDeskScreen() {
-  await supabase.from("app_settings").delete().eq("key", KEY);
+
+  // Marks the screen down rather than deleting the row, so the exchange
+  // behind it survives to be asked about.
+  const { data } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", KEY)
+    .maybeSingle();
+
+  if (!data?.value) return;
+
+  await supabase
+    .from("app_settings")
+    .upsert([{
+      key: KEY,
+      value: { ...data.value, dismissed: true },
+      updated_at: new Date().toISOString()
+    }], { onConflict: "key" });
+
 }
