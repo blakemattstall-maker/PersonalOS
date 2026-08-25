@@ -721,6 +721,32 @@ void setup() {
 
   Serial.printf("[boot] expander init: %s\n", expanderOk ? "ok" : "FAILED (no ACK on 0x20)");
 
+  // Which display/touch chip is actually on this board, checked rather than
+  // trusted from AMOLED_V2 in pins.h — the two revisions need different
+  // Arduino_GFX panel classes, and sending V1's SH8601 command sequence to a
+  // V2 CO5300 controller produces exactly "begin() succeeds, panel stays
+  // black": the SPI writes complete with no error because this bus has no
+  // read-back path to disagree, they are just the wrong commands for the
+  // chip that received them.
+  Wire.beginTransmission(ADDR_TOUCH_V1);
+  const bool v1TouchAcks = (Wire.endTransmission() == 0);
+
+  Wire.beginTransmission(ADDR_TOUCH_V2);
+  const bool v2TouchAcks = (Wire.endTransmission() == 0);
+
+  Serial.printf("[boot] touch probe: FT3168(0x38/V1)=%s  CST816(0x15/V2)=%s  " \
+                "firmware built for %s\n",
+                v1TouchAcks ? "ACK" : "no", v2TouchAcks ? "ACK" : "no",
+                AMOLED_V2 ? "V2" : "V1");
+
+  if (AMOLED_V2 == 0 && v2TouchAcks && !v1TouchAcks) {
+    Serial.println("[boot] *** MISMATCH: this is a V2 board, firmware is built for V1 ***");
+    Serial.println("[boot] *** set AMOLED_V2 1 in pins.h and reflash ***");
+  } else if (AMOLED_V2 == 1 && v1TouchAcks && !v2TouchAcks) {
+    Serial.println("[boot] *** MISMATCH: this is a V1 board, firmware is built for V2 ***");
+    Serial.println("[boot] *** set AMOLED_V2 0 in pins.h and reflash ***");
+  }
+
   if (!gfx->begin()) Serial.println("[boot] gfx.begin failed");
   else Serial.println("[boot] gfx.begin ok");
 

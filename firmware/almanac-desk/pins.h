@@ -11,7 +11,12 @@
 // before flashing; everything else is identical between revisions.
 #pragma once
 
-#define AMOLED_V2 0
+// Set to 1 for V2 boards (CO5300 display + CST816 touch), 0 for V1 (SH8601 +
+// FT3168). Do not trust the Amazon listing title for this: the Aug 2026
+// listing advertises "SH8601 + FT3168" and shipped a V2 board. The firmware
+// probes the touch address at boot and prints a loud MISMATCH if this flag
+// disagrees with the silicon — believe the probe, not the box.
+#define AMOLED_V2 1
 
 // AMOLED over QSPI. Reset is NOT on an ESP32 pin — the panel's reset, the
 // display power rail and the touch reset all live on a TCA9554 IO expander
