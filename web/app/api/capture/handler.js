@@ -209,9 +209,17 @@ export default async function handler(req, res) {
     // planning engine invites it to helpfully do something.
     if (isDesk && typeof text === "string") {
 
-      const said = text.toLowerCase().replace(/[^a-z\s]/g, "").trim();
+      // The wake word is often transcribed along with the command, and a
+      // transcriber adds punctuation and filler that an anchored match will
+      // not survive: "Jarvis, never mind." never equalled "never mind".
+      const said = text
+        .toLowerCase()
+        .replace(/[^a-z\s]/g, " ")
+        .replace(/\b(jarvis|hey|ok|okay|um|uh|please)\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 
-      const DISMISS = /^(never ?mind|nevermind|go back|dismiss|clear( that| the screen)?|close( that)?|forget it|cancel|stop|thats all|thank you|thanks)$/;
+      const DISMISS = /^(never ?mind|nevermind|go back|dismiss|clear( that| the screen)?|close( that)?|forget it|cancel|stop|thats all|thats it|done|thank you|thanks)$/;
 
       if (DISMISS.test(said)) {
 

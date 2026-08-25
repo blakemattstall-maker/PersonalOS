@@ -673,6 +673,17 @@ bool stillHeld() {
 // tell us when the sentence ended, and an open-ended microphone is exactly
 // the thing this device promises not to be. Six seconds, then it stops
 // whether or not anyone spoke.
+// Speech-level energy, at the gain this microphone actually runs at.
+//
+// These were first calibrated with the codec at gain 6 and then the gain was
+// dropped to 3 to stop speech clipping — which made everything about four
+// times quieter and left the thresholds rejecting real sentences. A measured
+// utterance at gain 3 peaks around 3000-4000 with frame RMS in the low
+// hundreds, so this sits well under that and comfortably over room tone.
+static const int32_t SPEECH_RMS = 90;
+static const int32_t SPEECH_PEAK = 600;
+
+
 size_t recordFixed(int16_t *mono, size_t maxSamples) {
 
   // PSRAM, not a static array: 8KB of internal RAM held forever is 8KB the
@@ -685,17 +696,46 @@ size_t recordFixed(int16_t *mono, size_t maxSamples) {
 
   const unsigned long start = millis();
 
-  while (written < maxSamples && millis() - start < 7'000UL) {
+  // Stop when they stop, rather than always recording six seconds.
+  //
+  // A fixed window meant "never mind" was one second of speech inside five
+  // of silence — which failed a percentage-of-loud-frames test, and gave the
+  // transcriber five seconds of nothing to invent over. Ending on a pause
+  // makes short commands work and makes the whole thing feel answered
+  // rather than timed.
+  bool heardAnything = false;
+  unsigned long lastLoud = 0;
+
+  while (written < maxSamples && millis() - start < 9'000UL) {
 
     const size_t want = min((size_t)2048, maxSamples - written) * 2 * sizeof(int16_t);
     const size_t got = i2s.readBytes((char *)stereo, want);
 
     const int16_t *samples = (const int16_t *)stereo;
 
+    uint64_t sum = 0;
+    size_t counted = 0;
+
     for (size_t i = 0; i + 1 < got / sizeof(int16_t); i += 2) {
-      mono[written++] = samples[i];
+      const int32_t v = samples[i];
+      sum += (uint64_t)((int64_t)v * v);
+      counted++;
+      mono[written++] = v;
       if (written >= maxSamples) break;
     }
+
+    const int32_t rms = counted ? (int32_t)sqrt((double)(sum / counted)) : 0;
+
+    if (rms > SPEECH_RMS) {
+      heardAnything = true;
+      lastLoud = millis();
+    }
+
+    // A second of quiet after something was said means the sentence is over.
+    if (heardAnything && lastLoud && millis() - lastLoud > 1000UL) break;
+
+    // Nobody started talking at all.
+    if (!heardAnything && millis() - start > 3500UL) break;
 
   }
 
@@ -904,67 +944,76 @@ void speak(const String &text) {
     return;
   }
 
-  WiFiClient *stream = http.getStreamPtr();
-
   const int declared = http.getSize();
 
-  Serial.printf("[tts] playing, %d bytes declared\n", declared);
+  // Downloaded whole, then played.
+  //
+  // Streaming it straight off the socket played exactly one buffer — 1157
+  // samples, about fifty milliseconds — because readBytes() returns 0 the
+  // moment the TCP buffer is momentarily empty, and the loop treated that as
+  // end-of-stream. It happens on every answer, so the device appeared to
+  // speak silently. writeToStream is the same mechanism the screen fetch
+  // uses and it handles the waiting properly; a megabyte of PSRAM against
+  // eight is not worth being clever about.
+  const size_t CAP = 3 * 1024 * 1024;
 
-  uint8_t chunk[2048];
-  int16_t out[2048];
+  uint8_t *audio = (uint8_t *)heap_caps_malloc(CAP, MALLOC_CAP_SPIRAM);
 
-  bool inData = false;
+  if (!audio) {
+    Serial.println("[tts] no PSRAM for the audio");
+    http.end();
+    audioConfigure(RECORD_RATE);
+    return;
+  }
+
+  BufferSink sink(audio, CAP);
+
+  http.writeToStream(&sink);
+
+  http.end();
+
+  const size_t total = sink.len;
+
+  Serial.printf("[tts] downloaded %u of %d bytes\n", (unsigned)total, declared);
+
+  // Find where the samples start; the header is not a fixed 44 bytes once a
+  // multi-chunk answer has been concatenated.
+  const int at = findMarker(audio, min(total, (size_t)2048), "data");
+
+  size_t pos = (at >= 0) ? (size_t)at + 8 : 44;
+
+  static int16_t out[2048];
 
   size_t played = 0;
 
   unsigned long lastCheck = millis();
 
-  while (http.connected() || stream->available()) {
+  while (pos + 1 < total) {
 
     if (stopSpeaking) {
       Serial.println("[tts] stopped by touch");
       break;
     }
 
-    const size_t got = stream->readBytes(chunk, sizeof(chunk));
+    const size_t bytesLeft = total - pos;
 
-    if (got == 0) break;
+    const size_t n = min(bytesLeft / sizeof(int16_t), (size_t)1024);
 
-    size_t offset = 0;
+    if (n == 0) break;
 
-    if (!inData) {
+    const int16_t *samples = (const int16_t *)(audio + pos);
 
-      // The header is small and arrives in the first read; scanning this
-      // buffer for the marker is enough in practice, and if it is not there
-      // the whole response is not a WAV worth playing.
-      const int at = findMarker(chunk, got, "data");
-
-      if (at < 0) continue;
-
-      offset = (size_t)at + 8;   // skip "data" plus its 4-byte length
-
-      if (offset >= got) continue;
-
-      inData = true;
-
-    }
-
-    const int16_t *samples = (const int16_t *)(chunk + offset);
-
-    const size_t n = (got - offset) / sizeof(int16_t);
-
-    // Mono source, stereo slots: duplicate each sample for both ears.
-    for (size_t i = 0; i < n && i * 2 + 1 < 2048; i++) {
+    for (size_t i = 0; i < n; i++) {
       out[i * 2] = samples[i];
       out[i * 2 + 1] = samples[i];
     }
 
-    i2s.write((uint8_t *)out, min(n, (size_t)1024) * 2 * sizeof(int16_t));
+    i2s.write((uint8_t *)out, n * 2 * sizeof(int16_t));
 
+    pos += n * sizeof(int16_t);
     played += n;
 
-    // Poll for a stop request between buffers rather than after the whole
-    // thing, which is the difference between a stop button and a label.
+    // Between buffers, so stopping is a button and not a label.
     if (millis() - lastCheck > 60) {
 
       lastCheck = millis();
@@ -979,7 +1028,7 @@ void speak(const String &text) {
 
   }
 
-  http.end();
+  free(audio);
 
   Serial.printf("[tts] done, %u samples%s\n",
                 (unsigned)played, stopSpeaking ? " (interrupted)" : "");
@@ -1049,7 +1098,7 @@ void voiceFlow(bool fromWake = false) {
 
     const int32_t rms = (int32_t)sqrt((double)(sumSquares / FRAME));
 
-    if (rms > 220) loudFrames++;
+    if (rms > SPEECH_RMS) loudFrames++;
 
     totalFrames++;
 
@@ -1063,7 +1112,10 @@ void voiceFlow(bool fromWake = false) {
   // At least a tenth of the recording has to contain speech-level energy.
   // Six seconds of room with one cough in it does not reach that; "what is
   // on my calendar" is nowhere near the line.
-  const bool heardSpeech = loudPercent >= 10 && peak >= 800;
+  // With recording now ending on a pause, a real utterance fills much more
+  // of the buffer, so this is a floor against an empty room rather than a
+  // judgement about how much of the window was speech.
+  const bool heardSpeech = loudPercent >= 5 && peak >= SPEECH_PEAK;
 
   if (samples >= RECORD_RATE / 2 && !heardSpeech) {
     Serial.println("[voice] no speech in that - not uploading");
@@ -1222,69 +1274,13 @@ void setup() {
   gfx->setCursor(24, 84);
   gfx->print(expanderOk ? "waking up" : "expander missing!");
 
-  WiFi.mode(WIFI_STA);
-
-  // Never print the password. Lengths only, to catch a truncated or
-  // whitespace-mangled secrets.h without ever putting the value in a log.
-  Serial.printf("[wifi] ssid=\"%s\" (len %d), password len %d\n",
-                WIFI_SSID, strlen(WIFI_SSID), strlen(WIFI_PASSWORD));
-
-  // A scan before the connect attempt, rather than guessing blind between a
-  // typo, a 5GHz-only network (invisible to this radio) and a weak signal —
-  // this prints exactly what the board's 2.4GHz radio actually sees.
-  Serial.println("[wifi] scanning...");
-
-  const int found = WiFi.scanNetworks();
-
-  Serial.printf("[wifi] %d network(s) in range:\n", found);
-
-  bool targetSeen = false;
-
-  for (int i = 0; i < found; i++) {
-
-    const bool isTarget = WiFi.SSID(i) == String(WIFI_SSID);
-
-    if (isTarget) targetSeen = true;
-
-    Serial.printf("  %s%-32s ch%-2d  %ddBm  enc=%d\n",
-                  isTarget ? "-> " : "   ",
-                  WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i), (int)WiFi.encryptionType(i));
-
-  }
-
-  Serial.printf("[wifi] target SSID visible on 2.4GHz: %s\n", targetSeen ? "YES" : "NO");
-
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-  gfx->setCursor(24, 112);
-  gfx->setTextColor(C_INK_SOFT);
-  gfx->print("wifi: ");
-  gfx->print(WIFI_SSID);
-
-  const unsigned long t0 = millis();
-
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20'000UL) delay(200);
-
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("[boot] wifi FAILED, status=%d\n", WiFi.status());
-    phase = OFFLINE;
-    drawPhase("no wifi", "check secrets.h - 2.4GHz only, no eduroam", C_EMBER);
-    return;
-  }
-
-  Serial.printf("[boot] wifi ok, ip=%s\n", WiFi.localIP().toString().c_str());
-
-  // No SNTP, deliberately.
+  // The microphone comes up BEFORE the network, because it does not need it.
   //
-  // Nothing on this device reads a local clock any more — the time on screen
-  // is drawn by the server, in the user's timezone, as part of the picture.
-  // SNTP was left running to maintain a clock nobody looks at, and its
-  // periodic re-sync is the best suspect for the occasional unexplained
-  // reboot: the one captured crash was an lwIP assert
-  // ("Required to lock TCPIP core functionality") inside udp_new_ip_type,
-  // which is the UDP path SNTP uses. Removing the only thing that needed it
-  // is better than locking around it.
-
+  // This used to sit at the end of setup(), after a WiFi wait that returns
+  // early when it fails — so a boot with the hotspot asleep left the wake
+  // word engine uninitialised, and it stayed that way after the network came
+  // back, because reconnecting happens in loop() and only redrew the screen.
+  // The device looked fine and could not hear a thing.
   const bool audioOk = audioInit();
 
   Serial.printf("[boot] audio init: %s\n", audioOk ? "ok" : "FAILED");
@@ -1394,6 +1390,70 @@ void setup() {
     gfx->print("audio init failed");
     delay(1500);
   }
+
+
+  WiFi.mode(WIFI_STA);
+
+  // Never print the password. Lengths only, to catch a truncated or
+  // whitespace-mangled secrets.h without ever putting the value in a log.
+  Serial.printf("[wifi] ssid=\"%s\" (len %d), password len %d\n",
+                WIFI_SSID, strlen(WIFI_SSID), strlen(WIFI_PASSWORD));
+
+  // A scan before the connect attempt, rather than guessing blind between a
+  // typo, a 5GHz-only network (invisible to this radio) and a weak signal —
+  // this prints exactly what the board's 2.4GHz radio actually sees.
+  Serial.println("[wifi] scanning...");
+
+  const int found = WiFi.scanNetworks();
+
+  Serial.printf("[wifi] %d network(s) in range:\n", found);
+
+  bool targetSeen = false;
+
+  for (int i = 0; i < found; i++) {
+
+    const bool isTarget = WiFi.SSID(i) == String(WIFI_SSID);
+
+    if (isTarget) targetSeen = true;
+
+    Serial.printf("  %s%-32s ch%-2d  %ddBm  enc=%d\n",
+                  isTarget ? "-> " : "   ",
+                  WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i), (int)WiFi.encryptionType(i));
+
+  }
+
+  Serial.printf("[wifi] target SSID visible on 2.4GHz: %s\n", targetSeen ? "YES" : "NO");
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  gfx->setCursor(24, 112);
+  gfx->setTextColor(C_INK_SOFT);
+  gfx->print("wifi: ");
+  gfx->print(WIFI_SSID);
+
+  const unsigned long t0 = millis();
+
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20'000UL) delay(200);
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.printf("[boot] wifi FAILED, status=%d\n", WiFi.status());
+    phase = OFFLINE;
+    drawPhase("no wifi", "check secrets.h - 2.4GHz only, no eduroam", C_EMBER);
+    return;
+  }
+
+  Serial.printf("[boot] wifi ok, ip=%s\n", WiFi.localIP().toString().c_str());
+
+  // No SNTP, deliberately.
+  //
+  // Nothing on this device reads a local clock any more — the time on screen
+  // is drawn by the server, in the user's timezone, as part of the picture.
+  // SNTP was left running to maintain a clock nobody looks at, and its
+  // periodic re-sync is the best suspect for the occasional unexplained
+  // reboot: the one captured crash was an lwIP assert
+  // ("Required to lock TCPIP core functionality") inside udp_new_ip_type,
+  // which is the UDP path SNTP uses. Removing the only thing that needed it
+  // is better than locking around it.
 
   const bool pollOk = fetchScreen();
 
