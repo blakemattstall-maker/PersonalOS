@@ -701,6 +701,16 @@ void setup() {
 
   Serial.begin(115200);
 
+  // Native USB CDC drops anything written before a host is actually
+  // listening — a terminal opened a second late loses every early boot
+  // line for good, with no error and no way to replay it. This grace
+  // window is what makes those lines catchable at all; it does not delay
+  // boot when nothing is attached; because the loop condition still exits
+  // the moment three seconds pass either way.
+  { unsigned long t = millis(); while (!Serial && millis() - t < 3000) delay(10); }
+
+  Serial.println("\n[boot] almanac-desk starting");
+
   pinMode(BOOT_BTN, INPUT_PULLUP);
 
   Wire.begin(IIC_SDA, IIC_SCL);
@@ -709,7 +719,10 @@ void setup() {
   // controller never enumerates. The screen itself usually lights regardless.
   const bool expanderOk = tca9554::begin();
 
+  Serial.printf("[boot] expander init: %s\n", expanderOk ? "ok" : "FAILED (no ACK on 0x20)");
+
   if (!gfx->begin()) Serial.println("[boot] gfx.begin failed");
+  else Serial.println("[boot] gfx.begin ok");
 
   gfx->setBrightness(220);
   gfx->fillScreen(C_BLACK);
@@ -724,6 +737,37 @@ void setup() {
   gfx->print(expanderOk ? "waking up" : "expander missing!");
 
   WiFi.mode(WIFI_STA);
+
+  // Never print the password. Lengths only, to catch a truncated or
+  // whitespace-mangled secrets.h without ever putting the value in a log.
+  Serial.printf("[wifi] ssid=\"%s\" (len %d), password len %d\n",
+                WIFI_SSID, strlen(WIFI_SSID), strlen(WIFI_PASSWORD));
+
+  // A scan before the connect attempt, rather than guessing blind between a
+  // typo, a 5GHz-only network (invisible to this radio) and a weak signal —
+  // this prints exactly what the board's 2.4GHz radio actually sees.
+  Serial.println("[wifi] scanning...");
+
+  const int found = WiFi.scanNetworks();
+
+  Serial.printf("[wifi] %d network(s) in range:\n", found);
+
+  bool targetSeen = false;
+
+  for (int i = 0; i < found; i++) {
+
+    const bool isTarget = WiFi.SSID(i) == String(WIFI_SSID);
+
+    if (isTarget) targetSeen = true;
+
+    Serial.printf("  %s%-32s ch%-2d  %ddBm  enc=%d\n",
+                  isTarget ? "-> " : "   ",
+                  WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i), (int)WiFi.encryptionType(i));
+
+  }
+
+  Serial.printf("[wifi] target SSID visible on 2.4GHz: %s\n", targetSeen ? "YES" : "NO");
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   gfx->setCursor(24, 112);
@@ -736,24 +780,41 @@ void setup() {
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20'000UL) delay(200);
 
   if (WiFi.status() != WL_CONNECTED) {
+    Serial.printf("[boot] wifi FAILED, status=%d\n", WiFi.status());
     phase = OFFLINE;
     drawPhase("no wifi", "check secrets.h - 2.4GHz only, no eduroam", C_EMBER);
     return;
   }
 
+  Serial.printf("[boot] wifi ok, ip=%s\n", WiFi.localIP().toString().c_str());
+
   configTzTime(TZ_INFO, "pool.ntp.org", "time.nist.gov");
 
-  if (!audioInit()) {
+  const bool audioOk = audioInit();
+
+  Serial.printf("[boot] audio init: %s\n", audioOk ? "ok" : "FAILED");
+
+  if (!audioOk) {
     gfx->setCursor(24, 140);
     gfx->setTextColor(C_EMBER);
     gfx->print("audio init failed");
     delay(1500);
   }
 
-  pollDesk();
+  const bool pollOk = pollDesk();
+
+  Serial.printf("[boot] first /api/desk poll: %s\n", pollOk ? "ok" : "FAILED");
+
+  // Without this, loop()'s own "lastPoll == 0 means never polled" check reads
+  // as true on its very first pass regardless of how recently the line above
+  // ran, so every boot silently spent a second /api/desk round trip within
+  // the same second as the first — caught on real hardware, not in review.
+  lastPoll = millis();
 
   phase = IDLE;
   drawIdle();
+
+  Serial.println("[boot] reached idle - setup complete");
 
 }
 
@@ -771,8 +832,13 @@ void loop() {
   const unsigned long nowMs = millis();
 
   if (nowMs - lastPoll > POLL_MS || lastPoll == 0) {
+
+    Serial.println("[poll] polling /api/desk...");
     lastPoll = nowMs;
-    if (pollDesk()) drawIdle();
+    const bool ok = pollDesk();
+    Serial.printf("[poll] %s - attention=%d heap=%u\n", ok ? "ok" : "FAILED",
+                  state.attentionCount, (unsigned)ESP.getFreeHeap());
+    if (ok) drawIdle();
   }
 
   if (nowMs - lastClockDraw > 10'000UL) {

@@ -58,11 +58,35 @@ Wrong PSRAM/flash settings are the classic "compiles, then crashes at boot".
   EXIO4, not a GPIO.
 - Exposed pads for later (radar etc.): GPIO 17/18/38/39/40/41/42, UART0
   TX/RX (43/44), and the shared I2C (14/15). 1.27mm pitch — fine-tip solder.
-- Board **requires the 3.7V MX1.25 battery** per Waveshare; check polarity
-  against the silkscreen before plugging one in.
+- The listing's "requires the 3.7V MX1.25 battery" note overstates it — first
+  boot on this exact board lit the screen and ran fine on USB power alone,
+  battery unplugged. The AXP2101's default rails pass through VBUS with no
+  init needed. The battery is for portability, not for the screen to work.
 
 ## First-flash checklist
 
 USB-C **data** cable → the port enumerates as `/dev/cu.usbmodem*`. If upload
 fails, hold BOOT while tapping reset (or replug holding BOOT) to force the
-bootloader. Serial monitor shows every HTTP status the firmware sees.
+bootloader. Serial monitor shows every HTTP status the firmware sees — three
+real gotchas from the first flash of this exact board, worth knowing before
+you burn an hour on them again:
+
+- **Reading the serial port silently returns nothing.** `cat`, `screen`, and
+  `arduino-cli monitor` all opened the device fine and all produced zero
+  bytes — no error anywhere. The shell sandbox around the build tool permits
+  opening the device node but not the actual USB data stream. The fix is
+  running the read with sandboxing off for that one command; the *write*
+  path (flashing) is unaffected and never needed it.
+- **An iPhone hotspot's SSID does not contain the apostrophe you think it
+  does.** Apple's auto-generated name uses the typographic apostrophe (`’`,
+  U+2019, UTF-8 bytes `E2 80 99`), not the plain one your keyboard types
+  (`'`, U+0027). `WiFi.begin()` matches bytes, so a straight-quote SSID in
+  `secrets.h` fails silently — the network shows up in a scan, connects to
+  nothing. `git grep -P '\x27s iPhone'` in your own secrets.h is the tell;
+  paste the exact SSID string out of a scan log rather than retyping it.
+- **`isunet` is not the open network it sounds like.** Both `isunet` and
+  `eduroam` scan as WPA2-**Enterprise** (`encryptionType() == 5`) — this
+  firmware has no PEAP/802.1X support on purpose (see the hardware research:
+  it's fragile and campus-specific even when it works). `isunet-StartHere`
+  is open but is the captive-portal registration page, not a network this
+  device can join headless. Use a phone hotspot or a home/dorm router.
