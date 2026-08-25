@@ -257,6 +257,22 @@ async function desk(req, res) {
 
     }
 
+    // Put the composed answer away.
+    //
+    // An answer used to stand until its own expiry, which meant a screen you
+    // had finished reading sat there being clutter and a tap did nothing.
+    // Dismissing clears the stashed spec, so the very next fetch is the
+    // resting face again.
+    if (action === "dismiss") {
+
+      const { clearDeskScreen } = await import("../../../lib/deskScreens.js");
+
+      await clearDeskScreen();
+
+      return res.status(200).json({ success: true });
+
+    }
+
     // "I have read it." Drops the composed screen so the next fetch is the
     // resting face, rather than making him wait out the expiry staring at an
     // answer he is finished with.
