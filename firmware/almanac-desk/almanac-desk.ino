@@ -76,14 +76,24 @@ es8311_handle_t codec = NULL;
 const uint32_t RECORD_RATE = 16000;
 const uint32_t PLAYBACK_RATE = 24000;
 
-bool audioConfigure(uint32_t rate) {
+bool audioConfigure(uint32_t rate, bool mono = false) {
 
   i2s.end();
 
   i2s.setPins(I2S_BCK_IO, I2S_WS_IO, I2S_DO_IO, I2S_DI_IO, I2S_MCK_IO);
 
+  // Mono for the wake word engine, stereo for everything else.
+  //
+  // The mic meter settled this: L and R come back byte-identical, because
+  // the ES8311 duplicates its single microphone into both slots. Describing
+  // that to the detector as "MN" — microphone plus an unused channel — is a
+  // lie about the hardware, and it puts the engine down the multi-channel
+  // path where it verifies which channel heard the word and then switches
+  // ITSELF off waiting for instructions. Mono is what this board actually
+  // is, and the vendor's own example notes mono never raises that event.
   if (!i2s.begin(I2S_MODE_STD, rate, I2S_DATA_BIT_WIDTH_16BIT,
-                 I2S_SLOT_MODE_STEREO, I2S_STD_SLOT_BOTH)) {
+                 mono ? I2S_SLOT_MODE_MONO : I2S_SLOT_MODE_STEREO,
+                 mono ? I2S_STD_SLOT_LEFT : I2S_STD_SLOT_BOTH)) {
     Serial.println("[audio] i2s.begin failed");
     return false;
   }
@@ -129,6 +139,14 @@ bool audioInit() {
   es8311_sample_frequency_config(codec, RECORD_RATE * 256, RECORD_RATE);
   es8311_microphone_config(codec, false);
   es8311_voice_volume_set(codec, 85, NULL);
+  // Gain 3, not 6.
+  //
+  // The meter settled this too: at 6, ordinary speech at desk distance
+  // peaked at 32768 — the largest number a 16-bit sample can hold, which
+  // means the waveform was being flattened against the ceiling. A wake word
+  // detector matches the shape of a sound, and a clipped voice is a
+  // different shape; a transcriber fed the same thing invents. Raising the
+  // gain to chase a wake word that was not firing made both worse.
   es8311_microphone_gain_set(codec, (es8311_mic_gain_t)3);
 
   return true;
@@ -156,7 +174,18 @@ volatile bool wakeFired = false;
 // recording, uploading, speaking — happens on the main loop where it is
 // visible and interruptible, rather than inside an audio callback.
 void onSrEvent(sr_event_t event, int command_id, int phrase_id) {
-  if (event == SR_EVENT_WAKEWORD) wakeFired = true;
+
+  // WAKEWORD fires on detection. On a multi-channel input the engine then
+  // verifies which channel heard it and puts ITSELF into SR_MODE_OFF
+  // (esp32-hal-sr.c: sr_set_mode(SR_MODE_OFF) on WAKENET_CHANNEL_VERIFIED),
+  // waiting for the application to say what happens next. Nothing here was
+  // saying anything, so a second "Jarvis" could never be heard.
+  if (event == SR_EVENT_WAKEWORD || event == SR_EVENT_WAKEWORD_CHANNEL) {
+    wakeFired = true;
+  }
+
+  Serial.printf("[sr] event=%d cmd=%d phrase=%d\n", (int)event, command_id, phrase_id);
+
 }
 
 #endif
@@ -173,13 +202,12 @@ bool armMic() {
 
 #if WAKE_WORD
 
-  if (!audioConfigure(RECORD_RATE)) return false;
+  if (!audioConfigure(RECORD_RATE, true)) return false;
 
   ESP_SR.onEvent(onSrEvent);
 
-  // "MN": the ES8311 puts the microphone in the left slot of a stereo frame,
-  // and the right slot carries nothing we want the detector to hear.
-  if (!ESP_SR.begin(i2s, NULL, 0, SR_CHANNELS_STEREO, SR_MODE_WAKEWORD, "MN")) {
+  // "M": one channel, and it is the microphone. See audioConfigure.
+  if (!ESP_SR.begin(i2s, NULL, 0, SR_CHANNELS_MONO, SR_MODE_WAKEWORD, "M")) {
     Serial.println("[mic] wake word engine failed to start");
     return false;
   }
@@ -899,7 +927,12 @@ void voiceFlow(bool fromWake = false) {
 #if WAKE_WORD
   // The detector and the recorder cannot share the I2S stream, so the engine
   // steps aside for the length of the conversation and is restarted after.
-  if (fromWake) ESP_SR.end();
+  // The bus goes back to stereo too: the engine listens in mono, and the
+  // recorders below de-interleave stereo frames.
+  if (fromWake) {
+    ESP_SR.end();
+    audioConfigure(RECORD_RATE);
+  }
 #endif
 
   const size_t MAX_SAMPLES = RECORD_RATE * 10;
@@ -1164,6 +1197,101 @@ void setup() {
   const bool audioOk = audioInit();
 
   Serial.printf("[boot] audio init: %s\n", audioOk ? "ok" : "FAILED");
+
+#if MIC_TEST
+
+  // Measure what the microphone is actually producing.
+  //
+  // Two separate symptoms — a transcriber inventing Mandarin out of a
+  // recording, and a wake word that never fires — have the same simplest
+  // explanation: no audio is reaching either of them. Rather than keep
+  // theorising about slot formats and gain, this prints the real signal
+  // level. Near-zero while somebody is talking at it means the capture path
+  // is broken and nothing downstream can be diagnosed until it is fixed.
+  if (audioOk) {
+
+    gfx->fillScreen(C_BLACK);
+    gfx->setTextSize(3);
+    gfx->setTextColor(C_EMBER);
+    gfx->setCursor(24, 170);
+    gfx->print("say something");
+    gfx->setTextSize(2);
+    gfx->setTextColor(C_INK_SOFT);
+    gfx->setCursor(24, 215);
+    gfx->print("mic test");
+
+    int32_t *probe = (int32_t *)heap_caps_malloc(1024 * sizeof(int32_t), MALLOC_CAP_SPIRAM);
+
+    if (probe) {
+
+      // Waits rather than samples a fixed window. The first version ran for
+      // eight seconds starting the instant it booted, which meant it was
+      // always finished before anyone could be told to talk into it, and it
+      // faithfully measured an empty room. This one keeps listening until it
+      // actually hears something, or gives up after forty-five seconds.
+      const unsigned long until = millis() + 45000;
+
+      int32_t sessionPeak = 0;
+
+      bool heard = false;
+
+      while (millis() < until && !heard) {
+
+        const size_t got = i2s.readBytes((char *)probe, 1024 * sizeof(int32_t));
+
+        const int16_t *sam = (const int16_t *)probe;
+
+        const size_t n = got / sizeof(int16_t);
+
+        // Both slots, reported separately. Which one carries the microphone
+        // decides whether the wake word engine's channel format is even
+        // pointed at it, and assuming left was exactly the kind of guess
+        // that produces a system that hears nothing and says so in Mandarin.
+        uint64_t sumL = 0, sumR = 0;
+        int32_t pkL = 0, pkR = 0;
+
+        for (size_t i = 0; i + 1 < n; i += 2) {
+
+          const int32_t l = sam[i];
+          const int32_t r = sam[i + 1];
+
+          sumL += (uint64_t)((int64_t)l * l);
+          sumR += (uint64_t)((int64_t)r * r);
+
+          const int32_t al = l < 0 ? -l : l;
+          const int32_t ar = r < 0 ? -r : r;
+
+          if (al > pkL) pkL = al;
+          if (ar > pkR) pkR = ar;
+
+        }
+
+        const size_t count = n / 2;
+
+        const int32_t rmsL = count ? (int32_t)sqrt((double)(sumL / count)) : 0;
+        const int32_t rmsR = count ? (int32_t)sqrt((double)(sumR / count)) : 0;
+
+        if (pkL > sessionPeak) sessionPeak = pkL;
+        if (pkR > sessionPeak) sessionPeak = pkR;
+
+        // Unmistakably a voice rather than a room.
+        if (pkL > 4000 || pkR > 4000) heard = true;
+
+        Serial.printf("[mictest] bytes=%u  L rms=%ld peak=%ld   R rms=%ld peak=%ld\n",
+                      (unsigned)got, (long)rmsL, (long)pkL, (long)rmsR, (long)pkR);
+
+      }
+
+      Serial.printf("[mictest] DONE heard=%s session peak=%ld\n",
+                    heard ? "YES" : "no", (long)sessionPeak);
+
+      free(probe);
+
+    }
+
+  }
+
+#endif
 
 #if WAKE_WORD
   if (audioOk) armMic();

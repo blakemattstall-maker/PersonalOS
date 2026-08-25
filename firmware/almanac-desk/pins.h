@@ -36,6 +36,10 @@
 // live; that scheme's upload flags flash it automatically.
 #define WAKE_WORD 1
 
+// Prints the microphone's actual signal level for a few seconds at boot.
+// On while the audio path is in question; off for normal use.
+#define MIC_TEST 0
+
 // AMOLED over QSPI. Reset is NOT on an ESP32 pin — the panel's reset, the
 // display power rail and the touch reset all live on a TCA9554 IO expander
 // (see tca9554.h), which is why the expander dance in setup() is mandatory.
