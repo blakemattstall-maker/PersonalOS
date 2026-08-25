@@ -912,31 +912,59 @@ void voiceFlow(bool fromWake = false) {
     ? recordFixed(mono, RECORD_RATE * 6)   // six seconds, then it stops itself
     : recordWhileHeld(mono, MAX_SAMPLES);
 
-  // How loud was it, really.
+  // Was anyone actually speaking.
   //
-  // Whisper handed silence does not return an empty string — it invents one,
-  // often in Chinese, and the first thing the desk device ever did was send
-  // a confident Mandarin notification to a phone. Peak amplitude is the
-  // cheap honest check: if nothing was said, say nothing.
+  // Peak alone was not enough: a single chair creak or a pop on the mic
+  // clears any peak threshold, and then six seconds of near-silence go up to
+  // a transcriber that does not return "nothing" when it hears nothing — it
+  // invents, confidently, and in whatever language it feels like. Mandarin
+  // and German both turned up.
+  //
+  // Speech is not a spike, it is sustained energy. So this measures loudness
+  // over 20ms frames and asks how much of the recording was actually loud.
+  // A room with a fan in it fails that test; a sentence passes it easily.
+  const size_t FRAME = RECORD_RATE / 50;   // 20ms
+
+  size_t loudFrames = 0;
+  size_t totalFrames = 0;
+
   int32_t peak = 0;
 
-  for (size_t i = 0; i < samples; i++) {
-    const int32_t v = mono[i] < 0 ? -mono[i] : mono[i];
-    if (v > peak) peak = v;
+  for (size_t start = 0; start + FRAME <= samples; start += FRAME) {
+
+    uint64_t sumSquares = 0;
+
+    for (size_t i = start; i < start + FRAME; i++) {
+      const int32_t v = mono[i];
+      sumSquares += (uint64_t)((int64_t)v * v);
+      const int32_t a = v < 0 ? -v : v;
+      if (a > peak) peak = a;
+    }
+
+    const int32_t rms = (int32_t)sqrt((double)(sumSquares / FRAME));
+
+    if (rms > 220) loudFrames++;
+
+    totalFrames++;
+
   }
 
-  Serial.printf("[voice] %u samples, peak %ld\n", (unsigned)samples, (long)peak);
+  const int loudPercent = totalFrames ? (int)((loudFrames * 100) / totalFrames) : 0;
 
-  // ~1% of full scale. Room tone and the codec's own noise floor sit well
-  // under this; a voice at arm's length is far above it.
-  const int32_t SILENCE_PEAK = 300;
+  Serial.printf("[voice] %u samples, peak %ld, %d%% of frames loud\n",
+                (unsigned)samples, (long)peak, loudPercent);
 
-  if (samples >= RECORD_RATE / 2 && peak < SILENCE_PEAK) {
-    Serial.println("[voice] nothing audible - not uploading");
+  // At least a tenth of the recording has to contain speech-level energy.
+  // Six seconds of room with one cough in it does not reach that; "what is
+  // on my calendar" is nowhere near the line.
+  const bool heardSpeech = loudPercent >= 10 && peak >= 800;
+
+  if (samples >= RECORD_RATE / 2 && !heardSpeech) {
+    Serial.println("[voice] no speech in that - not uploading");
     free(mono);
     phase = SPEAKING;
-    drawPhase("silence", "I did not hear anything", C_INK_SOFT);
-    delay(1400);
+    drawPhase("", "nothing heard", C_INK_SOFT);
+    delay(1200);
     phase = IDLE;
     fetchScreen();
     return;
@@ -1254,17 +1282,29 @@ void loop() {
     // the control most worth making obvious in a shared room.
     if (t.y >= EYE_TOP && t.y < EYE_BOTTOM) {
 
-      // Same rule: the hardware changes state and the screen says so
-      // instantly, before anything touches the network.
+      // Paint before doing anything slow, not after.
+      //
+      // Tearing the wake word engine down and standing it back up means
+      // unloading and reloading neural network models out of a 3MB flash
+      // partition, which takes on the order of a second or two. Calling that
+      // first and drawing afterwards is why a tap on the eye appeared to
+      // take 2.5 seconds to register: the touch was read immediately and the
+      // glass could not change until the models had finished moving.
+      const unsigned long t0 = millis();
+
       if (micArmed) {
+
+        drawPhase("mic off", "stopping the microphone", C_INK_SOFT);
         disarmMic();
-        drawPhase("mic off", "the microphone is not running", C_INK_SOFT);
+
       } else {
+
+        drawPhase("mic on", "starting the wake word", C_MOSS);
         armMic();
-        drawPhase("mic on", "listening for the wake word", C_MOSS);
+
       }
 
-      delay(700);
+      Serial.printf("[mic] toggle took %lums\n", millis() - t0);
 
       fetchScreen();
 

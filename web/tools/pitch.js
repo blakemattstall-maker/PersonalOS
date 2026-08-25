@@ -40,6 +40,12 @@ export async function transcribeAudio({ audio_base64, mime_type }) {
     throw new Error("Couldn't make out any speech in that recording — try again somewhere quieter.");
   }
 
+  if (looksHallucinated(text)) {
+    const error = new Error("Nothing was said in that recording.");
+    error.code = "NO_SPEECH";
+    throw error;
+  }
+
   return { success: true, text: text.trim(), model };
 
 }
@@ -90,6 +96,51 @@ export function extensionFor(mimeType) {
 // instant a button is pressed, so leading silence is guaranteed and a
 // half-second of nothing was arriving on the phone as a Chinese notification.
 const TRANSCRIBE_LANGUAGE = "en";
+
+// What a transcriber says when it heard nothing.
+//
+// Asked to transcribe silence it does not return an empty string. It returns
+// something — a stock phrase from its training data, or a plausible sentence
+// in a language nobody in the room was speaking. Pinning the language to
+// English narrowed it and did not close it: German and invented English
+// questions still came back, and the router then answered them, so the desk
+// device asked its owner to clarify a thing he had never said.
+//
+// This is the last gate before a made-up sentence gets treated as an
+// instruction. It is deliberately conservative: everything here is either
+// not-English-script or a phrase no one says to a desk assistant.
+const HALLUCINATIONS = [
+  /^thank you\.?$/i,
+  /^thanks for watching/i,
+  /^please subscribe/i,
+  /^you\.?$/i,
+  /^bye\.?$/i,
+  /^\s*$/,
+  /subtitles? by/i,
+  /amara\.org/i,
+  /^okay\.?$/i,
+  /^\.+$/
+];
+
+export function looksHallucinated(text) {
+
+  const clean = (text || "").trim();
+
+  if (clean.length < 3) return true;
+
+  // The language was pinned to English, so anything in CJK, Cyrillic, Arabic
+  // or Hangul is the model inventing rather than hearing.
+  if (/[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff]/.test(clean)) {
+    return true;
+  }
+
+  // A "sentence" with no vowels is not one.
+  if (!/[aeiou]/i.test(clean)) return true;
+
+  return HALLUCINATIONS.some(pattern => pattern.test(clean));
+
+}
+
 
 async function transcribe(audioBuffer, mimeType) {
 

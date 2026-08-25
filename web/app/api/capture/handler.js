@@ -77,10 +77,27 @@ export default async function handler(req, res) {
 
     if (!text && req.body?.audio_base64) {
 
-      const result = await transcribeAudio({
-        audio_base64: req.body.audio_base64,
-        mime_type: req.body.mime_type
-      });
+      let result;
+
+      try {
+
+        result = await transcribeAudio({
+          audio_base64: req.body.audio_base64,
+          mime_type: req.body.mime_type
+        });
+
+      } catch (error) {
+
+        // Nothing was said. That is not a failure worth a notification, a
+        // routed action or a spoken apology — it is a non-event, and the
+        // only correct response to it is silence.
+        if (error.code === "NO_SPEECH") {
+          return res.status(200).json({ success: true, silent: true, result: { message: "" } });
+        }
+
+        throw error;
+
+      }
 
       text = result.text;
 
