@@ -155,7 +155,10 @@ const int TALK_BAR_TOP = LCD_HEIGHT - 52;     // the hairline and "hold to talk"
 
 unsigned long lastPoll = 0;
 
-const unsigned long POLL_MS = 60'000UL;
+// The server decides when to come back, via x-almanac-next. While a composed
+// answer is on screen it wants the device back promptly to replace it with
+// the resting face; the rest of the time a minute is plenty for a clock.
+unsigned long pollIntervalMs = 60'000UL;
 
 
 // ---------------------------------------------------------------------------
@@ -276,16 +279,27 @@ private:
 // be reachable without a closure.
 volatile uint32_t linesDrawn = 0;
 
+// The decoded frame, held whole in PSRAM.
+//
+// The first version blitted each scanline straight to the panel as it was
+// decoded — 448 separate one-row writes. Every one reported success and the
+// glass never changed, while a single 120x120 block drawn through the very
+// same call appeared instantly (the boot self-test in setup() is what
+// established that). Whatever the panel dislikes about a stream of tiny
+// windowed writes, the answer is to stop making them: decode into a
+// framebuffer, then hand the display one transfer. 330KB against 8MB of
+// PSRAM is nothing, and it makes the paint atomic, so no half-drawn frame is
+// ever visible.
+static uint16_t *frame = nullptr;
+
 static int pngDrawLine(PNGDRAW *draw) {
 
   linesDrawn++;
 
+  if (!frame || draw->y < 0 || draw->y >= LCD_HEIGHT) return 0;
 
-  uint16_t line[LCD_WIDTH];
-
-  png.getLineAsRGB565(draw, line, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
-
-  gfx->draw16bitBeRGBBitmap(0, draw->y, line, draw->iWidth, 1);
+  png.getLineAsRGB565(draw, frame + ((size_t)draw->y * LCD_WIDTH),
+                      PNG_RGB565_BIG_ENDIAN, 0xffffffff);
 
   // Non-zero keeps the decoder going; returning 0 would abort mid-image.
   return 1;
@@ -305,8 +319,8 @@ bool fetchScreen() {
 
   // The nudge id travels with the picture instead of in a second request, so
   // a tap can never resolve something other than what is on the glass.
-  const char *wanted[] = { "x-almanac-nudge", "x-almanac-count" };
-  http.collectHeaders(wanted, 2);
+  const char *wanted[] = { "x-almanac-nudge", "x-almanac-count", "x-almanac-next" };
+  http.collectHeaders(wanted, 3);
 
   const int code = http.GET();
 
@@ -345,6 +359,10 @@ bool fetchScreen() {
   state.nudgeId = http.header("x-almanac-nudge");
   state.attentionCount = http.header("x-almanac-count").toInt();
 
+  const long nextIn = http.header("x-almanac-next").toInt();
+
+  if (nextIn >= 5 && nextIn <= 600) pollIntervalMs = (unsigned long)nextIn * 1000UL;
+
   http.end();
 
   if (got < 100) {
@@ -363,15 +381,34 @@ bool fetchScreen() {
     return false;
   }
 
+  if (!frame) {
+    frame = (uint16_t *)heap_caps_malloc((size_t)LCD_WIDTH * LCD_HEIGHT * 2, MALLOC_CAP_SPIRAM);
+    if (!frame) {
+      Serial.println("[screen] no PSRAM for the framebuffer");
+      png.close();
+      free(buf);
+      return false;
+    }
+  }
+
   linesDrawn = 0;
 
   const unsigned long t0 = millis();
 
   const int decoded = png.decode(NULL, 0);
 
-  Serial.printf("[screen] %dx%d type=%d -> %u lines in %lums\n",
+  const unsigned long tDecode = millis() - t0;
+
+  // One transfer for the whole screen.
+  const unsigned long t1 = millis();
+
+  if (decoded == PNG_SUCCESS) {
+    gfx->draw16bitBeRGBBitmap(0, 0, frame, LCD_WIDTH, LCD_HEIGHT);
+  }
+
+  Serial.printf("[screen] %dx%d type=%d -> %u lines, decode %lums, blit %lums\n",
                 png.getWidth(), png.getHeight(), png.getPixelType(),
-                (unsigned)linesDrawn, millis() - t0);
+                (unsigned)linesDrawn, tDecode, millis() - t1);
 
   png.close();
 
@@ -538,7 +575,9 @@ String sendCapture(const int16_t *mono, size_t samples) {
   free(wav);
 
   const char *prefix = "{\"audio_base64\":\"";
-  const char *suffix = "\",\"mime_type\":\"audio/wav\"}";
+  // surface tells the server this answer is going to a screen and a speaker
+  // in a room, so it composes a layout and skips the phone notification.
+  const char *suffix = "\",\"mime_type\":\"audio/wav\",\"surface\":\"desk\"}";
 
   const size_t bodyLen = strlen(prefix) + b64Len + strlen(suffix);
   uint8_t *body = (uint8_t *)heap_caps_malloc(bodyLen + 1, MALLOC_CAP_SPIRAM);
@@ -689,6 +728,36 @@ void voiceFlow() {
 
   const size_t samples = recordWhileHeld(mono, MAX_SAMPLES);
 
+  // How loud was it, really.
+  //
+  // Whisper handed silence does not return an empty string — it invents one,
+  // often in Chinese, and the first thing the desk device ever did was send
+  // a confident Mandarin notification to a phone. Peak amplitude is the
+  // cheap honest check: if nothing was said, say nothing.
+  int32_t peak = 0;
+
+  for (size_t i = 0; i < samples; i++) {
+    const int32_t v = mono[i] < 0 ? -mono[i] : mono[i];
+    if (v > peak) peak = v;
+  }
+
+  Serial.printf("[voice] %u samples, peak %ld\n", (unsigned)samples, (long)peak);
+
+  // ~1% of full scale. Room tone and the codec's own noise floor sit well
+  // under this; a voice at arm's length is far above it.
+  const int32_t SILENCE_PEAK = 300;
+
+  if (samples >= RECORD_RATE / 2 && peak < SILENCE_PEAK) {
+    Serial.println("[voice] nothing audible - not uploading");
+    free(mono);
+    phase = SPEAKING;
+    drawPhase("silence", "I did not hear anything", C_INK_SOFT);
+    delay(1400);
+    phase = IDLE;
+    fetchScreen();
+    return;
+  }
+
   if (samples < RECORD_RATE / 2) {  // under half a second of audio
     free(mono);
     phase = IDLE;
@@ -770,6 +839,42 @@ void setup() {
 
   if (!gfx->begin()) Serial.println("[boot] gfx.begin failed");
   else Serial.println("[boot] gfx.begin ok");
+
+  // Display self-test.
+  //
+  // The PNG pipeline reports 448 lines painted in 72ms and the glass still
+  // shows the boot splash, which means the pixels are going somewhere other
+  // than the panel. The splash and the image reach the bus by different
+  // routes — text goes through writePixel, a bitmap goes through
+  // writeBytes/writePixels with DMA — so this walks all three in turn and
+  // names each one out loud. Whichever colours actually appear identifies
+  // the working path; guessing from here is otherwise unfalsifiable.
+  if (SELF_TEST) {
+
+    Serial.println("[test] 1/3 fillScreen RED");
+    gfx->fillScreen(RGB565_RED);
+    delay(1200);
+
+    Serial.println("[test] 2/3 draw16bitBeRGBBitmap BLUE block (the failing path)");
+    {
+      static uint16_t blue[120 * 120];
+      // Big-endian 0x001F -> 0x1F00 on the wire.
+      for (int i = 0; i < 120 * 120; i++) blue[i] = 0x1F00;
+      gfx->draw16bitBeRGBBitmap(20, 20, blue, 120, 120);
+    }
+    delay(1200);
+
+    Serial.println("[test] 3/3 draw16bitRGBBitmap GREEN block (little-endian path)");
+    {
+      static uint16_t green[120 * 120];
+      for (int i = 0; i < 120 * 120; i++) green[i] = RGB565_GREEN;
+      gfx->draw16bitRGBBitmap(20, 200, green, 120, 120);
+    }
+    delay(2500);
+
+    Serial.println("[test] done - report which blocks were visible");
+
+  }
 
   gfx->setBrightness(220);
   gfx->fillScreen(C_BLACK);
@@ -879,7 +984,7 @@ void loop() {
 
   const unsigned long nowMs = millis();
 
-  if (nowMs - lastPoll > POLL_MS || lastPoll == 0) {
+  if (nowMs - lastPoll > pollIntervalMs || lastPoll == 0) {
 
     Serial.println("[poll] polling /api/desk...");
     lastPoll = nowMs;

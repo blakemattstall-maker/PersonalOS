@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 import { buildDeskState } from "../../../lib/deskState.js";
+import { loadDeskScreen } from "../../../lib/deskScreens.js";
 
 
 // The desk device's screen, drawn here rather than on the device.
@@ -14,8 +15,14 @@ import { buildDeskState } from "../../../lib/deskState.js";
 // So the server draws the picture and the device blits it. Three things fall
 // out of that, all of them good: the screen gets genuinely anti-aliased type
 // in Almanac's own fonts, a UI change ships as a deploy instead of a reflash
-// (seconds, not minutes, and no cable), and the same renderer will serve the
-// backpack dongle later at a different size — one design, several bodies.
+// (seconds, not minutes, and no cable), and — the reason it matters most —
+// the screen can be composed per question instead of designed in advance.
+//
+// There are two of them now. The resting face is what the desk looks like
+// when nobody is asking: a clock and an eye, deliberately close to empty.
+// The answer screen is laid out by the model from the vocabulary in
+// lib/deskScreens.js and stands for a couple of minutes before the device
+// falls back to resting on its own.
 //
 // 368x448 is the panel's exact resolution, so the device never scales.
 
@@ -53,15 +60,6 @@ async function font(family, weight) {
 }
 
 
-// Waking hours, the window the timeline spans. Outside it the marker pins to
-// an end rather than sliding off the track.
-const DAY_START = 7 * 60;
-const DAY_END = 23 * 60;
-const DAY_SPAN = DAY_END - DAY_START;
-
-const pct = (minute) => Math.max(0, Math.min(1, (minute - DAY_START) / DAY_SPAN)) * 100;
-
-
 const C = {
   ground: "#000000",
   ink: "#e8e6de",
@@ -69,42 +67,123 @@ const C = {
   line: "#232a30",
   moss: "#8fb3a7",
   ember: "#e07038",
-  tide: "#8aabcc"
+  tide: "#8aabcc",
+  iris: "#a99bd0",
+  good: "#8fb3a7",
+  bad: "#e07038"
 };
+
+const ACCENT_HEX = { moss: C.moss, ember: C.ember, tide: C.tide, iris: C.iris };
 
 
 function trim(text, max) {
   if (!text) return "";
-  const clean = text.replace(/\s+/g, " ").trim();
+  const clean = String(text).replace(/\s+/g, " ").trim();
   return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean;
 }
 
 
-// The bottom card: a rule in the accent colour, a label, and one line of
-// substance. Whether that accent is ember or moss is the entire difference
-// between "something wants you" and "you are clear", which is why the colour
-// is passed in rather than decided here.
-function Card({ accent, label, body, bodyColor }) {
+const label = (color = C.inkSoft) => ({
+  display: "flex",
+  fontFamily: "Body",
+  fontSize: 11,
+  letterSpacing: 1.6,
+  color
+});
+
+
+// ---------------------------------------------------------------------------
+// The resting face
+// ---------------------------------------------------------------------------
+
+// An eye rather than a dashboard.
+//
+// The first version of this screen showed the clock, the day's timeline, the
+// next event, the brief's opening line and the current nudge all at once —
+// genuinely useful, and far too much to have sitting on a desk staring at
+// you. Resting should be calm and nearly empty; everything it used to show
+// is one question away now.
+//
+// The iris drifts with the minute, which is the only animation a screen
+// repainted once a minute can honestly have: over an hour it looks around
+// the room instead of staring.
+function Eye({ accent, awake }) {
+
+  const minute = new Date().getMinutes();
+
+  // A slow circular wander, never far from centre.
+  const angle = (minute / 60) * Math.PI * 2;
+  const dx = Math.round(Math.cos(angle) * 9);
+  const dy = Math.round(Math.sin(angle) * 6);
+
+  const size = 132;
 
   return (
     <div
       style={{
         display: "flex",
-        flexDirection: "column",
-        borderLeft: `3px solid ${accent}`,
-        paddingLeft: 14
+        position: "relative",
+        width: size,
+        height: size,
+        alignItems: "center",
+        justifyContent: "center"
       }}
     >
 
-      <div style={{ display: "flex", fontFamily: "Body", fontSize: 12, letterSpacing: 1.4, color: accent }}>
-        {label}
-      </div>
+      {/* The outer halo: a ring rather than a disc, so the centre stays true
+          black and the AMOLED does the glowing. */}
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: size,
+          height: size,
+          borderRadius: size,
+          border: `1px solid ${accent}`,
+          opacity: 0.28
+        }}
+      />
 
-      {body ? (
-        <div style={{ display: "flex", fontSize: 15, lineHeight: 1.4, color: bodyColor, marginTop: 7 }}>
-          {body}
-        </div>
-      ) : null}
+      <div
+        style={{
+          position: "absolute",
+          left: 16,
+          top: 16,
+          width: size - 32,
+          height: size - 32,
+          borderRadius: size,
+          border: `2px solid ${accent}`,
+          opacity: 0.55
+        }}
+      />
+
+      {/* Iris. */}
+      <div
+        style={{
+          position: "absolute",
+          left: 40 + dx,
+          top: 40 + dy,
+          width: size - 80,
+          height: size - 80,
+          borderRadius: size,
+          background: accent,
+          opacity: awake ? 0.95 : 0.6,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center"
+        }}
+      >
+        {/* Pupil, so the iris reads as an eye and not a dot. */}
+        <div
+          style={{
+            width: 16,
+            height: 16,
+            borderRadius: 16,
+            background: C.ground
+          }}
+        />
+      </div>
 
     </div>
   );
@@ -112,37 +191,269 @@ function Card({ accent, label, body, bodyColor }) {
 }
 
 
-export async function renderDeskScreen({ preview = null } = {}) {
-
-  const state = await buildDeskState();
-
-  // A design hook, not a feature. The ember state is the one that matters
-  // most and appears least, so without this the only way to see it laid out
-  // is to wait for a real nudge — which means the important half of the
-  // screen would only ever be checked in production, by accident. Reachable
-  // only with the device key, and it invents nothing beyond the two fields
-  // the card reads.
-  if (preview === "waiting") {
-    state.attention = {
-      count: 3,
-      nudge: {
-        id: "preview",
-        message: "Draft the LinkedIn post about the Trifilm internship tonight — three lines is enough."
-      }
-    };
-  }
+function RestingFace({ state }) {
 
   const waiting = state.attention.count > 0;
 
-  const nudge = state.attention.nudge?.message || null;
-
-  const next = state.calendar?.next || null;
-
-  const blocks = state.calendar?.blocks || [];
-
-  // Ember is reserved, app-wide, for "something is waiting on you" — so the
-  // accent of this whole screen is decided by one number and nothing else.
   const accent = waiting ? C.ember : C.moss;
+
+  // A column div, never a fragment. Satori flattens fragment children into
+  // the parent WITHOUT carrying the parent's flexDirection, so every child
+  // lays out in a row — the date, the clock and the eye printed side by side
+  // and off the edge of the panel. This is the second time that bug has been
+  // built here; it is a container now so it cannot be a third.
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flexGrow: 1 }}>
+
+      <div style={label()}>{state.clock.date}</div>
+
+      <div style={{ display: "flex", alignItems: "flex-end", marginTop: 4 }}>
+        <div
+          style={{
+            fontFamily: "Display",
+            fontSize: 92,
+            lineHeight: 1,
+            letterSpacing: -3.5,
+            color: C.ink
+          }}
+        >
+          {state.clock.time}
+        </div>
+        <div
+          style={{
+            fontFamily: "Body",
+            fontSize: 21,
+            color: C.inkSoft,
+            marginLeft: 10,
+            marginBottom: 15
+          }}
+        >
+          {state.clock.meridiem}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexGrow: 1 }} />
+
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <Eye accent={accent} awake={waiting} />
+      </div>
+
+      <div style={{ display: "flex", flexGrow: 1 }} />
+
+      {/* One line of state, and only when there is state. Silence is the
+          resting face's whole point. */}
+      {waiting ? (
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <div style={{ width: 8, height: 8, borderRadius: 8, background: C.ember, display: "flex" }} />
+          <div style={{ display: "flex", fontFamily: "Body", fontSize: 14, color: C.ember, marginLeft: 10 }}>
+            {state.attention.count} waiting
+          </div>
+        </div>
+      ) : state.calendar?.next ? (
+        <div style={{ display: "flex", fontFamily: "Mono", fontSize: 13, color: C.inkSoft }}>
+          {trim(state.calendar.next.title, 20)} · {state.calendar.next.startsInMin >= 60
+            ? `${Math.floor(state.calendar.next.startsInMin / 60)}h`
+            : `${state.calendar.next.startsInMin}m`}
+        </div>
+      ) : (
+        <div style={{ display: "flex", fontFamily: "Mono", fontSize: 13, color: C.inkSoft }}>
+          nothing scheduled
+        </div>
+      )}
+
+    </div>
+  );
+
+}
+
+
+// ---------------------------------------------------------------------------
+// The composed answer
+// ---------------------------------------------------------------------------
+
+function Stat({ block, accent }) {
+
+  const tone = block.tone === "good" ? C.good : block.tone === "bad" ? C.bad : accent;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", marginTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "flex-end" }}>
+        <div style={{ fontFamily: "Display", fontSize: 62, lineHeight: 1, letterSpacing: -2, color: tone }}>
+          {block.value}
+        </div>
+        {block.unit && (
+          <div style={{ fontFamily: "Body", fontSize: 20, color: C.inkSoft, marginLeft: 8, marginBottom: 6 }}>
+            {block.unit}
+          </div>
+        )}
+      </div>
+      {block.label && (
+        <div style={{ display: "flex", fontSize: 14, color: C.inkSoft, marginTop: 6 }}>{block.label}</div>
+      )}
+    </div>
+  );
+
+}
+
+
+function Bar({ block, accent }) {
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", marginTop: 16 }}>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+        <div style={{ display: "flex", fontSize: 15, color: C.ink }}>{block.label}</div>
+        {block.caption && (
+          <div style={{ display: "flex", fontFamily: "Mono", fontSize: 12, color: C.inkSoft }}>
+            {block.caption}
+          </div>
+        )}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          position: "relative",
+          height: 8,
+          marginTop: 8,
+          background: C.line,
+          borderRadius: 4
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: `${Math.round(block.value * 100)}%`,
+            height: 8,
+            background: accent,
+            borderRadius: 4
+          }}
+        />
+      </div>
+
+    </div>
+  );
+
+}
+
+
+function Rows({ block }) {
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", marginTop: 14 }}>
+      {block.items.map((row, i) => (
+        <div
+          key={i}
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            paddingTop: 7,
+            paddingBottom: 7,
+            borderBottom: i < block.items.length - 1 ? `1px solid ${C.line}` : "none"
+          }}
+        >
+          <div style={{ display: "flex", fontFamily: "Mono", fontSize: 13, color: C.inkSoft, width: 74 }}>
+            {row[0] || ""}
+          </div>
+          <div style={{ display: "flex", fontSize: 16, color: C.ink }}>{row[1]}</div>
+        </div>
+      ))}
+    </div>
+  );
+
+}
+
+
+function Chips({ block, accent }) {
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", marginTop: 14 }}>
+      {block.items.map((item, i) => (
+        <div
+          key={i}
+          style={{
+            display: "flex",
+            fontFamily: "Mono",
+            fontSize: 12,
+            color: accent,
+            border: `1px solid ${accent}`,
+            borderRadius: 99,
+            padding: "4px 11px",
+            marginRight: 7,
+            marginTop: 7
+          }}
+        >
+          {item}
+        </div>
+      ))}
+    </div>
+  );
+
+}
+
+
+function AnswerScreen({ spec }) {
+
+  const accent = ACCENT_HEX[spec.accent] || C.tide;
+
+  // Column container rather than a fragment, for the reason spelled out in
+  // RestingFace.
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flexGrow: 1 }}>
+
+      {spec.eyebrow && <div style={label(accent)}>{spec.eyebrow}</div>}
+
+      {spec.headline && (
+        <div
+          style={{
+            display: "flex",
+            fontFamily: "Display",
+            fontSize: 27,
+            lineHeight: 1.2,
+            color: C.ink,
+            marginTop: spec.eyebrow ? 9 : 0
+          }}
+        >
+          {spec.headline}
+        </div>
+      )}
+
+      {spec.blocks.map((block, i) => {
+        if (block.kind === "stat") return <Stat key={i} block={block} accent={accent} />;
+        if (block.kind === "bar") return <Bar key={i} block={block} accent={accent} />;
+        if (block.kind === "rows") return <Rows key={i} block={block} />;
+        if (block.kind === "chips") return <Chips key={i} block={block} accent={accent} />;
+        return (
+          <div key={i} style={{ display: "flex", fontSize: 15, lineHeight: 1.4, color: C.inkSoft, marginTop: 14 }}>
+            {block.text}
+          </div>
+        );
+      })}
+
+      <div style={{ display: "flex", flexGrow: 1 }} />
+
+    </div>
+  );
+
+}
+
+
+// ---------------------------------------------------------------------------
+
+export async function renderDeskScreen({ preview = null } = {}) {
+
+  const [state, answer] = await Promise.all([
+    buildDeskState(),
+    preview === "resting" ? Promise.resolve(null) : loadDeskScreen().catch(() => null)
+  ]);
+
+  if (preview === "waiting") {
+    state.attention = { count: 3, nudge: { id: "preview", message: "preview" } };
+  }
+
+  const waiting = state.attention.count > 0;
 
   let fonts;
 
@@ -172,9 +483,6 @@ export async function renderDeskScreen({ preview = null } = {}) {
   }
 
 
-  const label = { fontFamily: "Body", fontSize: 11, letterSpacing: 1.6, color: C.inkSoft };
-
-
   const image = new ImageResponse(
     (
       <div
@@ -184,208 +492,48 @@ export async function renderDeskScreen({ preview = null } = {}) {
           display: "flex",
           flexDirection: "column",
           background: C.ground,
-          padding: "26px 24px 22px",
+          padding: "26px 24px 20px",
           fontFamily: "Body"
         }}
       >
 
-        {/* Date, quiet, above everything. */}
-        <div style={{ ...label, display: "flex" }}>{state.clock.date}</div>
-
-        {/* The clock owns the screen. Baseline-aligned meridiem so the
-            numerals sit on a line rather than floating in a box. */}
-        <div style={{ display: "flex", alignItems: "flex-end", marginTop: 6 }}>
-          <div
-            style={{
-              fontFamily: "Display",
-              fontSize: 96,
-              lineHeight: 1,
-              letterSpacing: -3.5,
-              color: C.ink
-            }}
-          >
-            {state.clock.time}
-          </div>
-          <div
-            style={{
-              fontFamily: "Body",
-              fontSize: 22,
-              color: C.inkSoft,
-              marginLeft: 10,
-              marginBottom: 16
-            }}
-          >
-            {state.clock.meridiem}
-          </div>
+        {/* The composed screen is allowed to be too tall — a model given a
+            rich answer will occasionally ask for more than 448 pixels. It
+            gets clipped here rather than shoving the footer off the bottom
+            of the glass, which is what happened the first time an answer ran
+            long: the "hold to talk" hint simply vanished. */}
+        <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, flexShrink: 1, overflow: "hidden" }}>
+          {answer ? <AnswerScreen spec={answer.spec} /> : <RestingFace state={state} />}
         </div>
 
-        {/* The shape of the day, as one line: the hours you are awake, the
-            stretches already spoken for, and where you are inside it. This is
-            what the morning brief says in prose, said in a glance instead. */}
-        <div
-          style={{
-            display: "flex",
-            position: "relative",
-            height: 6,
-            marginTop: 20,
-            marginBottom: 4,
-            background: C.line,
-            borderRadius: 3
-          }}
-        >
-          {blocks.map((b, i) => (
-            <div
-              key={i}
-              style={{
-                position: "absolute",
-                left: `${pct(b.startMin)}%`,
-                width: `${Math.max(1.2, pct(b.endMin) - pct(b.startMin))}%`,
-                top: 0,
-                height: 6,
-                background: C.moss,
-                borderRadius: 3
-              }}
-            />
-          ))}
-          {/* Now. Bright, thin, and taller than the track so it reads as a
-              position rather than another commitment. */}
-          <div
-            style={{
-              position: "absolute",
-              left: `${pct(state.clock.nowMin)}%`,
-              top: -4,
-              width: 2,
-              height: 14,
-              background: C.ink
-            }}
-          />
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-          <div style={{ ...label, display: "flex", fontSize: 10 }}>7A</div>
-          <div style={{ ...label, display: "flex", fontSize: 10 }}>11P</div>
-        </div>
-
-        {/* What is coming.
-            Every branch returns ONE column div rather than a fragment: Satori
-            flattens fragment children into the parent without carrying the
-            parent's flexDirection, so the label, the title and the time all
-            laid out in a row and printed on top of each other. */}
-        {state.calendar === null ? (
-
-          <div style={{ display: "flex", flexDirection: "column", marginTop: 18 }}>
-            <div style={{ ...label, display: "flex" }}>CALENDAR</div>
-            <div style={{ display: "flex", fontSize: 17, color: C.inkSoft, marginTop: 6 }}>
-              unreachable
-            </div>
-          </div>
-
-        ) : next ? (
-
-          <div style={{ display: "flex", flexDirection: "column", marginTop: 18 }}>
-
-            <div style={{ ...label, display: "flex" }}>NEXT</div>
-
-            <div
-              style={{
-                display: "flex",
-                fontFamily: "Display",
-                fontSize: 28,
-                color: C.ink,
-                marginTop: 8,
-                lineHeight: 1.2
-              }}
-            >
-              {trim(next.title, 24)}
-            </div>
-
-            <div style={{ display: "flex", marginTop: 8, alignItems: "center" }}>
-              <div style={{ display: "flex", fontFamily: "Mono", fontSize: 14, color: C.tide }}>
-                {next.startsInMin >= 60
-                  ? `in ${Math.floor(next.startsInMin / 60)}h ${next.startsInMin % 60}m`
-                  : `in ${next.startsInMin} min`}
-              </div>
-              <div style={{ display: "flex", fontFamily: "Mono", fontSize: 14, color: C.inkSoft, marginLeft: 12 }}>
-                {next.at}
-              </div>
-            </div>
-
-          </div>
-
-        ) : (
-
-          <div style={{ display: "flex", flexDirection: "column", marginTop: 18 }}>
-
-            <div style={{ ...label, display: "flex" }}>REST OF TODAY</div>
-
-            <div
-              style={{
-                display: "flex",
-                fontFamily: "Display",
-                fontSize: 28,
-                color: C.ink,
-                marginTop: 8,
-                lineHeight: 1.2
-              }}
-            >
-              Nothing scheduled
-            </div>
-
-            {state.calendar?.eveningFree && (
-              <div style={{ display: "flex", fontFamily: "Mono", fontSize: 14, color: C.moss, marginTop: 8 }}>
-                the evening is free
-              </div>
-            )}
-
-          </div>
-
-        )}
-
-        {/* Everything below is pushed to the bottom, so the card sits on the
-            same line every minute regardless of how long the title above ran. */}
-        <div style={{ display: "flex", flexGrow: 1 }} />
-
-        {/* One component for both states, not two similar ones. The waiting
-            state is the one that matters and the one that renders rarely, so
-            it must not be the branch nobody ever looked at — sharing the
-            layout means the state I can see proves the state I cannot. */}
-        <Card
-          accent={accent}
-          label={waiting ? `${state.attention.count} WAITING` : "CLEAR"}
-          body={waiting ? trim(nudge, 84) : trim(state.brief?.lead, 76)}
-          bodyColor={waiting ? C.ink : C.inkSoft}
-        />
-
-        {/* The one affordance. Sits under a hairline so it reads as chrome,
-            not as another thing demanding attention. */}
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
-            marginTop: 16,
-            paddingTop: 12,
+            marginTop: 12,
+            paddingTop: 11,
+            flexShrink: 0,
             borderTop: `1px solid ${C.line}`
           }}
         >
-          <div style={{ display: "flex", fontSize: 12, color: C.inkSoft }}>hold to talk</div>
-          <div style={{ display: "flex", fontFamily: "Mono", fontSize: 12, color: accent }}>almanac</div>
+          <div style={{ display: "flex", fontSize: 12, color: C.inkSoft }}>
+            {answer ? "hold to ask again" : "hold to talk"}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              fontFamily: "Mono",
+              fontSize: 12,
+              color: waiting ? C.ember : C.moss
+            }}
+          >
+            almanac
+          </div>
         </div>
 
       </div>
     ),
-    {
-      ...SCREEN,
-      fonts,
-      // The interaction data rides on the picture rather than arriving in a
-      // second request. One fetch means the device can never be showing one
-      // moment's screen while holding another moment's nudge id — the tap
-      // resolves exactly what the glass is showing, by construction.
-      headers: {
-        "x-almanac-count": String(state.attention.count),
-        "x-almanac-nudge": state.attention.nudge?.id || "",
-        "cache-control": "no-store"
-      }
-    }
+    { ...SCREEN, fonts }
   );
 
 
@@ -396,6 +544,13 @@ export async function renderDeskScreen({ preview = null } = {}) {
   // detectable instead of merely undecodable.
   const bytes = await image.arrayBuffer();
 
+  // How long the device should wait before asking again. While an answer is
+  // up the screen has a deadline, so it comes back promptly to replace it
+  // with the resting face; otherwise a minute is plenty for a clock.
+  const nextIn = answer
+    ? Math.max(10, Math.ceil((new Date(answer.expiresAt) - Date.now()) / 1000))
+    : 60;
+
   return new Response(bytes, {
     status: 200,
     headers: {
@@ -403,6 +558,7 @@ export async function renderDeskScreen({ preview = null } = {}) {
       "content-length": String(bytes.byteLength),
       "x-almanac-count": String(state.attention.count),
       "x-almanac-nudge": state.attention.nudge?.id || "",
+      "x-almanac-next": String(nextIn),
       "cache-control": "no-store"
     }
   });

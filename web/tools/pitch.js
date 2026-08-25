@@ -83,6 +83,14 @@ export function extensionFor(mimeType) {
 }
 
 
+// Pinned to English, which is not a preference so much as a defence.
+// Whisper asked to auto-detect a language from silence or room noise does
+// not return nothing — it hallucinates, confidently, and very often in
+// Chinese. The desk device sends a fixed-length recording that begins the
+// instant a button is pressed, so leading silence is guaranteed and a
+// half-second of nothing was arriving on the phone as a Chinese notification.
+const TRANSCRIBE_LANGUAGE = "en";
+
 async function transcribe(audioBuffer, mimeType) {
 
   const ext = extensionFor(mimeType);
@@ -93,7 +101,8 @@ async function transcribe(audioBuffer, mimeType) {
 
     const result = await openai.audio.transcriptions.create({
       file,
-      model: PRIMARY_MODEL
+      model: PRIMARY_MODEL,
+      language: TRANSCRIBE_LANGUAGE
     });
 
     return { text: result.text, model: PRIMARY_MODEL };
@@ -104,7 +113,8 @@ async function transcribe(audioBuffer, mimeType) {
 
     const result = await openai.audio.transcriptions.create({
       file,
-      model: FALLBACK_MODEL
+      model: FALLBACK_MODEL,
+      language: TRANSCRIBE_LANGUAGE
     });
 
     return { text: result.text, model: FALLBACK_MODEL };

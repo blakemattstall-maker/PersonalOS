@@ -335,10 +335,51 @@ Call every tool needed to satisfy the request — if one message asks for two th
       }
     }
 
+    // The desk device asks for a picture of the answer, not just the answer.
+    //
+    // Only when the caller says it is the desk: a capture from the phone
+    // Shortcut has no screen waiting on it, and paying for a layout nobody
+    // will look at is waste. Best-effort throughout — a screen that fails to
+    // compose costs the picture, never the action that was already taken or
+    // the words that are about to be spoken.
+    if (req.body?.surface === "desk") {
+
+      try {
+
+        const { designDeskScreen, stashDeskScreen } = await import("../../../lib/deskScreens.js");
+
+        const spec = await designDeskScreen({
+          question: transcription?.text || text,
+          answer: spokenMessage,
+          // Ember is only available to the composer when something genuinely
+          // is waiting; see sanitiseSpec.
+          waiting: Boolean(results.some(r => r.result?.data?.waiting)),
+          facts: results
+            .map(r => r.result?.data ? `${r.tool}: ${JSON.stringify(r.result.data).slice(0, 900)}` : null)
+            .filter(Boolean)
+            .join("\n")
+        });
+
+        await stashDeskScreen(spec);
+
+      } catch (error) {
+        console.error("DESK SCREEN compose failed:", error.message);
+      }
+
+    }
+
+
     // Awaited rather than fired and forgotten. A capture that reports nothing
     // is indistinguishable from one that never arrived, and background work in
     // a serverless function can be killed the moment the response is sent.
-    await notifyCapture(results, transcription?.text || text);
+    //
+    // Skipped for the desk: it already spoke the answer out loud in the room,
+    // so a phone notification saying the same thing is the app talking over
+    // itself. This is also what was sending mystery notifications while the
+    // desk device was being tested.
+    if (req.body?.surface !== "desk") {
+      await notifyCapture(results, transcription?.text || text);
+    }
 
 
     return res.status(200).json({

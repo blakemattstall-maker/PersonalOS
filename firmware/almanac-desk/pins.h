@@ -18,6 +18,10 @@
 // disagrees with the silicon — believe the probe, not the box.
 #define AMOLED_V2 1
 
+// Walks the three drawing paths at boot with obvious colours. On when a
+// display problem is being chased; off for normal use.
+#define SELF_TEST 0
+
 // AMOLED over QSPI. Reset is NOT on an ESP32 pin — the panel's reset, the
 // display power rail and the touch reset all live on a TCA9554 IO expander
 // (see tca9554.h), which is why the expander dance in setup() is mandatory.
