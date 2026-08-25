@@ -68,7 +68,9 @@ Rules:
 - "stat" is the hero. Use it when one number is the answer.
 - "bar" value is 0..1 and is the fraction filled; put the real figures in
   caption. Never invent a budget or a target that was not given to you.
-- "rows" is for a schedule or a short list; at most 5 rows, left column short.
+- "rows" is for a schedule or a short list; at most 6 rows, left column short.
+  Put the FULL list here when there is one — the screen is where the detail
+  belongs, and the voice will only name the first one or two.
 - Use "ember" as the accent only when something genuinely needs him — it
   means "waiting on you" everywhere else in this system, and spending it on
   a neutral answer is what makes an alert colour stop working.
@@ -122,13 +124,21 @@ export function sanitiseSpec(raw, { waiting = false } = {}) {
     }
 
     if (block.kind === "rows") {
-      const items = (Array.isArray(block.items) ? block.items : [])
-        .slice(0, 5)
+      const all = (Array.isArray(block.items) ? block.items : [])
         .map(row => Array.isArray(row)
           ? [clampText(String(row[0] ?? ""), 10), clampText(String(row[1] ?? ""), 26)]
           : null)
         .filter(row => row && row[1]);
-      if (items.length) blocks.push({ kind: "rows", items });
+
+      // Six rows fit; the rest are counted rather than silently dropped off
+      // the bottom of the glass, which is what a list of internships did —
+      // there was no way to know anything had been cut, and no way to scroll
+      // to it because a touch dismisses the screen.
+      const items = all.slice(0, 6);
+
+      if (items.length) {
+        blocks.push({ kind: "rows", items, more: Math.max(0, all.length - items.length) });
+      }
     }
 
     if (block.kind === "note") {
@@ -210,8 +220,19 @@ export async function designDeskScreen({ question, answer, facts = "", waiting =
           `aloud by a voice in a room, not printed.\n` +
           `- Two to four sentences. If the detail matters it is already on the ` +
           `screen; say what the screen cannot, which is what it MEANS.\n` +
+          `- TWO SENTENCES. Three only if the second genuinely could not carry ` +
+          `it. This is read aloud while he waits; twenty seconds of speech is ` +
+          `a monologue, not an answer.\n` +
+          `- Say only what you actually know. Do NOT manufacture a connection ` +
+          `to his projects, his background or his goals to sound insightful — ` +
+          `"your creative-production background gives you an edge here" is ` +
+          `filler unless the material in front of you says so. If a thing does ` +
+          `not genuinely fit, leave it out entirely rather than reaching for a ` +
+          `reason to mention it.\n` +
+          `- No preamble, no summarising what you are about to say, no closing ` +
+          `encouragement. Start with the answer.\n` +
           `- Blunt and specific, his standing instruction. Never soften, never ` +
-          `pad, never announce what you are about to say.`
+          `pad, never flatter.`
       },
       {
         role: "user",
@@ -239,7 +260,14 @@ export async function designDeskScreen({ question, answer, facts = "", waiting =
       ? raw.speech.replace(/\s+/g, " ").trim().slice(0, 900)
       : null;
 
-    return spec ? { ...spec, speech } : (speech ? { speech, blocks: [], accent: "tide" } : null);
+    // A spec with no blocks and no headline renders as an empty screen with a
+    // footer floating on black, which is exactly what "never mind" produced:
+    // the dismissal was composed into a screen containing nothing. If there
+    // is nothing to show, say so and show nothing — the caller stashes no
+    // spec and the resting face comes back.
+    if (!spec) return speech ? { speech, empty: true } : null;
+
+    return { ...spec, speech };
 
   } catch {
     return null;

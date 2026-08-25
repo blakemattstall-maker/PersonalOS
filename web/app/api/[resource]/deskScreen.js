@@ -426,6 +426,14 @@ function Rows({ block }) {
           <div style={{ display: "flex", fontSize: 16, color: C.ink }}>{row[1]}</div>
         </div>
       ))}
+
+      {/* Says what was cut. A list that simply ends at the bottom edge looks
+          complete and is not. */}
+      {block.more > 0 && (
+        <div style={{ display: "flex", fontFamily: "Mono", fontSize: 12, color: C.inkSoft, marginTop: 8 }}>
+          +{block.more} more — ask for the rest
+        </div>
+      )}
     </div>
   );
 

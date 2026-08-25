@@ -20,13 +20,38 @@ const DEFERRED_TOOLS = ["start_deep_thinking"];
 // "Tell me more about the first one" needs the previous answer; "what is on
 // my calendar" emphatically does not, and handing it one invites the model to
 // answer the old question again.
-function looksLikeFollowUp(text) {
+function looksLikeFollowUp(text, previous = null) {
 
   const said = (text || "").toLowerCase();
 
-  if (said.trim().split(/\s+/).length <= 3) return true;
+  const words = said.trim().split(/\s+/).filter(Boolean);
 
-  return /\b(that|those|this|these|it|its|the (first|second|third|last|other)|him|her|them|they|again|instead|more about|expand|why not|which one)\b/.test(said);
+  if (words.length <= 3) return true;
+
+  if (/\b(that|those|this|these|it|its|the (first|second|third|last|other)|him|her|them|they|again|instead|more (about|info|on|detail)|tell me more|expand|why not|which one|elaborate)\b/.test(said)) {
+    return true;
+  }
+
+  // Shared subject matter counts as reaching backwards.
+  //
+  // "More info on the Amtrak" contains no pronoun and no stock phrase, so a
+  // keyword list called it a fresh question and answered it with a general
+  // encyclopaedia entry instead of the route from campus that had just been
+  // discussed. If a distinctive word from the last answer reappears, they are
+  // still talking about the same thing.
+  if (!previous?.answer) return false;
+
+  const STOP = new Set([
+    "about", "there", "which", "would", "could", "should", "these", "those",
+    "their", "other", "where", "after", "before", "still", "going", "first",
+    "thing", "things", "really", "actual", "point", "right", "great"
+  ]);
+
+  const previousWords = new Set(
+    previous.answer.toLowerCase().match(/[a-z]{5,}/g)?.filter(w => !STOP.has(w)) || []
+  );
+
+  return words.some(w => previousWords.has(w.replace(/[^a-z]/g, "")));
 
 }
 
@@ -96,7 +121,9 @@ async function prepareDeskReply({ question, answer, results = [], waiting = fals
       waiting
     });
 
-    await stashDeskScreen(spec, { question, answer });
+    // Only stash something worth drawing. An empty spec would replace the
+    // resting face with a footer on a black screen.
+    await stashDeskScreen(spec?.empty ? null : spec, { question, answer });
 
     // The composer wrote a line meant to be said out loud, which is not the
     // dashboard answer with its markdown removed — it leads with what
@@ -219,7 +246,22 @@ export default async function handler(req, res) {
         .replace(/\s+/g, " ")
         .trim();
 
-      const DISMISS = /^(never ?mind|nevermind|go back|dismiss|clear( that| the screen)?|close( that)?|forget it|cancel|stop|thats all|thats it|done|thank you|thanks)$/;
+      // People do not dismiss things in one agreed phrase. "Put that away",
+      // "get rid of that", "go home", "close it" all mean the same thing, and
+      // sending any of them to a planning engine produced a screen that said
+      // "Putting that aside" — an assistant narrating instead of acting.
+      const DISMISS = new RegExp(
+        "^(" + [
+          "never ?mind", "nevermind", "forget it", "forget that",
+          "go back", "go home", "back", "home",
+          "dismiss( that| it)?", "clear( that| it| the screen)?",
+          "close( that| it)?", "hide( that| it)?",
+          "put (that|it) away", "get rid of (that|it)", "take (that|it) away",
+          "cancel", "stop", "quit", "exit",
+          "thats all", "thats it", "were done", "done", "im done",
+          "thank you", "thanks", "nothing", "no thanks"
+        ].join("|") + ")$"
+      );
 
       if (DISMISS.test(said)) {
 
@@ -434,7 +476,7 @@ question genuinely deserves one — it will be answered immediately as well.` : 
           // — "there isn't a recommendation yet" — instead of answering. So
           // it is attached only when the new words actually reach backwards,
           // and even then it is labelled as background that may be irrelevant.
-          content: (deskContext && looksLikeFollowUp(text))
+          content: (deskContext && looksLikeFollowUp(text, deskContext))
             ? `[Background — the desk was just asked "${deskContext.question}" and answered:\n` +
               `${deskContext.answer}\n` +
               `Use this ONLY to resolve what the new request points at. If the new ` +

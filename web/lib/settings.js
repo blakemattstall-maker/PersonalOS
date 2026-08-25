@@ -32,6 +32,16 @@ export const DEFAULTS = {
   // everything        — push anything the observer thinks is worth saying
   interruption_level: "digest_plus_urgent",
 
+  // The voice, shared.
+  //
+  // The app keeps its speech preferences in localStorage, which is right for
+  // a browser and useless to a device on a desk — it cannot read them, so it
+  // was speaking in whatever the route happened to default to. Mirroring the
+  // two that matter here lets both surfaces sound the same, and lets the
+  // phone's settings screen keep being where they are chosen.
+  voice: "sage",
+  speech_rate: 1.15,
+
   // Whether a newly created Google Calendar event is coloured by what kind of
   // thing it is (lib/eventKind.js's classifyEvent) rather than the flat
   // default. On by default because sorting by kind is the whole point; a

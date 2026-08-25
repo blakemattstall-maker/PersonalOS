@@ -212,7 +212,8 @@ bool armMic() {
     return false;
   }
 
-  Serial.println("[mic] armed - wake word listening on-device");
+  Serial.printf("[mic] armed - wake word listening on-device (heap %u)\n",
+                (unsigned)ESP.getFreeHeap());
 
 #endif
 
@@ -708,7 +709,7 @@ size_t recordFixed(int16_t *mono, size_t maxSamples) {
 
   while (written < maxSamples && millis() - start < 9'000UL) {
 
-    const size_t want = min((size_t)2048, maxSamples - written) * 2 * sizeof(int16_t);
+    const size_t want = min((size_t)2048, maxSamples - written) * sizeof(int16_t);
     const size_t got = i2s.readBytes((char *)stereo, want);
 
     const int16_t *samples = (const int16_t *)stereo;
@@ -716,7 +717,8 @@ size_t recordFixed(int16_t *mono, size_t maxSamples) {
     uint64_t sum = 0;
     size_t counted = 0;
 
-    for (size_t i = 0; i + 1 < got / sizeof(int16_t); i += 2) {
+    // Mono slot mode: every sample is the microphone, none are a duplicate.
+    for (size_t i = 0; i < got / sizeof(int16_t); i++) {
       const int32_t v = samples[i];
       sum += (uint64_t)((int64_t)v * v);
       counted++;
@@ -907,10 +909,10 @@ void speak(const String &text) {
 
   if (!text.length()) return;
 
-  if (!audioConfigure(PLAYBACK_RATE)) {
-    Serial.println("[tts] could not configure playback");
-    return;
-  }
+  // No reconfiguration. The server sends 16kHz mono, which is exactly what
+  // the bus is already running for the microphone, so playback borrows it as
+  // it stands. That is what makes it safe to merely pause the wake word
+  // engine instead of destroying and rebuilding it.
 
   stopSpeaking = false;
 
@@ -929,6 +931,8 @@ void speak(const String &text) {
   JsonDocument req;
   req["text"] = text;
   req["format"] = "wav";
+  // 16k so playback matches capture and the bus never changes rate.
+  req["rate"] = 16000;
   // Asks for the in-room delivery rather than the walking-briefing one.
   req["surface"] = "desk";
 
@@ -1001,14 +1005,8 @@ void speak(const String &text) {
 
     if (n == 0) break;
 
-    const int16_t *samples = (const int16_t *)(audio + pos);
-
-    for (size_t i = 0; i < n; i++) {
-      out[i * 2] = samples[i];
-      out[i * 2 + 1] = samples[i];
-    }
-
-    i2s.write((uint8_t *)out, n * 2 * sizeof(int16_t));
+    // The bus is in mono slot mode, so samples go out as they are.
+    i2s.write((uint8_t *)(audio + pos), n * sizeof(int16_t));
 
     pos += n * sizeof(int16_t);
     played += n;
@@ -1033,8 +1031,6 @@ void speak(const String &text) {
   Serial.printf("[tts] done, %u samples%s\n",
                 (unsigned)played, stopSpeaking ? " (interrupted)" : "");
 
-  audioConfigure(RECORD_RATE);
-
 }
 
 
@@ -1051,10 +1047,14 @@ void voiceFlow(bool fromWake = false) {
   // steps aside for the length of the conversation and is restarted after.
   // The bus goes back to stereo too: the engine listens in mono, and the
   // recorders below de-interleave stereo frames.
-  if (fromWake) {
-    ESP_SR.end();
-    audioConfigure(RECORD_RATE);
-  }
+  // Paused, not ended.
+  //
+  // Every question used to tear the engine down and build it back up, which
+  // reloads three megabytes of models from flash and allocates the whole AFE
+  // again. It worked for the first few and then quietly stopped: the wake
+  // word "worked accurately at first, then after a bit of runtime stopped".
+  // Pausing keeps the models loaded and the tasks alive.
+  if (fromWake) ESP_SR.pause();
 #endif
 
   const size_t MAX_SAMPLES = RECORD_RATE * 10;
@@ -1159,7 +1159,7 @@ void voiceFlow(bool fromWake = false) {
   phase = IDLE;
 #if WAKE_WORD
   // Back to listening for the wake word only — never left recording.
-  if (fromWake && micArmed) armMic();
+  if (fromWake && micArmed) ESP_SR.resume();
 #endif
 
   // Only re-fetch if the answer was interrupted — otherwise the screen

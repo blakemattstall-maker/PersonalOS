@@ -43,6 +43,32 @@ export function readPrefs() {
 }
 
 
+// Mirror the two the desk device also needs.
+//
+// Fire-and-forget on purpose: the browser's own playback already uses
+// localStorage and must not wait on, or be broken by, a network call. This
+// only exists so a voice chosen on the phone is the voice that comes out of
+// the thing on the desk.
+function syncVoiceToServer(prefs) {
+
+  if (typeof window === "undefined") return;
+
+  const body = {};
+
+  if (prefs.voice) body.voice = prefs.voice;
+  if (typeof prefs.rate === "number") body.speech_rate = prefs.rate;
+
+  if (!Object.keys(body).length) return;
+
+  fetch("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }).catch(() => {});
+
+}
+
+
 export function writePrefs(patch) {
 
   const next = { ...readPrefs(), ...patch };
@@ -54,6 +80,8 @@ export function writePrefs(patch) {
   }
 
   if ("theme" in patch) applyTheme(next.theme);
+
+  if ("voice" in patch || "rate" in patch) syncVoiceToServer(next);
 
   cached = null;
 

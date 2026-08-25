@@ -132,6 +132,70 @@ function chunk(text) {
 }
 
 
+// Resample 24kHz PCM down to 16kHz.
+//
+// Not an audio-quality decision — a plumbing one. The desk device records at
+// 16k because that is what the wake word engine and the transcriber want,
+// and OpenAI returns speech at 24k. Playing that meant reconfiguring the I2S
+// bus for every answer and back again, which is what forced the wake word
+// engine to be torn down and rebuilt each time — reloading three megabytes
+// of models per question, until eventually it stopped coming back. One rate
+// everywhere means the bus is configured once at boot and never touched.
+//
+// Linear interpolation at a 2:3 ratio. Speech at 16k is what every phone
+// call in history has sounded like; nothing here is worth a polyphase filter.
+function downsampleWav24to16(wav) {
+
+  const dataAt = wav.indexOf(Buffer.from("data"));
+
+  if (dataAt < 0) return wav;
+
+  const headerEnd = dataAt + 8;
+
+  const pcm = wav.subarray(headerEnd);
+
+  const inSamples = Math.floor(pcm.length / 2);
+
+  const outSamples = Math.floor(inSamples * 2 / 3);
+
+  const out = Buffer.alloc(outSamples * 2);
+
+  for (let i = 0; i < outSamples; i++) {
+
+    const src = i * 1.5;
+    const a = Math.floor(src);
+    const b = Math.min(a + 1, inSamples - 1);
+    const t = src - a;
+
+    const sample = pcm.readInt16LE(a * 2) * (1 - t) + pcm.readInt16LE(b * 2) * t;
+
+    out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(sample))), i * 2);
+
+  }
+
+  // A fresh 44-byte canonical header, because the sample rate, byte rate and
+  // data length all changed.
+  const header = Buffer.alloc(44);
+
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + out.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);          // PCM
+  header.writeUInt16LE(1, 22);          // mono
+  header.writeUInt32LE(16000, 24);
+  header.writeUInt32LE(16000 * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(out.length, 40);
+
+  return Buffer.concat([header, out]);
+
+}
+
+
 async function synthesize({ input, voice, speed, model, format = "mp3", instructions = null }) {
 
   const body = {
@@ -206,11 +270,27 @@ export async function POST(request) {
     return Response.json({ error: "That's longer than the demo will read." }, { status: 413 });
   }
 
-  const voice = VOICES.has(payload?.voice) ? payload.voice : "sage";
+  // An explicit request wins; otherwise use whatever the settings screen
+  // last chose, so the desk device and the phone speak in the same voice at
+  // the same speed without the device knowing anything about either.
+  let shared = {};
+
+  if (!payload?.voice || !payload?.speed) {
+    try {
+      const { getSettings } = await import("../../../lib/settings.js");
+      shared = await getSettings();
+    } catch (error) {
+      console.error("TTS could not read shared voice settings:", error.message);
+    }
+  }
+
+  const requested = payload?.voice || shared.voice;
+
+  const voice = VOICES.has(requested) ? requested : "sage";
 
   // The API accepts 0.25–4.0. Anything outside a narrow band around normal is
   // unintelligible for a long brief, so it is clamped rather than trusted.
-  const speed = Math.min(1.6, Math.max(0.7, Number(payload?.speed) || 1));
+  const speed = Math.min(1.6, Math.max(0.7, Number(payload?.speed) || Number(shared.speech_rate) || 1));
 
   // WAV exists for the desk device. A microcontroller can pipe raw PCM
   // straight to its speaker, and forcing it to decode MP3 would mean a whole
@@ -257,9 +337,14 @@ export async function POST(request) {
     // the headers play as clicks. Same PCM format throughout (one voice, one
     // sample rate), so headerless concatenation is valid — and the device
     // scans for the "data" marker rather than trusting offset 44 anyway.
-    const audio = format === "wav" && buffers.length > 1
+    let audio = format === "wav" && buffers.length > 1
       ? Buffer.concat(buffers.map((b, i) => (i === 0 ? b : b.subarray(44))))
       : Buffer.concat(buffers);
+
+    // The desk asks for 16k so its audio bus never has to change rate.
+    if (format === "wav" && Number(payload?.rate) === 16000) {
+      audio = downsampleWav24to16(audio);
+    }
 
     return new Response(audio, {
       headers: {
