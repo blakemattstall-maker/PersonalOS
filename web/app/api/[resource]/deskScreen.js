@@ -29,6 +29,19 @@ import { loadDeskScreen } from "../../../lib/deskScreens.js";
 export const SCREEN = { width: 368, height: 448 };
 
 
+// The word the device is actually listening for.
+//
+// This lives here because the screen is what tells a person what to say, and
+// it went stale the moment the model changed: the firmware was rebuilt around
+// Espressif's free wn9_jarvis_tts while this footer still told its owner to
+// say "hi E-S-P". The wake word is a firmware fact and a UI string at the
+// same time, so the string gets a name and one place to change.
+//
+// If the model in firmware/almanac-desk/models ever changes again, change
+// this with it.
+const WAKE_WORD = "Jarvis";
+
+
 // Satori needs real font binaries; it cannot use a font by name. Google serves
 // TTF instead of WOFF2 when the caller looks old enough not to understand
 // WOFF2, which is the only reliable way to get a parseable file out of it.
@@ -570,7 +583,7 @@ export async function renderDeskScreen({ preview = null, mic = "on", asks = 0 } 
           }}
         >
           <div style={{ display: "flex", fontSize: 12, color: C.inkSoft }}>
-            {mic === "off" ? "microphone off" : answer ? "hold to ask again" : "say \u201chi E-S-P\u201d or hold"}
+            {mic === "off" ? "microphone off" : answer ? "hold to ask again" : `say \u201c${WAKE_WORD}\u201d or hold`}
           </div>
           <div
             style={{
