@@ -444,3 +444,34 @@ test("reminders apply the same filters as the feed", () => {
   assert.match(review, /NOTIFY_FIELDS\.has\(r\.field\)/);
 
 });
+
+
+test("junior-status only is not the same claim as rising junior", () => {
+
+  // Both contain the word "junior" and they mean opposite things for a 2029
+  // graduate. A RISING junior in summer 2027 is him — he becomes a junior that
+  // autumn. Being of JUNIOR STATUS during the internship is not.
+  //
+  // Uline's first minimum requirement, verbatim: "This full-time, 12-week
+  // internship is open to Junior-status college students only." That posting
+  // was fetched in full, classified "unknown", and sat in the feed looking open
+  // — because the pattern list knew "rising senior" and not this.
+  assert.equal(
+    classifyGradFit("This full-time, 12-week internship is open to Junior-status college students only."),
+    "blocked"
+  );
+
+  assert.equal(classifyGradFit("Open to juniors and seniors only."), "blocked");
+  assert.equal(classifyGradFit("Applicants must be a junior at the time of the internship."), "blocked");
+
+  // And the welcoming half still welcomes.
+  assert.equal(classifyGradFit("We welcome rising junior applicants for this program."), "ok");
+  assert.equal(
+    classifyGradFit("Pursuing a 4-year degree with preferred current standing of Sophomore/Junior level"),
+    "ok"
+  );
+
+  // Silence is still not a no.
+  assert.equal(classifyGradFit("Currently pursuing a Bachelor's degree in Marketing or Business."), "unknown");
+
+});

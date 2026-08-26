@@ -403,7 +403,147 @@ async function fetchPhenom(source) {
 // can hand it over in the board listing; Workday needs one request per job,
 // which is affordable at that count and is why this is a separate pass rather
 // than part of the poll.
+// Reading a description from the POSTING'S OWN URL, when the source cannot.
+//
+// Most of the live feed arrives through the Simplify directory, which is a list
+// of links rather than a board: it hands over a URL on the employer's own
+// portal and the per-ATS adapters below have nothing to match on. So every one
+// of those postings was fetched blind, and the eligibility rules that decide
+// whether he can even apply were never read.
+//
+// Workday and Oracle Cloud both render their job text in JavaScript — a plain
+// GET returns a shell — but both sit on a JSON endpoint that is trivially
+// derivable from the page URL and needs no key. Between them they are the
+// majority of any Summer-2027 feed.
+async function fetchByUrl(url) {
+
+  let parsed;
+
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+
+  const host = parsed.hostname;
+  const segments = parsed.pathname.split("/").filter(Boolean);
+
+  // Workday: /{locale?}/{site}/job/{...} -> /wday/cxs/{tenant}/{site}/job/{...}
+  if (/\.myworkdayjobs\.com$/.test(host)) {
+
+    const jobAt = segments.indexOf("job");
+
+    if (jobAt < 1) return null;
+
+    const tenant = host.split(".")[0];
+    const site = segments[jobAt - 1];
+    const rest = segments.slice(jobAt).join("/");
+
+    const res = await fetch(`https://${host}/wday/cxs/${tenant}/${site}/${rest}`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(15_000)
+    }).catch(() => null);
+
+    if (!res?.ok) return null;
+
+    const body = await res.json().catch(() => null);
+
+    return stripHtml(body?.jobPostingInfo?.jobDescription || "");
+
+  }
+
+  // Oracle Cloud CX: /sites/{site}/job/{id} -> the recruiting REST resource.
+  if (/oraclecloud\.com$/.test(host)) {
+
+    const sitesAt = segments.indexOf("sites");
+    const jobAt = segments.indexOf("job");
+
+    if (sitesAt < 0 || jobAt < 0) return null;
+
+    const site = segments[sitesAt + 1];
+    const id = segments[jobAt + 1];
+
+    if (!site || !id) return null;
+
+    const target = `https://${host}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails`
+      + `?finder=ById;Id=%22${encodeURIComponent(id)}%22,siteNumber=%22${encodeURIComponent(site)}%22`;
+
+    const res = await fetch(target, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(15_000)
+    }).catch(() => null);
+
+    if (!res?.ok) return null;
+
+    const body = await res.json().catch(() => null);
+
+    const item = body?.items?.[0];
+
+    if (!item) return null;
+
+    // The rules live across several fields — the qualifications are frequently
+    // in a different one from the summary, and either can carry the graduation
+    // year that decides eligibility.
+    return stripHtml([
+      item.Title,
+      item.ExternalDescriptionStr,
+      item.ShortDescriptionStr,
+      item.CorporateDescriptionStr,
+      item.ExternalQualificationsStr,
+      item.ExternalResponsibilitiesStr
+    ].filter(Boolean).join("\n\n"));
+
+  }
+
+  // Greenhouse and SmartRecruiters both expose the posting by id, and a
+  // directory link is the ordinary way either of them reaches this feed.
+  if (/greenhouse\.io$/.test(host)) {
+
+    const board = segments[0];
+    const id = segments[segments.indexOf("jobs") + 1];
+
+    if (!board || !id) return null;
+
+    const res = await fetch(`https://boards-api.greenhouse.io/v1/boards/${board}/jobs/${id}`, {
+      headers: { accept: "application/json" }, signal: AbortSignal.timeout(15_000)
+    }).catch(() => null);
+
+    if (!res?.ok) return null;
+
+    const body = await res.json().catch(() => null);
+
+    return stripHtml(body?.content || "");
+
+  }
+
+  return null;
+
+}
+
+
+// The source's own adapter first, then the posting's URL.
+//
+// Both, because neither alone covers the feed: a board this app polls directly
+// is read by its ATS adapter, while a Simplify directory link has no adapter at
+// all and is only readable from the URL it points at.
 async function fetchDescription(source, posting) {
+
+  const viaSource = await fetchViaSource(source, posting).catch(() => null);
+
+  if (String(viaSource || "").trim().length >= MIN_DESCRIPTION_CHARS) return viaSource;
+
+  const viaUrl = posting.url ? await fetchByUrl(posting.url).catch(() => null) : null;
+
+  // The longer of the two: an adapter that returned a stub should not beat a
+  // portal that returned the whole posting.
+  return String(viaUrl || "").length > String(viaSource || "").length ? viaUrl : viaSource;
+
+}
+
+
+async function fetchViaSource(source, posting) {
+
+  if (!source) return null;
 
   try {
 
@@ -1040,9 +1180,9 @@ export async function enrichJobDetails({ limit = 60 } = {}) {
 
   await mapWithConcurrency(pending, async (posting) => {
 
-    const source = byId.get(posting.source_id);
-
-    if (!source) return;
+    // A missing source row is no longer a reason to give up: the posting's own
+    // URL is readable on its own, and fetchDescription handles a null source.
+    const source = byId.get(posting.source_id) || null;
 
     const description = await fetchDescription(source, posting);
 

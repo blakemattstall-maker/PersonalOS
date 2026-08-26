@@ -99,7 +99,16 @@ export function classifyTerm({ title = "", description = "" } = {}) {
 // following "s". This exact trap has now cost three separate bugs in this
 // codebase — the product terms, the no-chance list, and here. Alternatives
 // that genuinely need an end anchor carry their own.
-const NEEDS_OLDER = /\b(rising senior|senior standing|final[- ]year|penultimate year|graduating (senior|student)|mba\b|master'?s (student|degree required)|phd|doctoral|law student|3l\b|2l\b)/i;
+// Class standing that rules him out, stated as a requirement.
+//
+// "junior-status ... only" was the gap, and it is a different claim from
+// "rising junior". A rising junior in summer 2027 IS him — he becomes a junior
+// that autumn. Being of JUNIOR STATUS during the internship is not: Uline's
+// first minimum requirement reads "This full-time, 12-week internship is open
+// to Junior-status college students only", and he does not reach junior
+// standing until after it ends. The posting was read in full, classified
+// "unknown", and sat in the feed looking open.
+const NEEDS_OLDER = /\b(rising senior|senior standing|final[- ]year|penultimate year|graduating (senior|student)|mba\b|master'?s (student|degree required)|phd|doctoral|law student|3l\b|2l\b|junior[- ]status|open to juniors?(\s+and\s+seniors?)?\s+only|juniors?\s+and\s+seniors?\s+only|must be (a |an )?(rising )?(junior|senior))/i;
 const WELCOMES_HIM = /\b(rising (sophomore|junior)|sophomore|freshman|first[- ]year|underclassmen|all (undergraduate |college )?students|any (class )?year)/i;
 
 
