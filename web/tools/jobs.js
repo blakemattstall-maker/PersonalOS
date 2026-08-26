@@ -996,11 +996,21 @@ export async function checkForNewJobs() {
 // poll must stay fast enough to run every fifteen minutes; this walks a few
 // dozen postings at a time and remembers where it stopped, so it costs one
 // fetch per requisition for the life of that requisition.
+// Below this, whatever came back is a page shell rather than a job description
+// — a nav bar and a cookie banner, or nothing at all.
+const MIN_DESCRIPTION_CHARS = 200;
+
+// Workday and Oracle Cloud render their text in JavaScript and will never
+// yield to a plain fetch. Three tries is enough to tell a transient failure
+// from a structural one.
+const MAX_DETAIL_ATTEMPTS = 3;
+
+
 export async function enrichJobDetails({ limit = 60 } = {}) {
 
   const { data: pending, error } = await supabase
     .from("job_postings")
-    .select("id, source_id, external_id, title, url")
+    .select("id, source_id, external_id, title, url, detail_attempts")
     .eq("is_internship", true)
     .gte("match_score", 0)
     .is("detail_fetched_at", null)
@@ -1036,6 +1046,31 @@ export async function enrichJobDetails({ limit = 60 } = {}) {
 
     const description = await fetchDescription(source, posting);
 
+    // Did we actually READ anything?
+    //
+    // 151 of 258 enriched postings had a completely empty description: the
+    // fetch "succeeded" against a Workday or Oracle Cloud page that renders its
+    // text in JavaScript, stored nothing, stamped detail_fetched_at, and was
+    // never looked at again — because the pending query is
+    // `.is("detail_fetched_at", null)`.
+    //
+    // The cost is not cosmetic. classifyGradFit on an empty string returns
+    // "unknown", and the feed deliberately KEEPS unknown, since most postings
+    // state nothing and silence must not read as a no. So three roles that
+    // explicitly exclude him — "open to Junior-status college students only",
+    // "enrolled as a junior undergraduate", "Expected graduation date: Spring
+    // 2028" — sat in his feed looking eligible. The filter was right; it was
+    // never shown the words.
+    //
+    // So a fetch that read nothing usable is a FAILED fetch. It leaves
+    // detail_fetched_at null and gets retried, up to a limit, rather than being
+    // recorded as a fact about the posting.
+    const usable = String(description || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+    const readable = usable.length >= MIN_DESCRIPTION_CHARS;
+
+    const attempts = (posting.detail_attempts || 0) + 1;
+
     const term = classifyTerm({ title: posting.title, description: description || "" });
     const gradFit = classifyGradFit(description || "");
     const pay = parsePay(description || "");
@@ -1053,7 +1088,14 @@ export async function enrichJobDetails({ limit = 60 } = {}) {
         // Never overwrite a deadline the ATS stated outright with one guessed
         // from prose.
         ...(deadline ? { deadline } : {}),
-        detail_fetched_at: new Date().toISOString()
+        detail_attempts: attempts,
+        // Stamped only when there was something to read — or when it has been
+        // tried enough times that retrying is just noise. A page that renders
+        // its text in JavaScript will never yield to a plain fetch, and hourly
+        // retries forever are their own kind of silent waste.
+        ...(readable || attempts >= MAX_DETAIL_ATTEMPTS
+          ? { detail_fetched_at: new Date().toISOString() }
+          : {})
       })
       .eq("id", posting.id);
 

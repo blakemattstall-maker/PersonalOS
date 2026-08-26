@@ -31,6 +31,13 @@ import { probeTable } from "./tableProbe.js";
 const MIGRATIONS = [
 
   {
+    file: "docs/schema-jobs-attempts.sql",
+    purpose: "tell a failed description fetch from a successful one",
+    columns: [["job_postings", "detail_attempts"]],
+    breaksWithout: "A posting whose page renders in JavaScript is recorded as read with an empty description, so its eligibility rules are never seen and roles that explicitly exclude a 2029 graduate stay in the feed looking eligible."
+  },
+
+  {
     file: "docs/schema-triggers.sql",
     purpose: "standing reminders the app runs itself — arriving somewhere, before a matching calendar event, at a time of day",
     tables: ["triggers", "trigger_fires", "trigger_logs"],
