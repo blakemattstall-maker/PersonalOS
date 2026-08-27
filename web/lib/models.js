@@ -34,7 +34,12 @@ export const MODELS = {
 
   // Retrieval. ~$0.02/1M tokens, effectively free at this scale — the cost
   // problem retrieval solves is prompt bloat, not the embedding itself.
-  EMBEDDING: "text-embedding-3-small"
+  EMBEDDING: "text-embedding-3-small",
+
+  // Synthesized speech, ~$0.015 per spoken minute. The desk's streaming
+  // exchange reads it from here; app/api/tts/route.js predates the registry
+  // and still names it locally with its own fallback ladder.
+  SPEECH: "gpt-4o-mini-tts"
 
 };
 

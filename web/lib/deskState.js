@@ -19,15 +19,26 @@ import { analyseDay } from "./eventKind.js";
 // token costs the countdown, not the whole screen, and it arrives as
 // calendar:null ("unreachable") rather than as an empty day nobody actually
 // looked at.
-export async function buildDeskState() {
+// The expensive half of the screen, remembered briefly.
+//
+// The clock has to be live — a desk clock that is a minute behind is broken —
+// but the nudge count, the brief and the calendar do not change second to
+// second, and the calendar is a LIVE Google API call that was being made on
+// every 60-second poll AND between the answer and the voice on every spoken
+// question. Thirty seconds of memory (per warm serverless instance; a cold
+// one just fetches) takes that call off the poll's critical path without the
+// screen ever showing anything meaningfully stale.
+let sourceCache = { at: 0, data: null };
 
-  const tz = await getUserTimezone();
+const SOURCE_CACHE_MS = 30_000;
 
-  const now = DateTime.now().setZone(tz);
+async function loadSources(todayISO, fresh) {
 
-  const todayISO = now.toFormat("yyyy-MM-dd");
+  if (!fresh && sourceCache.data && Date.now() - sourceCache.at < SOURCE_CACHE_MS && sourceCache.day === todayISO) {
+    return sourceCache.data;
+  }
 
-  const [nudges, prompts, insights, brief, calendar] = await Promise.all([
+  const data = await Promise.all([
 
     getPendingNudges().catch(() => []),
 
@@ -47,6 +58,28 @@ export async function buildDeskState() {
       .catch(() => null)
 
   ]);
+
+  sourceCache = { at: Date.now(), day: todayISO, data };
+
+  return data;
+
+}
+
+
+// `fresh` skips the cache. The device passes it on the fetch right after it
+// acted (acking a nudge, dismissing an answer) — a card that stays on the
+// glass for half a minute after being tapped reads as a missed tap, and this
+// is exactly the after-a-user-action case the freshness rules exist for. The
+// passive minute-poll never passes it.
+export async function buildDeskState({ fresh = false } = {}) {
+
+  const tz = await getUserTimezone();
+
+  const now = DateTime.now().setZone(tz);
+
+  const todayISO = now.toFormat("yyyy-MM-dd");
+
+  const [nudges, prompts, insights, brief, calendar] = await loadSources(todayISO, fresh);
 
 
   const time = (iso) => DateTime.fromISO(iso).setZone(tz).toFormat("h:mma").toLowerCase();

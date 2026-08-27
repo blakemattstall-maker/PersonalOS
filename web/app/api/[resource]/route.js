@@ -46,7 +46,10 @@ export async function GET(request, context) {
       // The device owns the microphone's state; the renderer only draws it.
       mic: params.get("mic") === "off" ? "off" : "on",
       asks: Math.max(0, Math.min(99, Number(params.get("asks")) || 0)),
-      tts: params.get("tts") === "off" ? "off" : "on"
+      tts: params.get("tts") === "off" ? "off" : "on",
+      // Set on the fetch right after a tap acted on something — skips the
+      // short source cache so the change is visible immediately.
+      fresh: params.get("fresh") === "1"
     });
 
   }

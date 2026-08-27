@@ -3,7 +3,35 @@ import { buildRichContext } from "../lib/context.js";
 import { MODELS } from "../lib/models.js";
 
 
-export async function answerQuestion({ question }) {
+// The desk asks for the answer in two registers at once.
+//
+// The room needs a spoken line NOW — it is standing in silence — and the
+// screen and dashboard need the substance. One model call writes both, spoken
+// half first, so the voice can begin while the detail is still streaming out.
+// The format is two labelled blocks; the split marker is chosen to never
+// occur in prose.
+const SPOKEN_FIRST_FORMAT = `
+OUTPUT FORMAT — mandatory. Your reply MUST begin with the literal text
+"SPOKEN:" and MUST contain a divider line of exactly "===". Two blocks:
+
+SPOKEN: the sentence or two the voice says. TWO sentences — three only if
+the second genuinely could not carry it. Lead with the thing that decides
+what he does next. Plain spoken English, contractions fine, no markdown, no
+lists being recited. Say only what you actually know: never manufacture a
+connection to his projects or background to sound insightful — if something
+does not genuinely fit, leave it out. No preamble, no closing encouragement.
+===
+FULL: the complete answer — the names, numbers, options and reasoning the
+small screen and the dashboard will carry. Plain text, no markdown.
+
+Example shape (structure only, not content):
+SPOKEN: Microsoft's the one to move on first — their applications open within
+two weeks. The other three can wait until you've shipped that.
+===
+FULL: Four internships fit: Microsoft PM (opens ...), Amazon ...`;
+
+
+export async function answerQuestion({ question, spokenFirst = false, onSpoken = null }) {
 
 
   if (!question) {
@@ -12,6 +40,11 @@ export async function answerQuestion({ question }) {
 
 
   const context = await buildRichContext({ query: question });
+
+
+  if (spokenFirst) {
+    return answerSpokenFirst({ question, context, onSpoken });
+  }
 
 
   const response = await openai.chat.completions.create({
@@ -23,7 +56,41 @@ export async function answerQuestion({ question }) {
       {
         role: "system",
 
-        content: `
+        content: systemPrompt(context)
+      },
+
+      {
+        role: "user",
+        content: question
+      }
+
+    ]
+
+  });
+
+
+  const answer = response.choices[0].message.content;
+
+
+  return {
+
+    success: true,
+
+    message: answer,
+
+    data: {
+      question,
+      answer
+    }
+
+  };
+
+}
+
+
+function systemPrompt(context, { spokenFirst = false } = {}) {
+
+  return `
 You are Almanac, a personal assistant answering a question for your user.
 
 What you know about this user:
@@ -52,13 +119,13 @@ attached to:
 ${context.connections}
 ` : ""}
 
-ANSWER STYLE:
+${spokenFirst ? SPOKEN_FIRST_FORMAT : `ANSWER STYLE:
 
 Your answer will be read aloud or shown on a phone screen.
 
 - Keep it short and conversational.
 - Plain text only. No markdown, no bullet points, no headers.
-- Two or three sentences unless more is genuinely needed.
+- Two or three sentences unless more is genuinely needed.`}
 
 
 IMPORTANT LIMITATION:
@@ -83,32 +150,119 @@ Two corollaries that matter just as much:
 
 The user has explicitly told you: be blunt, hold nothing back, and
 never soften a real finding for the sake of comfort.
-`
+`;
 
-      },
+}
 
-      {
-        role: "user",
-        content: question
-      }
 
+// The streaming variant behind spokenFirst. Parses the two blocks as they
+// arrive and fires onSpoken the moment the marker line closes the first one —
+// that callback is what lets the voice start while FULL is still generating.
+async function answerSpokenFirst({ question, context, onSpoken }) {
+
+  const request = {
+
+    model: MODELS.JUDGMENT,
+
+    stream: true,
+
+    // This call is a person waiting at a speaker, not a report. The
+    // judgment-tier models deliberate before their first token, and that
+    // deliberation is the single largest slice of the wait — dial it down
+    // for the interactive surface only. Accounts/models that reject the
+    // knob get one retry without it.
+    reasoning_effort: "low",
+
+    messages: [
+      { role: "system", content: systemPrompt(context, { spokenFirst: true }) },
+      { role: "user", content: question }
     ]
 
-  });
+  };
 
+  const t0 = Date.now();
 
-  const answer = response.choices[0].message.content;
+  let stream;
 
+  try {
+    stream = await openai.chat.completions.create(request);
+  } catch (error) {
+    if (error.status === 400) {
+      delete request.reasoning_effort;
+      stream = await openai.chat.completions.create(request);
+    } else {
+      throw error;
+    }
+  }
+
+  let text = "";
+  let spoken = null;
+  let spokenFired = false;
+  let firstTokenAt = null;
+
+  // Tolerant of the model's punctuation moods: the divider is any line of
+  // three-plus equals signs, wherever its whitespace falls.
+  const MARKER = /\n\s*===+/;
+
+  for await (const part of stream) {
+
+    const delta = part.choices?.[0]?.delta?.content || "";
+
+    if (delta && !firstTokenAt) firstTokenAt = Date.now();
+
+    text += delta;
+
+    if (!spokenFired) {
+
+      const m = text.match(MARKER);
+
+      if (m) {
+
+        spoken = text.slice(0, m.index).replace(/^\s*SPOKEN:\s*/i, "").trim();
+
+        spokenFired = true;
+
+        console.log(`SPOKEN-FIRST spoken after ${Date.now() - t0}ms (first token ${firstTokenAt - t0}ms)`);
+
+        // Failures in the caller's early path must not kill the stream that
+        // is still producing the full answer.
+        if (spoken && onSpoken) {
+          try { onSpoken(spoken); } catch (error) {
+            console.error("onSpoken failed:", error.message);
+          }
+        }
+
+      }
+
+    }
+
+  }
+
+  const m = text.match(MARKER);
+
+  console.log(`SPOKEN-FIRST done ${Date.now() - t0}ms, marker=${m ? "yes" : "NO"}, head: ${JSON.stringify(text.slice(0, 160))}`);
+
+  // The model ignored the format: everything is one block, and the caller
+  // falls back to bounding it for speech itself (onSpoken never fired).
+  const full = m
+    ? text.slice(m.index).replace(/^\s*===+\s*/, "").replace(/^\s*FULL:\s*/i, "").trim()
+    : text.trim();
+
+  if (m && !spokenFired) {
+    spoken = text.slice(0, m.index).replace(/^\s*SPOKEN:\s*/i, "").trim();
+  }
 
   return {
 
     success: true,
 
-    message: answer,
+    message: full,
+
+    spoken: spoken || null,
 
     data: {
       question,
-      answer
+      answer: full
     }
 
   };

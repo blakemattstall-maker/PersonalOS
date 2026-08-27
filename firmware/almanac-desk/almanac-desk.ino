@@ -3,10 +3,14 @@
 // What it does: once a minute it fetches GET /api/desk?screen=1 — a PNG the
 // server renders in Almanac's own typefaces — and blits it to the panel. The
 // nudge id rides along in a response header, so tapping the card resolves
-// exactly what is on the glass. Hold the bottom bar (or the side BOOT button) to
-// talk: audio goes to POST /api/capture, which transcribes and routes it
-// through the whole app, and the reply comes back out of the speaker via
-// POST /api/tts as raw WAV — no decoder on this side, just bytes to I2S.
+// exactly what is on the glass. Say "Jarvis" (or hold the bottom bar / BOOT)
+// to talk: the recording goes up as one raw-WAV POST to /api/capture, and
+// the reply comes back down the same connection as a stream of typed frames
+// — speech audio as it is synthesized, the composed answer screen mid-
+// sentence, control metadata — so the voice starts seconds after the
+// sentence ends instead of after every stage has finished. The TLS
+// handshake runs on the other core while the sentence is still being
+// spoken. See `converse` below for the frame protocol.
 //
 // Build notes live in README.md. Pins are verified against Waveshare's own
 // sources (pins.h); the display/touch/audio init sequences are lifted from
@@ -14,6 +18,7 @@
 // "worked on this exact board".
 
 #include <Arduino.h>
+#include <new>
 #include <Wire.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -27,6 +32,7 @@
 #include <PNGdec.h>
 
 #include "pins.h"
+#include "flowtypes.h"
 #include "theme.h"
 #include "tca9554.h"
 #include "touch.h"
@@ -62,11 +68,12 @@ Arduino_SH8601 *gfx = new Arduino_SH8601(
 
 
 // ---------------------------------------------------------------------------
-// Audio — one I2S bus to the ES8311, reconfigured per direction.
+// Audio — one I2S bus to the ES8311, one rate, never reconfigured.
 //
-// Recording is 16kHz (what Whisper wants); playback is 24kHz (what OpenAI's
-// WAV output is). One rate would be nicer, but transcoding on a
-// microcontroller is worse than two begin() calls.
+// 16kHz both directions: it is what the wake word engine and the transcriber
+// want, and the server resamples its 24kHz speech down before streaming it.
+// One rate is what lets the wake word engine be paused for a conversation
+// instead of destroyed and rebuilt.
 // ---------------------------------------------------------------------------
 
 I2SClass i2s;
@@ -74,7 +81,6 @@ I2SClass i2s;
 es8311_handle_t codec = NULL;
 
 const uint32_t RECORD_RATE = 16000;
-const uint32_t PLAYBACK_RATE = 24000;
 
 bool audioConfigure(uint32_t rate, bool mono = false) {
 
@@ -471,13 +477,17 @@ volatile uint32_t linesDrawn = 0;
 // ever visible.
 static uint16_t *frame = nullptr;
 
+// Where the current decode is writing — the idle framebuffer above, or one
+// of the cached phase frames.
+static uint16_t *decodeTarget = nullptr;
+
 static int pngDrawLine(PNGDRAW *draw) {
 
   linesDrawn++;
 
-  if (!frame || draw->y < 0 || draw->y >= LCD_HEIGHT) return 0;
+  if (!decodeTarget || draw->y < 0 || draw->y >= LCD_HEIGHT) return 0;
 
-  png->getLineAsRGB565(draw, frame + ((size_t)draw->y * LCD_WIDTH),
+  png->getLineAsRGB565(draw, decodeTarget + ((size_t)draw->y * LCD_WIDTH),
                        PNG_RGB565_BIG_ENDIAN, 0xffffffff);
 
   // Non-zero keeps the decoder going; returning 0 would abort mid-image.
@@ -486,19 +496,105 @@ static int pngDrawLine(PNGDRAW *draw) {
 }
 
 
+// Decode one downloaded PNG into a full-frame RGB565 buffer.
+//
+// The decoder object itself is placed in PSRAM, not `new`ed onto the
+// internal heap: it carries zlib's 32KB window and weighs ~48KB, and during
+// the streaming exchange it now runs WHILE a TLS connection is alive — the
+// exact pair that could not coexist in internal RAM once the wake word
+// engine claimed its share. PSRAM decode is a shade slower and entirely
+// unbothered by any of that.
+bool decodePngTo(uint8_t *data, size_t len, uint16_t *dest) {
+
+  void *mem = heap_caps_malloc(sizeof(PNG), MALLOC_CAP_SPIRAM);
+
+  if (!mem) return false;
+
+  png = new (mem) PNG();
+
+  if (png->openRAM(data, len, pngDrawLine) != PNG_SUCCESS) {
+    Serial.println("[png] openRAM failed");
+    png->~PNG();
+    heap_caps_free(mem);
+    png = nullptr;
+    return false;
+  }
+
+  decodeTarget = dest;
+  linesDrawn = 0;
+
+  const unsigned long t0 = millis();
+
+  const int decoded = png->decode(NULL, 0);
+
+  Serial.printf("[png] %u lines in %lums, heap %u\n",
+                (unsigned)linesDrawn, millis() - t0, (unsigned)ESP.getFreeHeap());
+
+  png->close();
+  png->~PNG();
+  heap_caps_free(mem);
+  png = nullptr;
+  decodeTarget = nullptr;
+
+  return decoded == PNG_SUCCESS;
+
+}
+
+
+// ---------------------------------------------------------------------------
+// The waiting states, cached as pictures.
+//
+// "Listening" and "thinking" used to be the built-in 5x7 font on black — and
+// they were on the glass for most of every exchange, which made them most of
+// the UI anyone actually saw. The server now renders them in the real
+// typefaces (deskScreen.js, preview=phase-*); the device fetches all four
+// ONCE at boot and blits from PSRAM, so they still appear the instant a
+// finger lands or a wake word fires. Thinking has two frames a few pixels
+// apart; alternating them is what makes waiting look alive instead of hung.
+// ---------------------------------------------------------------------------
+
+static const char *PHASE_PREVIEWS[PF_COUNT] = {
+  "phase-listening", "phase-thinking", "phase-thinking-2", "phase-speaking"
+};
+
+static uint16_t *phaseFrames[PF_COUNT] = { nullptr, nullptr, nullptr, nullptr };
+
+// Cached frame if it exists, the old plain-font drawing when it does not —
+// a failed boot fetch costs polish, never the indicator.
+void drawPhaseCached(PhaseFrame which, const char *big, const char *small, uint16_t color) {
+
+  if (phaseFrames[which]) {
+    gfx->draw16bitBeRGBBitmap(0, 0, phaseFrames[which], LCD_WIDTH, LCD_HEIGHT);
+    return;
+  }
+
+  drawPhase(big, small, color);
+
+}
+
+void drawThinking(bool flip) {
+  drawPhaseCached(flip ? PF_THINK2 : PF_THINK, "thinking", "", C_INK_SOFT);
+}
+
+
 // Downloaded whole before decoding: PNG is a compressed stream, so it cannot
 // be drawn as it arrives, and 8MB of PSRAM makes buffering the entire file
 // the simple correct choice rather than a compromise.
-bool fetchScreen() {
+//
+// `fresh` rides on the fetch that follows a tap or a spoken command — it
+// tells the server to skip its short source cache, so the thing just acted
+// on visibly changes. The minute-poll never sets it.
+bool fetchScreen(bool fresh = false) {
 
   WiFiClientSecure client;
   HTTPClient http;
 
   // The device owns the microphone's state, so it tells the renderer what to
   // draw rather than the other way round.
-  char path[64];
-  snprintf(path, sizeof(path), "/api/desk?screen=1&mic=%s&asks=%d&tts=%s",
-           micArmed ? "on" : "off", asksSent, ttsEnabled ? "on" : "off");
+  char path[80];
+  snprintf(path, sizeof(path), "/api/desk?screen=1&mic=%s&asks=%d&tts=%s%s",
+           micArmed ? "on" : "off", asksSent, ttsEnabled ? "on" : "off",
+           fresh ? "&fresh=1" : "");
 
   if (!httpBegin(http, client, path)) return false;
 
@@ -560,71 +656,86 @@ bool fetchScreen() {
 
   Serial.printf("[screen] declared=%d written=%d got=%u\n", declared, written, (unsigned)got);
 
-  // The socket is closed by now, so the decoder can have the RAM that TLS
-  // was using.
-  png = new PNG();
-
-  if (!png) {
-    Serial.println("[screen] could not allocate the decoder");
-    free(buf);
-    return false;
-  }
-
-  const int rc = png->openRAM(buf, got, pngDrawLine);
-
-  if (rc != PNG_SUCCESS) {
-    Serial.printf("[screen] openRAM failed %d\n", rc);
-    delete png; png = nullptr;
-    free(buf);
-    return false;
-  }
-
   if (!frame) {
     frame = (uint16_t *)heap_caps_malloc((size_t)LCD_WIDTH * LCD_HEIGHT * 2, MALLOC_CAP_SPIRAM);
     if (!frame) {
       Serial.println("[screen] no PSRAM for the framebuffer");
-      png->close();
-      delete png;
-      png = nullptr;
       free(buf);
       return false;
     }
   }
 
-  linesDrawn = 0;
-
-  const unsigned long t0 = millis();
-
-  const int decoded = png->decode(NULL, 0);
-
-  const unsigned long tDecode = millis() - t0;
-
-  // One transfer for the whole screen.
-  const unsigned long t1 = millis();
-
-  if (decoded == PNG_SUCCESS) {
-    gfx->draw16bitBeRGBBitmap(0, 0, frame, LCD_WIDTH, LCD_HEIGHT);
-  }
-
-  Serial.printf("[screen] %dx%d type=%d -> %u lines, decode %lums, blit %lums, heap %u\n",
-                png->getWidth(), png->getHeight(), png->getPixelType(),
-                (unsigned)linesDrawn, tDecode, millis() - t1, (unsigned)ESP.getFreeHeap());
-
-  png->close();
-
-  delete png;
-  png = nullptr;
+  const bool decoded = decodePngTo(buf, got, frame);
 
   free(buf);
 
-  if (decoded != PNG_SUCCESS) {
-    Serial.printf("[screen] decode failed %d\n", decoded);
+  if (!decoded) {
+    Serial.println("[screen] decode failed");
     return false;
   }
+
+  // One transfer for the whole screen.
+  gfx->draw16bitBeRGBBitmap(0, 0, frame, LCD_WIDTH, LCD_HEIGHT);
 
   state.valid = true;
 
   return true;
+
+}
+
+
+// One phase frame, downloaded and decoded into its PSRAM slot at boot.
+bool loadPhaseFrame(PhaseFrame which) {
+
+  WiFiClientSecure client;
+  HTTPClient http;
+
+  char path[64];
+  snprintf(path, sizeof(path), "/api/desk?screen=1&preview=%s", PHASE_PREVIEWS[which]);
+
+  if (!httpBegin(http, client, path)) return false;
+
+  if (http.GET() != 200) { http.end(); return false; }
+
+  const size_t CAP = 400000;
+
+  uint8_t *buf = (uint8_t *)heap_caps_malloc(CAP, MALLOC_CAP_SPIRAM);
+
+  if (!buf) { http.end(); return false; }
+
+  BufferSink sink(buf, CAP);
+
+  http.writeToStream(&sink);
+
+  http.end();
+
+  if (sink.len < 100) { free(buf); return false; }
+
+  if (!phaseFrames[which]) {
+    phaseFrames[which] = (uint16_t *)heap_caps_malloc((size_t)LCD_WIDTH * LCD_HEIGHT * 2, MALLOC_CAP_SPIRAM);
+  }
+
+  const bool ok = phaseFrames[which]
+    && decodePngTo(buf, sink.len, phaseFrames[which]);
+
+  free(buf);
+
+  return ok;
+
+}
+
+
+void loadPhaseFrames() {
+
+  const unsigned long t0 = millis();
+
+  int loaded = 0;
+
+  for (int i = 0; i < PF_COUNT; i++) {
+    if (loadPhaseFrame((PhaseFrame)i)) loaded++;
+  }
+
+  Serial.printf("[phase] %d/%d frames cached in %lums\n", loaded, PF_COUNT, millis() - t0);
 
 }
 
@@ -834,252 +945,462 @@ void writeWavHeader(uint8_t *h, uint32_t dataBytes, uint32_t rate) {
 
 }
 
-// POST the recording to /api/capture; returns the spoken reply (or error text).
-String sendCapture(const int16_t *mono, size_t samples) {
+// True while audio is playing, so a touch can stop it.
+volatile bool stopSpeaking = false;
+
+
+// ---------------------------------------------------------------------------
+// The streaming exchange.
+//
+// One POST carries the recording up as raw WAV; the response is a stream of
+// typed frames — [type:1][length:4 LE][payload] — that the server emits as
+// each stage finishes rather than when all of them have:
+//
+//   'M'  meta, JSON: what was heard and how it was handled
+//   'A'  audio: 16kHz mono s16le PCM, sent as it is synthesized
+//   'P'  the composed answer screen, as a PNG, mid-speech
+//   'E'  the exchange is over
+//
+// The old shape was three serial requests — capture, then screen, then a TTS
+// download that had to finish before the first sample played — each behind
+// its own 1-3 second TLS handshake. This is one connection, opened WHILE the
+// user is still speaking (see preconnect below), with playback starting the
+// moment a quarter-second of audio has arrived.
+// ---------------------------------------------------------------------------
+
+// The TLS connection for the exchange, handshaken on the other core while
+// the microphone is still recording — the one place the S3's slow ECC math
+// can hide completely. Stopped at the end of every exchange: a resident TLS
+// context costs ~50KB of the internal RAM the wake word engine already
+// pressures, and holding it between conversations buys nothing.
+WiFiClientSecure exchangeClient;
+
+volatile bool preconnectDone = false;
+
+String apiHost() {
+  String host = String(API_BASE);
+  host.replace("https://", "");
+  host.replace("http://", "");
+  const int slash = host.indexOf('/');
+  return slash >= 0 ? host.substring(0, slash) : host;
+}
+
+void preconnectTask(void *arg) {
+  exchangeClient.setInsecure();
+  if (!exchangeClient.connected()) {
+    exchangeClient.connect(apiHost().c_str(), 443, 15000);
+  }
+  preconnectDone = true;
+  vTaskDelete(NULL);
+}
+
+void startPreconnect() {
+  preconnectDone = false;
+  if (exchangeClient.connected()) { preconnectDone = true; return; }
+  if (xTaskCreatePinnedToCore(preconnectTask, "tlspre", 12288, NULL, 1, NULL, 0) != pdPASS) {
+    // No task, no parallelism — the POST below will connect inline instead.
+    preconnectDone = true;
+  }
+}
+
+
+// Pull-based body reader that understands chunked transfer.
+//
+// The exchange has to be read progressively — that is its entire point — and
+// getStreamPtr() hands over the raw socket, hex chunk-size framing included.
+// writeToStream() strips that framing but blocks until the response ends,
+// which is exactly the wrong shape for audio meant to play while arriving.
+// So the framing is handled here, byte-honestly: a read that returns 0 means
+// "nothing yet", and only a closed socket or the terminal chunk means done.
+struct HttpBody {
+
+  WiFiClientSecure *cl = nullptr;
+  bool chunked = false;
+  long remaining = 0;      // plain: bytes left in body; chunked: in this chunk
+  bool started = false;    // chunked: whether any chunk header has been read
+  bool done = false;
+
+  void begin(WiFiClientSecure *client, bool isChunked, long contentLength) {
+    cl = client;
+    chunked = isChunked;
+    remaining = isChunked ? 0 : contentLength;
+    started = false;
+    done = false;
+  }
+
+  int rawByte(uint32_t deadline) {
+    while (!cl->available()) {
+      if (!cl->connected() && !cl->available()) return -1;
+      if (millis() > deadline) return -2;
+      delay(1);
+    }
+    return cl->read();
+  }
+
+  // Reads the "\r\nSIZE\r\n" between chunks. Returns false on end-of-body or
+  // error, with `done` telling the two apart.
+  bool nextChunk(uint32_t deadline) {
+
+    if (started) {
+      // The CRLF that closes the previous chunk's data.
+      if (rawByte(deadline) < 0 || rawByte(deadline) < 0) return false;
+    }
+
+    long size = 0;
+    bool any = false;
+
+    for (;;) {
+      const int c = rawByte(deadline);
+      if (c < 0) return false;
+      if (c == '\r') continue;
+      if (c == '\n') { if (any) break; else continue; }
+      if (c == ';') { while (rawByte(deadline) != '\n') {} break; }   // chunk extension
+      const int v = (c >= '0' && c <= '9') ? c - '0'
+                  : (c >= 'a' && c <= 'f') ? c - 'a' + 10
+                  : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
+      if (v < 0) return false;
+      size = size * 16 + v;
+      any = true;
+    }
+
+    started = true;
+
+    if (size == 0) {
+      // Trailer section: lines until the blank one.
+      int c, prev = 0;
+      while ((c = rawByte(deadline)) >= 0) {
+        if (c == '\n' && prev == '\n') break;
+        if (c != '\r') prev = c;
+        else if (prev == '\n') { }
+        if (c == '\n' && prev != '\n') prev = '\n';
+      }
+      done = true;
+      return false;
+    }
+
+    remaining = size;
+    return true;
+
+  }
+
+  // Up to `max` payload bytes. >0 data, 0 nothing-yet (call again), <0 over.
+  int read(uint8_t *out, int max, uint32_t timeoutMs) {
+
+    if (done) return -1;
+
+    const uint32_t deadline = millis() + timeoutMs;
+
+    if (chunked && remaining == 0) {
+      if (!nextChunk(deadline)) return done ? -1 : (cl->connected() ? 0 : -1);
+    }
+
+    if (!chunked && remaining == 0) { done = true; return -1; }
+
+    const int avail = cl->available();
+
+    if (avail <= 0) {
+      if (!cl->connected()) { done = true; return -1; }
+      return 0;
+    }
+
+    int take = min(avail, max);
+    if (remaining > 0) take = (int)min((long)take, remaining);
+
+    const int got = cl->read(out, take);
+
+    if (got > 0 && remaining > 0) {
+      remaining -= got;
+      if (!chunked && remaining == 0) done = true;
+    }
+
+    return got > 0 ? got : 0;
+
+  }
+
+};
+
+
+// Downloaded speech waiting for the speaker, in PSRAM. Written by the frame
+// reader, drained 16ms at a time by the pump — both on the main loop, so no
+// locking, and a press still lands between any two writes.
+struct AudioRing {
+
+  uint8_t *buf = nullptr;
+  size_t cap = 0;
+  size_t head = 0, tail = 0, count = 0;
+
+  bool ensure() {
+    if (buf) return true;
+    cap = 512 * 1024;
+    buf = (uint8_t *)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
+    return buf != nullptr;
+  }
+
+  void clear() { head = tail = count = 0; }
+
+  size_t write(const uint8_t *data, size_t n) {
+    n = min(n, cap - count);
+    for (size_t i = 0; i < n; i++) { buf[head] = data[i]; head = (head + 1) % cap; }
+    count += n;
+    return n;
+  }
+
+  size_t read(uint8_t *out, size_t n) {
+    n = min(n, count);
+    for (size_t i = 0; i < n; i++) { out[i] = buf[tail]; tail = (tail + 1) % cap; }
+    count -= n;
+    return n;
+  }
+
+};
+
+AudioRing ring;
+
+
+// Feed the speaker from the ring, one short chunk per call, inputs checked
+// every single time. Returns false once an interrupt has been requested.
+bool pumpAudio() {
+
+  static uint8_t out[512];   // 256 samples, 16ms
+
+  const size_t n = ring.read(out, sizeof(out));
+
+  if (n) i2s.write(out, n);
+
+  if (digitalRead(BOOT_BTN) == LOW) stopSpeaking = true;
+
+  TouchPoint t = readTouch();
+  if (t.touched) stopSpeaking = true;
+
+  return !stopSpeaking;
+
+}
+
+
+// The whole spoken exchange over one socket. Uploads the WAV, then reads
+// frames until the server says it is done — playing audio as it arrives,
+// blitting the composed screen the moment it lands, animating "thinking"
+// in the waiting gaps.
+ConverseOutcome converse(const int16_t *mono, size_t samples) {
+
+  ConverseOutcome out;
 
   const uint32_t dataBytes = samples * sizeof(int16_t);
   const uint32_t wavBytes = 44 + dataBytes;
 
   uint8_t *wav = (uint8_t *)heap_caps_malloc(wavBytes, MALLOC_CAP_SPIRAM);
-  if (!wav) return "Out of memory for the recording.";
+
+  if (!wav || !ring.ensure()) { free(wav); return out; }
 
   writeWavHeader(wav, dataBytes, RECORD_RATE);
   memcpy(wav + 44, mono, dataBytes);
 
-  size_t b64Cap = 4 * ((wavBytes + 2) / 3) + 4;
-  unsigned char *b64 = (unsigned char *)heap_caps_malloc(b64Cap, MALLOC_CAP_SPIRAM);
+  // Let the handshake that started during recording finish its work.
+  { const unsigned long t0 = millis();
+    while (!preconnectDone && millis() - t0 < 20'000UL) delay(10); }
 
-  if (!b64) { free(wav); return "Out of memory for the upload."; }
-
-  size_t b64Len = 0;
-  mbedtls_base64_encode(b64, b64Cap, &b64Len, wav, wavBytes);
-  free(wav);
-
-  const char *prefix = "{\"audio_base64\":\"";
-  // surface tells the server this answer is going to a screen and a speaker
-  // in a room, so it composes a layout and skips the phone notification.
-  const char *suffix = "\",\"mime_type\":\"audio/wav\",\"surface\":\"desk\"}";
-
-  const size_t bodyLen = strlen(prefix) + b64Len + strlen(suffix);
-  uint8_t *body = (uint8_t *)heap_caps_malloc(bodyLen + 1, MALLOC_CAP_SPIRAM);
-
-  if (!body) { free(b64); return "Out of memory for the upload."; }
-
-  memcpy(body, prefix, strlen(prefix));
-  memcpy(body + strlen(prefix), b64, b64Len);
-  memcpy(body + strlen(prefix) + b64Len, suffix, strlen(suffix) + 1);
-  free(b64);
-
-  WiFiClientSecure client;
   HTTPClient http;
 
-  String reply;
-
-  if (httpBegin(http, client, "/api/capture")) {
-
-    http.addHeader("Content-Type", "application/json");
-    http.setTimeout(60'000);  // transcription + routing genuinely takes a while
-
-    const int code = http.POST(body, bodyLen);
-
-    if (code == 200) {
-
-      JsonDocument doc;
-
-      if (!deserializeJson(doc, http.getString())) {
-        reply = String((const char *)(doc["result"]["message"] | ""));
-
-      // "be quiet" / "you can talk" come back as a control decision rather
-      // than an answer, so the device does not have to parse intent itself.
-      const char *speechFlag = doc["speech"] | "";
-
-      if (strcmp(speechFlag, "off") == 0) ttsEnabled = false;
-      if (strcmp(speechFlag, "on") == 0) ttsEnabled = true;
-        if (!reply.length()) reply = "Done.";
-      } else {
-        reply = "I did something, but the reply didn't parse.";
-      }
-
-    } else {
-      Serial.printf("[capture] HTTP %d\n", code);
-      reply = "The capture failed - check the logs.";
-    }
-
-    http.end();
-
-  } else {
-    reply = "Couldn't reach Almanac.";
+  if (!http.begin(exchangeClient, String(API_BASE) + "/api/capture")) {
+    free(wav);
+    return out;
   }
 
-  free(body);
-
-  return reply;
-
-}
-
-// Stream WAV TTS straight to the codec. The header is scanned for its "data"
-// chunk rather than assumed to be 44 bytes, and declared sizes are ignored —
-// the server may have concatenated chunks, so the stream plays to its end.
-// True while audio is playing, so a touch can stop it.
-volatile bool stopSpeaking = false;
-
-
-// Find a 4-byte marker in binary data.
-//
-// This exists because the first version searched for "data" using an Arduino
-// String, and a String built from binary truncates at the first NUL. A WAV
-// header is full of NULs — the marker was frequently never found, the audio
-// was never played, and the device sat silently having "spoken". Bytes get
-// searched as bytes.
-static int findMarker(const uint8_t *hay, size_t len, const char *needle) {
-
-  for (size_t i = 0; i + 4 <= len; i++) {
-    if (hay[i] == needle[0] && hay[i + 1] == needle[1]
-     && hay[i + 2] == needle[2] && hay[i + 3] == needle[3]) {
-      return (int)i;
-    }
-  }
-
-  return -1;
-
-}
-
-
-// Speak, and be stoppable.
-//
-// Any touch or a press of BOOT ends playback immediately. Being unable to
-// stop a paragraph of speech is bad on a desk and worse when the wake word
-// fired by accident, which it sometimes will.
-void speak(const String &text) {
-
-  if (!text.length()) return;
-
-  if (!ttsEnabled) {
-    Serial.println("[tts] muted - screen only");
-    return;
-  }
-
-  // No reconfiguration. The server sends 16kHz mono, which is exactly what
-  // the bus is already running for the microphone, so playback borrows it as
-  // it stands. That is what makes it safe to merely pause the wake word
-  // engine instead of destroying and rebuilding it.
-
-  stopSpeaking = false;
-
-  WiFiClientSecure client;
-  HTTPClient http;
-
-  if (!httpBegin(http, client, "/api/tts")) {
-    Serial.println("[tts] could not reach the server");
-    audioConfigure(RECORD_RATE);
-    return;
-  }
-
-  http.addHeader("Content-Type", "application/json");
+  http.addHeader("x-pos-key", API_KEY);
+  http.addHeader("Content-Type", "audio/wav");
+  http.addHeader("x-desk-mic", micArmed ? "on" : "off");
+  http.addHeader("x-desk-asks", String(asksSent));
+  http.addHeader("x-desk-tts", ttsEnabled ? "on" : "off");
   http.setTimeout(60'000);
 
-  JsonDocument req;
-  req["text"] = text;
-  req["format"] = "wav";
-  // 16k so playback matches capture and the bus never changes rate.
-  req["rate"] = 16000;
-  // Asks for the in-room delivery rather than the walking-briefing one.
-  req["surface"] = "desk";
+  const char *wanted[] = { "Transfer-Encoding" };
+  http.collectHeaders(wanted, 1);
 
-  String body;
-  serializeJson(req, body);
+  const int code = http.POST(wav, wavBytes);
 
-  const int code = http.POST(body);
+  free(wav);
 
   if (code != 200) {
-    Serial.printf("[tts] HTTP %d\n", code);
+    Serial.printf("[converse] HTTP %d\n", code);
     http.end();
-    audioConfigure(RECORD_RATE);
-    return;
+    exchangeClient.stop();
+    return out;
   }
 
-  const int declared = http.getSize();
+  HttpBody body;
+  body.begin(&exchangeClient,
+             http.header("Transfer-Encoding").indexOf("chunked") >= 0,
+             http.getSize());
 
-  // Downloaded whole, then played.
-  //
-  // Streaming it straight off the socket played exactly one buffer — 1157
-  // samples, about fifty milliseconds — because readBytes() returns 0 the
-  // moment the TCP buffer is momentarily empty, and the loop treated that as
-  // end-of-stream. It happens on every answer, so the device appeared to
-  // speak silently. writeToStream is the same mechanism the screen fetch
-  // uses and it handles the waiting properly; a megabyte of PSRAM against
-  // eight is not worth being clever about.
-  const size_t CAP = 3 * 1024 * 1024;
+  ring.clear();
+  stopSpeaking = false;
 
-  uint8_t *audio = (uint8_t *)heap_caps_malloc(CAP, MALLOC_CAP_SPIRAM);
+  // Frame parse state.
+  uint8_t head[5];
+  size_t headGot = 0;
+  char type = 0;
+  uint32_t need = 0, got = 0;
 
-  if (!audio) {
-    Serial.println("[tts] no PSRAM for the audio");
-    http.end();
-    audioConfigure(RECORD_RATE);
-    return;
+  // Side buffers: meta/end are small JSON; the screen is a whole PNG.
+  static char meta[2048];
+  const size_t PNG_CAP = 400000;
+  uint8_t *pngBuf = nullptr;
+  bool playbackStarted = false;
+  bool ended = false;
+
+  unsigned long lastData = millis();
+  unsigned long lastAnim = 0;
+  bool animFlip = false;
+
+  static uint8_t chunk[4096];
+
+  while (!ended) {
+
+    // Nothing for 30s means the server died mid-answer; don't sit forever.
+    if (millis() - lastData > 30'000UL) { Serial.println("[converse] stalled"); break; }
+
+    // Keep the speaker fed before anything else.
+    if (playbackStarted && !pumpAudio()) { out.interrupted = true; break; }
+
+    // Waiting is a designed state, not a frozen one.
+    if (!playbackStarted && millis() - lastAnim > 650) {
+      lastAnim = millis();
+      animFlip = !animFlip;
+      drawThinking(animFlip);
+      if (digitalRead(BOOT_BTN) == LOW) { out.interrupted = true; break; }
+      TouchPoint t = readTouch();
+      if (t.touched) { out.interrupted = true; break; }
+    }
+
+    // Header, then payload, fed straight to where it belongs.
+    if (headGot < 5) {
+
+      const int n = body.read(head + headGot, 5 - headGot, 1000);
+      if (n < 0) break;
+      if (n == 0) continue;
+
+      headGot += n;
+      lastData = millis();
+
+      if (headGot == 5) {
+        type = (char)head[0];
+        need = (uint32_t)head[1] | ((uint32_t)head[2] << 8) | ((uint32_t)head[3] << 16) | ((uint32_t)head[4] << 24);
+        got = 0;
+        if (type == 'P' && !pngBuf) pngBuf = (uint8_t *)heap_caps_malloc(PNG_CAP, MALLOC_CAP_SPIRAM);
+        if (need == 0) { headGot = 0; if (type == 'E') ended = true; }
+      }
+
+      continue;
+
+    }
+
+    const uint32_t left = need - got;
+    const int n = body.read(chunk, min((uint32_t)sizeof(chunk), left), 1000);
+
+    if (n < 0) break;
+    if (n == 0) continue;
+
+    lastData = millis();
+
+    if (type == 'A') {
+
+      ring.write(chunk, n);
+
+      // A quarter-second in hand is enough to never underrun and short
+      // enough that speech starts effectively with the first frames.
+      if (!playbackStarted && ring.count >= 8000) {
+        playbackStarted = true;
+        drawPhaseCached(PF_SPEAK, "speaking", "tap to stop", C_MOSS);
+        phase = SPEAKING;
+      }
+
+    } else if (type == 'P' && pngBuf && got + n <= PNG_CAP) {
+
+      memcpy(pngBuf + got, chunk, n);
+
+    } else if ((type == 'M' || type == 'E') && got + n < sizeof(meta)) {
+
+      memcpy(meta + got, chunk, n);
+
+    }
+
+    got += n;
+
+    if (got >= need) {
+
+      if (type == 'M') {
+
+        meta[min((size_t)need, sizeof(meta) - 1)] = 0;
+
+        JsonDocument doc;
+
+        if (!deserializeJson(doc, meta)) {
+
+          const char *kind = doc["kind"] | "";
+          const char *speech = doc["speech"] | "";
+
+          if (strcmp(speech, "off") == 0) ttsEnabled = false;
+          if (strcmp(speech, "on") == 0) ttsEnabled = true;
+
+          if (strcmp(kind, "command") == 0 || strcmp(kind, "silent") == 0) out.commandHandled = true;
+
+          Serial.printf("[converse] heard: %s (%s)\n", (const char *)(doc["heard"] | ""), kind);
+
+        }
+
+      } else if (type == 'P' && pngBuf) {
+
+        // Decoded and painted mid-speech — the decoder lives in PSRAM (see
+        // decodePngTo), so this no longer competes with the live TLS
+        // connection for the internal RAM that used to make these two
+        // mutually exclusive.
+        if (frame || (frame = (uint16_t *)heap_caps_malloc((size_t)LCD_WIDTH * LCD_HEIGHT * 2, MALLOC_CAP_SPIRAM))) {
+          if (decodePngTo(pngBuf, got, frame)) {
+            gfx->draw16bitBeRGBBitmap(0, 0, frame, LCD_WIDTH, LCD_HEIGHT);
+            state.showingAnswer = true;
+            out.gotScreen = true;
+          }
+        }
+
+        free(pngBuf);
+        pngBuf = nullptr;
+
+      } else if (type == 'E') {
+
+        ended = true;
+        out.ok = true;
+
+      }
+
+      headGot = 0;
+
+    }
+
   }
-
-  BufferSink sink(audio, CAP);
-
-  http.writeToStream(&sink);
 
   http.end();
 
-  const size_t total = sink.len;
+  // Free the ~50KB of internal RAM the TLS context holds; the next exchange
+  // pre-connects on the other core anyway.
+  exchangeClient.stop();
 
-  Serial.printf("[tts] downloaded %u of %d bytes\n", (unsigned)total, declared);
+  if (pngBuf) free(pngBuf);
 
-  // Find where the samples start; the header is not a fixed 44 bytes once a
-  // multi-chunk answer has been concatenated.
-  const int at = findMarker(audio, min(total, (size_t)2048), "data");
-
-  size_t pos = (at >= 0) ? (size_t)at + 8 : 44;
-
-  static int16_t out[2048];
-
-  size_t played = 0;
-
-  unsigned long lastCheck = millis();
-
-  while (pos + 1 < total) {
-
-    if (stopSpeaking) {
-      Serial.println("[tts] stopped by touch");
-      break;
+  // Whatever arrived after the read loop ended still deserves to be heard.
+  while (!stopSpeaking && ring.count) {
+    if (!playbackStarted) {
+      playbackStarted = true;
+      drawPhaseCached(PF_SPEAK, "speaking", "tap to stop", C_MOSS);
     }
-
-    const size_t bytesLeft = total - pos;
-
-    // Small enough that a press lands between two of them.
-    //
-    // Playing a kilo-sample at a time meant up to 64ms inside a blocking
-    // write, and the touch check was additionally gated to once every 60ms —
-    // so a tap had to be lucky, and it took two or three to register. A
-    // sixteenth of a second of audio per pass, checked every pass.
-    const size_t n = min(bytesLeft / sizeof(int16_t), (size_t)256);
-
-    if (n == 0) break;
-
-    // The bus is in mono slot mode, so samples go out as they are.
-    i2s.write((uint8_t *)(audio + pos), n * sizeof(int16_t));
-
-    pos += n * sizeof(int16_t);
-    played += n;
-
-    // Every pass, not on a timer.
-    if (digitalRead(BOOT_BTN) == LOW) stopSpeaking = true;
-
-    TouchPoint t = readTouch();
-
-    if (t.touched) stopSpeaking = true;
-
+    if (!pumpAudio()) { out.interrupted = true; break; }
   }
 
-  free(audio);
+  if (stopSpeaking) out.interrupted = true;
 
-  Serial.printf("[tts] done, %u samples%s\n",
-                (unsigned)played, stopSpeaking ? " (interrupted)" : "");
+  Serial.printf("[converse] done ok=%d screen=%d interrupted=%d heap=%u\n",
+                out.ok, out.gotScreen, out.interrupted, (unsigned)ESP.getFreeHeap());
+
+  return out;
 
 }
 
@@ -1090,13 +1411,15 @@ void voiceFlow(bool fromWake = false) {
   // Unmissable on purpose. Anyone in the room can see the moment this
   // device starts recording, which is the point — a listening indicator that
   // needs explaining is not an indicator.
-  drawPhase("listening", fromWake ? "speak now" : "release to send", C_EMBER);
+  drawPhaseCached(PF_LISTEN, "listening", fromWake ? "speak now" : "release to send", C_EMBER);
+
+  // The TLS handshake runs on the other core while the sentence is still
+  // being spoken, which deletes it from the perceived response time.
+  startPreconnect();
 
 #if WAKE_WORD
   // The detector and the recorder cannot share the I2S stream, so the engine
   // steps aside for the length of the conversation and is restarted after.
-  // The bus goes back to stereo too: the engine listens in mono, and the
-  // recorders below de-interleave stereo frames.
   // Paused, not ended.
   //
   // Every question used to tear the engine down and build it back up, which
@@ -1186,25 +1509,15 @@ void voiceFlow(bool fromWake = false) {
   }
 
   phase = THINKING;
-  drawPhase("thinking", "", C_INK_SOFT);
+  drawThinking(false);
 
   asksSent++;
 
-  const String reply = sendCapture(mono, samples);
+  // One connection does the whole conversation: the voice starts as soon as
+  // the first quarter-second of speech has arrived, and the composed screen
+  // lands mid-sentence as a frame on the same socket.
+  const ConverseOutcome result = converse(mono, samples);
   free(mono);
-
-  phase = SPEAKING;
-
-  // The composed screen first, then the voice over the top of it.
-  //
-  // This used to paint the raw reply as plain text, speak, and only fetch
-  // the designed screen afterwards — so the ugly intermediate was the thing
-  // you looked at while it talked, and the good one only appeared if you
-  // touched it. The server has already laid the answer out by the time the
-  // capture returns; there is nothing to wait for.
-  fetchScreen();
-
-  speak(reply);
 
   phase = IDLE;
 #if WAKE_WORD
@@ -1212,9 +1525,13 @@ void voiceFlow(bool fromWake = false) {
   if (fromWake && micArmed) ESP_SR.resume();
 #endif
 
-  // Only re-fetch if the answer was interrupted — otherwise the screen
-  // painted before speaking is still the current one.
-  if (stopSpeaking) fetchScreen();
+  // The screen the exchange painted is current; anything else — a handled
+  // command, an interruption, a failure — changed state the glass has not
+  // seen, so ask for a fresh picture (fresh=1 skips the server's short
+  // source cache: this fetch is the direct result of an action).
+  if (result.commandHandled || result.interrupted || !result.gotScreen) {
+    fetchScreen(true);
+  }
 
 }
 
@@ -1511,6 +1828,11 @@ void setup() {
 
   if (!pollOk) drawOffline("could not reach almanac");
 
+  // The four waiting faces, cached while the resting screen is already up —
+  // boot pays a few seconds once so every exchange after it never shows the
+  // bitmap font again.
+  loadPhaseFrames();
+
   // Without this, loop()'s own "lastPoll == 0 means never polled" check reads
   // as true on its very first pass regardless of how recently the line above
   // ran, so every boot silently spent a second /api/desk round trip within
@@ -1644,7 +1966,7 @@ void loop() {
 
       state.showingAnswer = false;
 
-      fetchScreen();
+      fetchScreen(true);
 
       delay(250);
 
@@ -1708,9 +2030,10 @@ void loop() {
 
       // Re-fetch rather than patch: the server decides what is waiting, and
       // asking it again is both simpler and correct if something else
-      // resolved in the meantime.
+      // resolved in the meantime. fresh, because the nudge count is behind
+      // the server's short source cache and this tap just changed it.
       state.nudgeId = "";
-      fetchScreen();
+      fetchScreen(true);
 
       delay(300);  // debounce the finger that is still descending
 

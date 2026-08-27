@@ -238,6 +238,127 @@ function Eye({ accent, awake }) {
 }
 
 
+// The transient states, designed instead of drawn.
+//
+// "Listening" and "thinking" used to be painted on-device in the built-in
+// 5x7 bitmap font — and at the exchange lengths the old pipeline had, those
+// waiting screens were most of what a person actually looked at. They are
+// rendered here now, in the same typefaces as everything else, fetched ONCE
+// at boot and cached in the device's PSRAM, so they still appear the instant
+// a finger lands or a wake word fires. Thinking has two frames a couple of
+// pixels apart; alternating them is what makes waiting read as alive rather
+// than hung.
+function PhaseEye({ accent, dx = 0, dy = 0, irisInset = 40, dim = false }) {
+
+  const size = 132;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        position: "relative",
+        width: size,
+        height: size,
+        alignItems: "center",
+        justifyContent: "center"
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: size,
+          height: size,
+          borderRadius: size,
+          border: `1px solid ${accent}`,
+          opacity: dim ? 0.2 : 0.34
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: 16,
+          top: 16,
+          width: size - 32,
+          height: size - 32,
+          borderRadius: size,
+          border: `2px solid ${accent}`,
+          opacity: dim ? 0.4 : 0.62
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: irisInset + dx,
+          top: irisInset + dy,
+          width: size - irisInset * 2,
+          height: size - irisInset * 2,
+          borderRadius: size,
+          background: accent,
+          opacity: dim ? 0.75 : 0.95,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center"
+        }}
+      >
+        <div style={{ width: 16, height: 16, borderRadius: 16, background: C.ground }} />
+      </div>
+    </div>
+  );
+
+}
+
+
+const PHASES = {
+  // Ember is "waiting on you" everywhere in this system, and a microphone
+  // that is recording is exactly that. It is also the unmissable colour,
+  // which is the point of a listening indicator in a shared room.
+  "phase-listening": { accent: C.ember, word: "listening", hint: "speak now" },
+  "phase-thinking": { accent: C.tide, word: "thinking", hint: null, dx: -6, dy: -5 },
+  "phase-thinking-2": { accent: C.tide, word: "thinking", hint: null, dx: 6, dy: -5, dim: true },
+  "phase-speaking": { accent: C.moss, word: "speaking", hint: "tap to stop" }
+};
+
+
+function PhaseFace({ kind }) {
+
+  const p = PHASES[kind] || PHASES["phase-thinking"];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, alignItems: "center" }}>
+
+      <div style={{ display: "flex", flexGrow: 5 }} />
+
+      <PhaseEye accent={p.accent} dx={p.dx || 0} dy={p.dy || 0} dim={Boolean(p.dim)} />
+
+      <div
+        style={{
+          display: "flex",
+          fontFamily: "Mono",
+          fontSize: 15,
+          letterSpacing: 4,
+          color: p.accent,
+          marginTop: 34
+        }}
+      >
+        {p.word}
+      </div>
+
+      {p.hint && (
+        <div style={{ display: "flex", fontFamily: "Mono", fontSize: 12, color: C.inkSoft, marginTop: 12 }}>
+          {p.hint}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexGrow: 6 }} />
+
+    </div>
+  );
+
+}
+
+
 function RestingFace({ state, mic, asks, tts }) {
 
   const waiting = state.attention.count > 0;
@@ -342,9 +463,9 @@ function Stat({ block, accent }) {
   const tone = block.tone === "good" ? C.good : block.tone === "bad" ? C.bad : accent;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", marginTop: 14 }}>
+    <div style={{ display: "flex", flexDirection: "column", marginTop: 18 }}>
       <div style={{ display: "flex", alignItems: "flex-end" }}>
-        <div style={{ fontFamily: "Display", fontSize: 62, lineHeight: 1, letterSpacing: -2, color: tone }}>
+        <div style={{ fontFamily: "Display", fontSize: 70, lineHeight: 1, letterSpacing: -2.4, color: tone }}>
           {block.value}
         </div>
         {block.unit && (
@@ -408,22 +529,22 @@ function Bar({ block, accent }) {
 function Rows({ block }) {
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", marginTop: 14 }}>
+    <div style={{ display: "flex", flexDirection: "column", marginTop: 16 }}>
       {block.items.map((row, i) => (
         <div
           key={i}
           style={{
             display: "flex",
             alignItems: "baseline",
-            paddingTop: 7,
-            paddingBottom: 7,
+            paddingTop: 9,
+            paddingBottom: 9,
             borderBottom: i < block.items.length - 1 ? `1px solid ${C.line}` : "none"
           }}
         >
-          <div style={{ display: "flex", fontFamily: "Mono", fontSize: 13, color: C.inkSoft, width: 74 }}>
+          <div style={{ display: "flex", fontFamily: "Mono", fontSize: 13, color: C.inkSoft, width: 88, flexShrink: 0, marginRight: 8 }}>
             {row[0] || ""}
           </div>
-          <div style={{ display: "flex", fontSize: 16, color: C.ink }}>{row[1]}</div>
+          <div style={{ display: "flex", fontSize: 17, color: C.ink }}>{row[1]}</div>
         </div>
       ))}
 
@@ -484,10 +605,11 @@ function AnswerScreen({ spec }) {
           style={{
             display: "flex",
             fontFamily: "Display",
-            fontSize: 27,
-            lineHeight: 1.2,
+            fontSize: 31,
+            lineHeight: 1.15,
+            letterSpacing: -0.6,
             color: C.ink,
-            marginTop: spec.eyebrow ? 9 : 0
+            marginTop: spec.eyebrow ? 10 : 0
           }}
         >
           {spec.headline}
@@ -500,7 +622,7 @@ function AnswerScreen({ spec }) {
         if (block.kind === "rows") return <Rows key={i} block={block} />;
         if (block.kind === "chips") return <Chips key={i} block={block} accent={accent} />;
         return (
-          <div key={i} style={{ display: "flex", fontSize: 15, lineHeight: 1.4, color: C.inkSoft, marginTop: 14 }}>
+          <div key={i} style={{ display: "flex", fontSize: 16, lineHeight: 1.5, color: C.inkSoft, marginTop: 16 }}>
             {block.text}
           </div>
         );
@@ -516,20 +638,7 @@ function AnswerScreen({ spec }) {
 
 // ---------------------------------------------------------------------------
 
-export async function renderDeskScreen({ preview = null, mic = "on", asks = 0, tts = "on" } = {}) {
-
-  const [state, answer] = await Promise.all([
-    buildDeskState(),
-    preview === "resting" ? Promise.resolve(null) : loadDeskScreen().catch(() => null)
-  ]);
-
-  if (preview === "waiting") {
-    state.attention = { count: 3, nudge: { id: "preview", message: "preview" } };
-  }
-
-  const waiting = state.attention.count > 0;
-
-  let fonts;
+async function loadFonts() {
 
   try {
 
@@ -539,7 +648,7 @@ export async function renderDeskScreen({ preview = null, mic = "on", asks = 0, t
       font("DM Mono", 400)
     ]);
 
-    fonts = [
+    return [
       { name: "Display", data: display, weight: 700, style: "normal" },
       { name: "Body", data: body, weight: 500, style: "normal" },
       { name: "Mono", data: mono, weight: 400, style: "normal" }
@@ -552,9 +661,77 @@ export async function renderDeskScreen({ preview = null, mic = "on", asks = 0, t
     // poll sixty seconds later.
     console.error("DESK SCREEN fonts unavailable, falling back:", error.message);
 
-    fonts = undefined;
+    return undefined;
 
   }
+
+}
+
+
+async function buffered(image, headers) {
+
+  const bytes = await image.arrayBuffer();
+
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      "content-type": "image/png",
+      "content-length": String(bytes.byteLength),
+      "cache-control": "no-store",
+      ...headers
+    }
+  });
+
+}
+
+
+// `spec` renders a just-composed answer directly — the streaming exchange
+// pushes the picture down its own socket and must not race the stash write
+// it deliberately put behind waitUntil.
+export async function renderDeskScreen({ preview = null, spec = null, mic = "on", asks = 0, tts = "on", fresh = false } = {}) {
+
+  // Phase frames need no state and no stash: they are the same four pictures
+  // every day, fetched once per boot.
+  if (preview && preview.startsWith("phase-")) {
+
+    const fonts = await loadFonts();
+
+    const image = new ImageResponse(
+      (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            background: C.ground,
+            fontFamily: "Body"
+          }}
+        >
+          <PhaseFace kind={preview} />
+        </div>
+      ),
+      { ...SCREEN, fonts }
+    );
+
+    return buffered(image, { "x-almanac-view": "phase", "x-almanac-next": "60" });
+
+  }
+
+  const [state, answer] = await Promise.all([
+    buildDeskState({ fresh }),
+    spec
+      ? Promise.resolve({ spec, expiresAt: new Date(Date.now() + 75_000).toISOString() })
+      : preview === "resting" ? Promise.resolve(null) : loadDeskScreen().catch(() => null)
+  ]);
+
+  if (preview === "waiting") {
+    state.attention = { count: 3, nudge: { id: "preview", message: "preview" } };
+  }
+
+  const waiting = state.attention.count > 0;
+
+  const fonts = await loadFonts();
 
 
   const image = new ImageResponse(
@@ -652,32 +829,25 @@ export async function renderDeskScreen({ preview = null, mic = "on", asks = 0, t
   // a known length lets it stop reading the moment the image is complete
   // rather than waiting on the socket, and it makes a truncated transfer
   // detectable instead of merely undecodable.
-  const bytes = await image.arrayBuffer();
-
-  // How long the device should wait before asking again. While an answer is
+  //
+  // How long the device should wait before asking again: while an answer is
   // up the screen has a deadline, so it comes back promptly to replace it
   // with the resting face; otherwise a minute is plenty for a clock.
   const nextIn = answer
     ? Math.max(10, Math.ceil((new Date(answer.expiresAt) - Date.now()) / 1000))
     : 60;
 
-  return new Response(bytes, {
-    status: 200,
-    headers: {
-      "content-type": "image/png",
-      "content-length": String(bytes.byteLength),
-      "x-almanac-count": String(state.attention.count),
-      "x-almanac-nudge": state.attention.nudge?.id || "",
-      "x-almanac-next": String(nextIn),
-      // Which face is on the glass. The device cannot see inside the PNG it
-      // is showing, and what a tap should DO depends entirely on that: on the
-      // resting face the middle of the screen is the mute switch, on an
-      // answer it is "put this away". Without this the device applied the
-      // resting layout's zones to every screen, so dismissing an answer
-      // silently muted the microphone instead.
-      "x-almanac-view": answer ? "answer" : "resting",
-      "cache-control": "no-store"
-    }
+  return buffered(image, {
+    "x-almanac-count": String(state.attention.count),
+    "x-almanac-nudge": state.attention.nudge?.id || "",
+    "x-almanac-next": String(nextIn),
+    // Which face is on the glass. The device cannot see inside the PNG it
+    // is showing, and what a tap should DO depends entirely on that: on the
+    // resting face the middle of the screen is the mute switch, on an
+    // answer it is "put this away". Without this the device applied the
+    // resting layout's zones to every screen, so dismissing an answer
+    // silently muted the microphone instead.
+    "x-almanac-view": answer ? "answer" : "resting"
   });
 
 }

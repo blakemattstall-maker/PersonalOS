@@ -12,7 +12,7 @@ import { TOOLS } from "../../../lib/toolDefinitions.js";
 // starting a deep analysis by voice, and having it show up on the dashboard
 // like anything else, is a thing worth being able to do. So they stay
 // available everywhere, and the desk earns an immediate answer alongside.
-const DEFERRED_TOOLS = ["start_deep_thinking"];
+export const DEFERRED_TOOLS = ["start_deep_thinking"];
 
 
 // Does this sentence reach back at something already on screen?
@@ -20,7 +20,7 @@ const DEFERRED_TOOLS = ["start_deep_thinking"];
 // "Tell me more about the first one" needs the previous answer; "what is on
 // my calendar" emphatically does not, and handing it one invites the model to
 // answer the old question again.
-function looksLikeFollowUp(text, previous = null) {
+export function looksLikeFollowUp(text, previous = null) {
 
   const said = (text || "").toLowerCase();
 
@@ -81,7 +81,7 @@ function forSpeech(value) {
 
 // A real answer runs for paragraphs, which is right on a dashboard and
 // punishing from a speaker. Cut at a sentence and point at the screen.
-function boundForSpeech(value) {
+export function boundForSpeech(value) {
 
   const clean = forSpeech(value);
 
@@ -189,7 +189,7 @@ async function withExtraction(text, results, message) {
 // home" pulled up his hometown.
 //
 // Returns a response body to send, or null to carry on routing.
-async function handleDeskCommand(text) {
+export async function handleDeskCommand(text) {
 
   if (typeof text !== "string") return null;
 
@@ -270,6 +270,99 @@ async function handleDeskCommand(text) {
   }
 
   return null;
+
+}
+
+
+// The routing request, buildable from outside the handler.
+//
+// The desk's streaming exchange (lib/deskConverse.js) routes the same words
+// through the same tools with the same date context — and a second copy of
+// this prompt would drift the moment one of them was tuned. One builder, two
+// callers.
+export function buildRouterRequest({ now, userTimezone, isDesk, deskContext, text }) {
+
+  const currentTime = now.toFormat("HH:mm");
+
+  return {
+
+    // gpt-4o-mini needed a hand-written weekday table and worked examples to
+    // get relative dates right, and still missed "a week from tomorrow".
+    // A current model gets them right from the date alone, which is why the
+    // scaffolding below is gone. Measured 10/11 on a routing eval either
+    // way, with a third of the prompt. Memories used to be injected here
+    // too — the router picks a tool and extracts arguments, and never needed
+    // them; the tools that actually reason pull their own rich context.
+    model: MODELS.ROUTER,
+
+
+    messages: [
+
+      {
+        role: "system",
+
+        content: `You are the planning engine for a personal operating system.
+
+Right now it is ${now.toFormat("cccc, yyyy-MM-dd")} at ${currentTime} in ${userTimezone}.
+Resolve every relative date ("tomorrow", "this Thursday", "a week from tomorrow") against that, in that timezone.
+
+FIRST decide which of these the user is doing:
+
+1. CHANGING something that already exists — move, push, reschedule, shift,
+   bump, mark done, finished, did it, cancel, delete, drop, get rid of.
+   -> modify_event for anything on the calendar, modify_task for a to-do.
+   Do this even when they name a day or time; "move my dentist appointment
+   to Thursday" is modify_event, not a schedule question. Do not look it up
+   first — these tools find it themselves from the words the user used, and
+   will say so if nothing matches. Never answer a change request with a
+   query tool.
+
+2. MAKING something new -> create_event or create_task.
+
+3. ASKING about what already exists -> the query tools. For query_schedule
+   choose a range: "today" is today only; "this week" runs through the
+   coming Sunday; if unclear use today through 7 days out.
+
+Call every tool needed to satisfy the request — if one message asks for two things, make two calls.
+${isDesk ? `
+THIS REQUEST CAME FROM THE DESK DEVICE. It was spoken out loud, and the user
+is standing in front of a small screen and a speaker expecting to be answered
+now. Prefer tools that answer from what is already known; when nothing more
+specific fits, general_question can answer from the full profile, memories
+and current figures. Starting a deep analysis is still allowed when the
+question genuinely deserves one — it will be answered immediately as well.` : ""}`
+
+      },
+
+
+      {
+        role: "user",
+        // Context is offered, not imposed.
+        //
+        // The first version prefixed every desk question with the previous
+        // answer and told the model they were related. One weak answer then
+        // poisoned everything after it: asked a fresh question, the model
+        // read the stale answer as the established position and restated it
+        // — "there isn't a recommendation yet" — instead of answering. So
+        // it is attached only when the new words actually reach backwards,
+        // and even then it is labelled as background that may be irrelevant.
+        content: (deskContext && looksLikeFollowUp(text, deskContext))
+          ? `[Background — the desk was just asked "${deskContext.question}" and answered:\n` +
+            `${deskContext.answer}\n` +
+            `Use this ONLY to resolve what the new request points at. If the new ` +
+            `request stands on its own, ignore all of it and answer afresh.]\n\n` +
+            `${text}`
+          : text
+      }
+
+    ],
+
+
+    tools: TOOLS,
+
+    tool_choice: "auto"
+
+  };
 
 }
 
@@ -436,85 +529,9 @@ export default async function handler(req, res) {
     });
 
 
-    const response = await openai.chat.completions.create({
-
-      // gpt-4o-mini needed a hand-written weekday table and worked examples to
-      // get relative dates right, and still missed "a week from tomorrow".
-      // A current model gets them right from the date alone, which is why the
-      // scaffolding below is gone. Measured 10/11 on a routing eval either
-      // way, with a third of the prompt. Memories used to be injected here
-      // too — the router picks a tool and extracts arguments, and never needed
-      // them; the tools that actually reason pull their own rich context.
-      model: MODELS.ROUTER,
-
-
-      messages: [
-
-        {
-          role: "system",
-
-          content: `You are the planning engine for a personal operating system.
-
-Right now it is ${now.toFormat("cccc, yyyy-MM-dd")} at ${currentTime} in ${userTimezone}.
-Resolve every relative date ("tomorrow", "this Thursday", "a week from tomorrow") against that, in that timezone.
-
-FIRST decide which of these the user is doing:
-
-1. CHANGING something that already exists — move, push, reschedule, shift,
-   bump, mark done, finished, did it, cancel, delete, drop, get rid of.
-   -> modify_event for anything on the calendar, modify_task for a to-do.
-   Do this even when they name a day or time; "move my dentist appointment
-   to Thursday" is modify_event, not a schedule question. Do not look it up
-   first — these tools find it themselves from the words the user used, and
-   will say so if nothing matches. Never answer a change request with a
-   query tool.
-
-2. MAKING something new -> create_event or create_task.
-
-3. ASKING about what already exists -> the query tools. For query_schedule
-   choose a range: "today" is today only; "this week" runs through the
-   coming Sunday; if unclear use today through 7 days out.
-
-Call every tool needed to satisfy the request — if one message asks for two things, make two calls.
-${isDesk ? `
-THIS REQUEST CAME FROM THE DESK DEVICE. It was spoken out loud, and the user
-is standing in front of a small screen and a speaker expecting to be answered
-now. Prefer tools that answer from what is already known; when nothing more
-specific fits, general_question can answer from the full profile, memories
-and current figures. Starting a deep analysis is still allowed when the
-question genuinely deserves one — it will be answered immediately as well.` : ""}`
-
-        },
-
-
-        {
-          role: "user",
-          // Context is offered, not imposed.
-          //
-          // The first version prefixed every desk question with the previous
-          // answer and told the model they were related. One weak answer then
-          // poisoned everything after it: asked a fresh question, the model
-          // read the stale answer as the established position and restated it
-          // — "there isn't a recommendation yet" — instead of answering. So
-          // it is attached only when the new words actually reach backwards,
-          // and even then it is labelled as background that may be irrelevant.
-          content: (deskContext && looksLikeFollowUp(text, deskContext))
-            ? `[Background — the desk was just asked "${deskContext.question}" and answered:\n` +
-              `${deskContext.answer}\n` +
-              `Use this ONLY to resolve what the new request points at. If the new ` +
-              `request stands on its own, ignore all of it and answer afresh.]\n\n` +
-              `${text}`
-            : text
-        }
-
-      ],
-
-
-      tools: TOOLS,
-
-      tool_choice: "auto"
-
-    });
+    const response = await openai.chat.completions.create(
+      buildRouterRequest({ now, userTimezone, isDesk, deskContext, text })
+    );
 
 
     const message = response.choices[0].message;

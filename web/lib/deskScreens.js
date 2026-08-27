@@ -187,9 +187,15 @@ export function sanitiseSpec(raw, { waiting = false } = {}) {
 // that quietly bends to fit a layout.
 export async function designDeskScreen({ question, answer, facts = "", waiting = false }) {
 
-  const response = await openai.chat.completions.create({
+  const request = {
 
     model: MODELS.JUDGMENT,
+
+    // Someone is standing at the device while this runs — laying out five
+    // blocks does not need the tier's full deliberation, and its thinking
+    // time was the largest slice of how late the screen landed. Retried
+    // without the knob if the account/model rejects it.
+    reasoning_effort: "low",
 
     response_format: { type: "json_object" },
 
@@ -243,7 +249,20 @@ export async function designDeskScreen({ question, answer, facts = "", waiting =
       }
     ]
 
-  });
+  };
+
+  let response;
+
+  try {
+    response = await openai.chat.completions.create(request);
+  } catch (error) {
+    if (error.status === 400) {
+      delete request.reasoning_effort;
+      response = await openai.chat.completions.create(request);
+    } else {
+      throw error;
+    }
+  }
 
   try {
 
