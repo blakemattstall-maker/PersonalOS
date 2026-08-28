@@ -19,6 +19,17 @@ reading anything.
 
 That's it. It survives reboots. Log: `~/.almanac-laptop.log`.
 
+3. For FILE search ("open my resume on my laptop") macOS needs one
+   permission: System Settings → Privacy & Security → Full Disk Access →
+   "+" → press ⌘⇧G and paste:
+
+       /Library/Developer/CommandLineTools/usr/bin/python3
+
+   That exact path matters: `/usr/bin/python3` is a stub that hands off to
+   this real interpreter, and macOS attributes disk permission to the real
+   one. URLs and app-launching work without this step; only the local file
+   search needs it.
+
 ## Pausing (exams, screen-shares, calls)
 
     touch ~/.almanac-laptop-pause     # nothing opens, instantly
