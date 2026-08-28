@@ -48,6 +48,9 @@ export async function GET(request, context) {
       asks: Math.max(0, Math.min(99, Number(params.get("asks")) || 0)),
       tts: params.get("tts") === "off" ? "off" : "on",
       vol: Math.max(40, Math.min(100, Number(params.get("vol")) || 85)),
+      // -1 (or absent) means no battery reading; the footer omits it.
+      batt: params.has("batt") ? Math.min(100, Number(params.get("batt"))) : -1,
+      chg: params.get("chg") === "1",
       // Set on the fetch right after a tap acted on something — skips the
       // short source cache so the change is visible immediately.
       fresh: params.get("fresh") === "1"

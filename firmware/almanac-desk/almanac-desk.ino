@@ -198,10 +198,39 @@ bool ttsEnabled = true;
 int volumePercent = 85;
 
 void applyVolume() {
-  volumePercent = max(40, min(100, volumePercent));
+  // Top step is 96, not 100: at full scale the DAC clips the loudest word
+  // endings into exactly the "blowing into a mic" burst that was reported.
+  volumePercent = max(40, min(96, volumePercent));
   if (codec) es8311_voice_volume_set(codec, volumePercent, NULL);
   Serial.printf("[vol] %d%%\n", volumePercent);
 }
+
+// The battery, read from the AXP2101 power chip that already manages it.
+// Refreshed on the minute-poll (same I2C bus as touch, same thread), drawn
+// by the server like everything else. -1 means "no reading yet / no
+// battery" and the screen simply omits the indicator.
+int battPercent = -1;
+bool battOnUsb = false;
+
+uint8_t axpRead(uint8_t reg, uint8_t fallback = 0xFF) {
+  Wire.beginTransmission(0x34);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return fallback;
+  if (Wire.requestFrom(0x34, 1) != 1) return fallback;
+  return Wire.read();
+}
+
+void refreshBattery() {
+
+  // 0xA4: fuel-gauge percentage, 0-100. 0x00 bit 5: VBUS good (USB power).
+  const uint8_t pct = axpRead(0xA4);
+  const uint8_t status = axpRead(0x00);
+
+  battPercent = (pct <= 100) ? (int)pct : -1;
+  battOnUsb = (status != 0xFF) && (status & 0x20);
+
+}
+
 
 // A tap must change the glass NOW, not after a network round trip.
 //
@@ -835,10 +864,11 @@ bool fetchScreen(bool fresh = false) {
 
   // The device owns the microphone's state, so it tells the renderer what to
   // draw rather than the other way round.
-  char path[96];
-  snprintf(path, sizeof(path), "/api/desk?screen=1&mic=%s&asks=%d&tts=%s&vol=%d%s",
+  char path[128];
+  snprintf(path, sizeof(path), "/api/desk?screen=1&mic=%s&asks=%d&tts=%s&vol=%d&batt=%d&chg=%d%s",
            micArmed ? "on" : "off", asksSent, ttsEnabled ? "on" : "off",
-           volumePercent, fresh ? "&fresh=1" : "");
+           volumePercent, battPercent, battOnUsb ? 1 : 0,
+           fresh ? "&fresh=1" : "");
 
   if (!httpBegin(http, client, path)) return false;
 
@@ -1608,7 +1638,12 @@ bool pumpAudio() {
 
   static uint8_t out[512];   // 256 samples, 16ms
 
-  const size_t n = ring.read(out, sizeof(out));
+  // Whole samples only. The ring is filled by arbitrary-length network
+  // slices, so its count is transiently odd mid-frame — and writing an odd
+  // byte count to I2S shifts every following sample by one byte, which
+  // plays as a blast of static until another odd write realigns it. The
+  // held-back byte's partner arrives within milliseconds.
+  const size_t n = ring.read(out, min(sizeof(out), ring.count & ~(size_t)1));
 
   if (n) {
 
@@ -2505,6 +2540,10 @@ void loop() {
 
     Serial.println("[poll] polling /api/desk...");
     lastPoll = nowMs;
+
+    refreshBattery();
+    Serial.printf("[batt] %d%% usb=%d\n", battPercent, battOnUsb ? 1 : 0);
+
     if (WiFi.status() != WL_CONNECTED) {
       Serial.println("[wifi] connection lost");
       phase = OFFLINE;

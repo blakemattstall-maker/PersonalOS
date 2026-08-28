@@ -688,7 +688,7 @@ async function buffered(image, headers) {
 // `spec` renders a just-composed answer directly — the streaming exchange
 // pushes the picture down its own socket and must not race the stash write
 // it deliberately put behind waitUntil.
-export async function renderDeskScreen({ preview = null, spec = null, mic = "on", asks = 0, tts = "on", vol = 85, fresh = false } = {}) {
+export async function renderDeskScreen({ preview = null, spec = null, mic = "on", asks = 0, tts = "on", vol = 85, batt = -1, chg = false, fresh = false } = {}) {
 
   // Phase frames need no state and no stash: they are the same four pictures
   // every day, fetched once per boot.
@@ -844,15 +844,36 @@ export async function renderDeskScreen({ preview = null, spec = null, mic = "on"
 
             </div>
           )}
-          <div
-            style={{
-              display: "flex",
-              fontFamily: "Mono",
-              fontSize: 12,
-              color: waiting ? C.ember : C.moss
-            }}
-          >
-            almanac
+          <div style={{ display: "flex", alignItems: "center" }}>
+
+            {/* Battery, when the device reported one. Moss while on USB
+                power (charging or topped up), ember only when genuinely low
+                on its own cell — the one battery state that needs him. */}
+            {batt >= 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  fontFamily: "Mono",
+                  fontSize: 12,
+                  color: chg ? C.moss : batt < 20 ? C.ember : C.inkSoft,
+                  marginRight: 14
+                }}
+              >
+                {batt}%
+              </div>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                fontFamily: "Mono",
+                fontSize: 12,
+                color: waiting ? C.ember : C.moss
+              }}
+            >
+              almanac
+            </div>
+
           </div>
         </div>
 
