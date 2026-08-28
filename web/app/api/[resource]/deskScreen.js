@@ -688,7 +688,7 @@ async function buffered(image, headers) {
 // `spec` renders a just-composed answer directly — the streaming exchange
 // pushes the picture down its own socket and must not race the stash write
 // it deliberately put behind waitUntil.
-export async function renderDeskScreen({ preview = null, spec = null, mic = "on", asks = 0, tts = "on", fresh = false } = {}) {
+export async function renderDeskScreen({ preview = null, spec = null, mic = "on", asks = 0, tts = "on", vol = 85, fresh = false } = {}) {
 
   // Phase frames need no state and no stash: they are the same four pictures
   // every day, fetched once per boot.
@@ -783,7 +783,9 @@ export async function renderDeskScreen({ preview = null, spec = null, mic = "on"
               microphone off
             </div>
           ) : (
-            <div style={{ display: "flex", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
+
+              {/* The speech switch. Tap zone: the left ~third of the footer. */}
               <div
                 style={{
                   display: "flex",
@@ -804,6 +806,42 @@ export async function renderDeskScreen({ preview = null, spec = null, mic = "on"
               >
                 {tts === "off" ? "voice off" : "voice on"}
               </div>
+
+              {/* Volume, always on the glass: this lives in a shared room,
+                  and reaching the speaker's level must never require either
+                  a voice command or a phone. The x-positions here are the
+                  device's tap zones (VOL_DOWN/VOL_UP in the firmware) — the
+                  two move together. */}
+              <div style={{ display: "flex", flexGrow: 1 }} />
+
+              <div style={{ display: "flex", alignItems: "center" }}>
+
+                <div style={{ display: "flex", fontFamily: "Mono", fontSize: 16, color: C.inkSoft, padding: "0 14px" }}>
+                  −
+                </div>
+
+                {[0, 1, 2, 3, 4].map(i => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      width: 5,
+                      height: 5,
+                      borderRadius: 5,
+                      marginRight: i < 4 ? 5 : 0,
+                      background: i < Math.max(0, Math.min(5, Math.round((vol - 40) / 12))) ? C.inkSoft : C.line
+                    }}
+                  />
+                ))}
+
+                <div style={{ display: "flex", fontFamily: "Mono", fontSize: 16, color: C.inkSoft, padding: "0 14px" }}>
+                  +
+                </div>
+
+              </div>
+
+              <div style={{ display: "flex", width: 14 }} />
+
             </div>
           )}
           <div

@@ -82,7 +82,14 @@ es8311_handle_t codec = NULL;
 
 const uint32_t RECORD_RATE = 16000;
 
+// What slot mode the bus is actually in, so the recorders read it correctly:
+// mono delivers every sample as the microphone, stereo duplicates the mic
+// into both slots and only one of each pair is wanted.
+bool busIsMono = false;
+
 bool audioConfigure(uint32_t rate, bool mono = false) {
+
+  busIsMono = mono;
 
   i2s.end();
 
@@ -178,6 +185,18 @@ volatile bool wakeFired = false;
 // resting face and a pair of voice commands, because wanting the screen
 // without the noise is a normal thing to want in a shared room.
 bool ttsEnabled = true;
+
+// Speaker level. The codec lives here, so the number lives here — the
+// screen only draws it (the dots in the resting footer). Five steps across
+// 40..100; "louder"/"quieter" by voice and the −/+ on the glass both land
+// here. Never zero: silence is what the voice switch is for.
+int volumePercent = 85;
+
+void applyVolume() {
+  volumePercent = max(40, min(100, volumePercent));
+  if (codec) es8311_voice_volume_set(codec, volumePercent, NULL);
+  Serial.printf("[vol] %d%%\n", volumePercent);
+}
 
 #if WAKE_WORD
 
@@ -591,10 +610,10 @@ bool fetchScreen(bool fresh = false) {
 
   // The device owns the microphone's state, so it tells the renderer what to
   // draw rather than the other way round.
-  char path[80];
-  snprintf(path, sizeof(path), "/api/desk?screen=1&mic=%s&asks=%d&tts=%s%s",
+  char path[96];
+  snprintf(path, sizeof(path), "/api/desk?screen=1&mic=%s&asks=%d&tts=%s&vol=%d%s",
            micArmed ? "on" : "off", asksSent, ttsEnabled ? "on" : "off",
-           fresh ? "&fresh=1" : "");
+           volumePercent, fresh ? "&fresh=1" : "");
 
   if (!httpBegin(http, client, path)) return false;
 
@@ -813,10 +832,13 @@ void drawPhase(const char *big, const char *small, uint16_t color) {
 // Voice: record while held -> capture -> speak the reply.
 // ---------------------------------------------------------------------------
 
+// The BOOT button is the only push-to-talk now. The bottom touch strip used
+// to be one too, and it sat on exactly the same pixels as the voice switch —
+// with the talk check running first, the switch could never be reached. The
+// wake word and the physical button cover talking; the footer belongs to
+// its controls.
 bool stillHeld() {
-  if (digitalRead(BOOT_BTN) == LOW) return true;
-  TouchPoint t = readTouch();
-  return t.touched && t.y >= TALK_BAR_TOP;
+  return digitalRead(BOOT_BTN) == LOW;
 }
 
 // A fixed window, used after a wake word: there is no button being held to
@@ -897,11 +919,19 @@ size_t recordFixed(int16_t *mono, size_t maxSamples) {
 }
 
 
-// 16kHz stereo 16-bit, downmixed to mono on the fly. 10s hard cap.
+// 16kHz 16-bit, downmixed to mono on the fly. 10s hard cap.
+//
+// The stride follows the bus. With the wake word engine armed the bus runs
+// mono and every sample is the microphone; assuming stereo there — which
+// this function did — silently kept every OTHER sample, which is a
+// half-speed recording that transcribes as gibberish. The button path with
+// the mic armed was the one combination that hit it.
 size_t recordWhileHeld(int16_t *mono, size_t maxSamples) {
 
-  const size_t CHUNK = 2048;  // stereo frames per read
-  static int32_t stereo[2048];
+  const size_t CHUNK = 2048;
+  static int32_t raw[2048];
+
+  const size_t stride = busIsMono ? 1 : 2;
 
   size_t written = 0;
 
@@ -913,13 +943,13 @@ size_t recordWhileHeld(int16_t *mono, size_t maxSamples) {
     // doesn't upload 80ms of chair squeak.
     if (millis() - start > 500 && !stillHeld()) break;
 
-    const size_t want = min(CHUNK, maxSamples - written) * 2 * sizeof(int16_t);
-    const size_t got = i2s.readBytes((char *)stereo, want);
+    const size_t want = min(CHUNK, maxSamples - written) * stride * sizeof(int16_t);
+    const size_t got = i2s.readBytes((char *)raw, min(want, sizeof(raw)));
 
-    const int16_t *samples = (const int16_t *)stereo;
+    const int16_t *samples = (const int16_t *)raw;
 
-    for (size_t i = 0; i + 1 < got / sizeof(int16_t); i += 2) {
-      mono[written++] = samples[i];  // left slot carries the mic
+    for (size_t i = 0; i + (stride - 1) < got / sizeof(int16_t); i += stride) {
+      mono[written++] = samples[i];  // in stereo, the left slot carries the mic
       if (written >= maxSamples) break;
     }
 
@@ -1066,13 +1096,14 @@ struct HttpBody {
     started = true;
 
     if (size == 0) {
-      // Trailer section: lines until the blank one.
-      int c, prev = 0;
-      while ((c = rawByte(deadline)) >= 0) {
-        if (c == '\n' && prev == '\n') break;
-        if (c != '\r') prev = c;
-        else if (prev == '\n') { }
-        if (c == '\n' && prev != '\n') prev = '\n';
+      // Trailer section: consume lines until the empty one that ends the
+      // body. Usually there are no trailers, so this is one bare CRLF.
+      int lineLen = 0;
+      for (;;) {
+        const int c = rawByte(deadline);
+        if (c < 0) break;
+        if (c == '\n') { if (lineLen == 0) break; lineLen = 0; continue; }
+        if (c != '\r') lineLen++;
       }
       done = true;
       return false;
@@ -1131,7 +1162,9 @@ struct AudioRing {
 
   bool ensure() {
     if (buf) return true;
-    cap = 512 * 1024;
+    // A megabyte holds ~32 seconds of 16kHz speech — comfortably the whole
+    // answer, since synthesis streams in ~3.5x faster than playback drains.
+    cap = 1024 * 1024;
     buf = (uint8_t *)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
     return buf != nullptr;
   }
@@ -1262,6 +1295,12 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
     // Keep the speaker fed before anything else.
     if (playbackStarted && !pumpAudio()) { out.interrupted = true; break; }
 
+    // Backpressure: synthesis arrives ~3.5x faster than the speaker drains,
+    // so a long answer would overflow the ring and silently drop audio
+    // mid-sentence. When the ring is nearly full, stop reading the socket
+    // and just play — TCP holds the rest where it is.
+    if (playbackStarted && ring.count > ring.cap - 32 * 1024) continue;
+
     // Waiting is a designed state, not a frozen one.
     if (!playbackStarted && millis() - lastAnim > 650) {
       lastAnim = millis();
@@ -1338,9 +1377,13 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
 
           const char *kind = doc["kind"] | "";
           const char *speech = doc["speech"] | "";
+          const char *vol = doc["volume"] | "";
 
           if (strcmp(speech, "off") == 0) ttsEnabled = false;
           if (strcmp(speech, "on") == 0) ttsEnabled = true;
+
+          if (strcmp(vol, "up") == 0) { volumePercent += 12; applyVolume(); }
+          if (strcmp(vol, "down") == 0) { volumePercent -= 12; applyVolume(); }
 
           if (strcmp(kind, "command") == 0 || strcmp(kind, "silent") == 0) out.commandHandled = true;
 
@@ -1427,7 +1470,11 @@ void voiceFlow(bool fromWake = false) {
   // again. It worked for the first few and then quietly stopped: the wake
   // word "worked accurately at first, then after a bit of runtime stopped".
   // Pausing keeps the models loaded and the tasks alive.
-  if (fromWake) ESP_SR.pause();
+  //
+  // Whenever the engine is armed — not only on a wake. The button path used
+  // to leave it running, so the engine and the recorder raced each other for
+  // the same samples and each got half a conversation.
+  if (micArmed) ESP_SR.pause();
 #endif
 
   const size_t MAX_SAMPLES = RECORD_RATE * 10;
@@ -1522,7 +1569,7 @@ void voiceFlow(bool fromWake = false) {
   phase = IDLE;
 #if WAKE_WORD
   // Back to listening for the wake word only — never left recording.
-  if (fromWake && micArmed) ESP_SR.resume();
+  if (micArmed) ESP_SR.resume();
 #endif
 
   // The screen the exchange painted is current; anything else — a handled
@@ -1864,6 +1911,9 @@ void loop() {
       attempts = 0;
       phase = IDLE;
       fetchScreen();
+      // A boot that started offline never cached the waiting faces; the
+      // first reconnect is the next chance.
+      if (!phaseFrames[PF_LISTEN]) loadPhaseFrames();
       return;
     }
 
@@ -1945,15 +1995,10 @@ void loop() {
 
   if (t.touched) {
 
-    if (t.y >= TALK_BAR_TOP) {
-      voiceFlow();
-      return;
-    }
-
-    // On a composed answer, a tap anywhere above the talk bar means "done
-    // with this" — not "mute", which is what the resting face's zones would
-    // otherwise have said, and which is a genuinely bad thing to do by
-    // accident in a shared room.
+    // On a composed answer, a tap anywhere means "done with this" — not
+    // "mute", which is what the resting face's zones would otherwise have
+    // said, and which is a genuinely bad thing to do by accident in a
+    // shared room.
     if (state.showingAnswer) {
 
       // Drawn before the network call, not after. Waiting on a round trip to
@@ -1974,16 +2019,38 @@ void loop() {
 
     }
 
-    // The voice switch. Speech off means the screen still answers.
+    // The footer strip, split by x into its three controls. These bounds
+    // mirror the layout deskScreen.js draws — the two must move together.
+    // Left: the voice switch (speech off still answers on the screen).
+    // Middle/right: volume down and up, one dot per press.
     if (!state.showingAnswer && t.y >= FOOTER_TOP) {
 
-      ttsEnabled = !ttsEnabled;
+      if (t.x < 112) {
 
-      Serial.printf("[tts] %s by button\n", ttsEnabled ? "on" : "off");
+        ttsEnabled = !ttsEnabled;
+
+        Serial.printf("[tts] %s by button\n", ttsEnabled ? "on" : "off");
+
+      } else if (t.x < 195) {
+
+        volumePercent -= 12;
+        applyVolume();
+
+      } else if (t.x < 290) {
+
+        volumePercent += 12;
+        applyVolume();
+
+      } else {
+
+        delay(150);
+        return;
+
+      }
 
       fetchScreen();
 
-      delay(300);
+      delay(250);
 
       return;
 

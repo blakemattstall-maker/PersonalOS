@@ -269,6 +269,19 @@ export async function handleDeskCommand(text) {
              result: { success: true, message: "Voice is back on." } };
   }
 
+  // Volume, in steps. The device owns the actual level (it owns the codec);
+  // this just tells it which way. Silent on purpose — the next answer
+  // demonstrates the change better than an announcement at the old volume.
+  if (/^(louder|volume up|turn (it|that|the volume) up|speak up)$/.test(said)) {
+    return { success: true, tool: "desk_control", volume: "up",
+             result: { success: true, message: "" } };
+  }
+
+  if (/^(quieter|softer|lower|volume down|turn (it|that|the volume) down|not so loud)$/.test(said)) {
+    return { success: true, tool: "desk_control", volume: "down",
+             result: { success: true, message: "" } };
+  }
+
   return null;
 
 }

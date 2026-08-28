@@ -47,6 +47,7 @@ export async function GET(request, context) {
       mic: params.get("mic") === "off" ? "off" : "on",
       asks: Math.max(0, Math.min(99, Number(params.get("asks")) || 0)),
       tts: params.get("tts") === "off" ? "off" : "on",
+      vol: Math.max(40, Math.min(100, Number(params.get("vol")) || 85)),
       // Set on the fetch right after a tap acted on something — skips the
       // short source cache so the change is visible immediately.
       fresh: params.get("fresh") === "1"

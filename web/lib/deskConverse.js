@@ -276,8 +276,13 @@ export function deskConverse({ audio, mime, device }) {
             kind: "command",
             heard: text,
             message: command.result?.message || "",
-            ...(command.speech ? { speech: command.speech } : {})
+            ...(command.speech ? { speech: command.speech } : {}),
+            ...(command.volume ? { volume: command.volume } : {})
           });
+
+          // "You can talk" must be able to say so: the mute it lifts was
+          // still in force when this request arrived.
+          if (command.speech === "on") device.tts = true;
 
           if (command.result?.message) say(command.result.message);
 
