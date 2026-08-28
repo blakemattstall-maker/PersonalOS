@@ -366,6 +366,46 @@ export async function executeTool(data, originalText = null) {
 
 
 
+      case "open_on_laptop": {
+
+        const { pushLaptopCommand } = await import("./laptopQueue.js");
+
+        const SITES = {
+          gmail: "https://mail.google.com/mail/u/0/",
+          docs: "https://docs.google.com/document/u/0/",
+          calendar: "https://calendar.google.com/calendar/u/0/",
+          drive: "https://drive.google.com/drive/u/0/"
+        };
+
+        const url = data.url && /^https?:\/\//.test(data.url) ? data.url
+          : data.site && SITES[data.site] ? SITES[data.site]
+          : data.search ? `https://www.google.com/search?q=${encodeURIComponent(data.search)}`
+          : null;
+
+        if (!url) {
+          result = { success: false, message: "I wasn't sure what to open on the laptop." };
+          break;
+        }
+
+        const { pushed, online } = await pushLaptopCommand({
+          url,
+          label: data.search || data.site || "link"
+        });
+
+        result = {
+          success: pushed,
+          message: !pushed ? "That didn't look like something I can open."
+            : online ? "Opening on your laptop."
+            : "Queued for your laptop — the helper doesn't look like it's running.",
+          data: { url }
+        };
+
+        break;
+
+      }
+
+
+
       case "query_dining":
 
         result = await answerDiningQuestion({

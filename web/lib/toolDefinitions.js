@@ -758,6 +758,36 @@ export const TOOLS = [
       }
 
     }
+  },
+
+
+  {
+    type: "function",
+    function: {
+
+      name: "open_on_laptop",
+      description: "Open something in the browser on the user's laptop. ONLY when the user EXPLICITLY names the laptop/computer as the destination — 'google X on my laptop', 'open gmail on my computer', 'pull that doc up on my laptop'. NEVER volunteer this: if the laptop was not named, do not call it — an unexpected window opening on his machine (during an exam, a call, a screen-share) is genuinely harmful. Pair it freely with other tools when he asks for both ('draft the email and open it on my laptop' = draft_email + open_on_laptop).",
+
+      parameters: {
+        type: "object",
+        properties: {
+          search: {
+            type: "string",
+            description: "A web search to run, in his words ('espresso machines under 200')."
+          },
+          site: {
+            type: "string",
+            enum: ["gmail", "docs", "calendar", "drive"],
+            description: "A known site to open, when he named one."
+          },
+          url: {
+            type: "string",
+            description: "An exact URL, only when he gave one or it is unambiguous."
+          }
+        }
+      }
+
+    }
   }
 
 ];

@@ -465,6 +465,28 @@ export function deskConverse({ audio, mime, device, signal = null }) {
 
         }
 
+        // "…and open it on my laptop": a tool that produced a real URL gets
+        // that exact URL delivered — the router cannot chain one tool's
+        // output into another, so the handoff happens here. Gated hard on
+        // the spoken words actually naming the laptop, because an unasked
+        // window opening on his machine is the one behavior this feature
+        // must never have.
+        if (/\b(laptop|computer|my mac)\b/i.test(text)) {
+
+          const produced = results
+            .filter(r => r.tool !== "open_on_laptop" && /^https?:\/\//.test(r.result?.data?.url || ""))
+            .map(r => ({ url: r.result.data.url, label: r.tool.replace(/_/g, " ") }));
+
+          if (produced.length) {
+            waitUntil(
+              import("./laptopQueue.js")
+                .then(m => Promise.all(produced.map(u => m.pushLaptopCommand(u))))
+                .catch(error => console.error("DESK laptop handoff failed:", error.message))
+            );
+          }
+
+        }
+
         // Durable facts ride behind the response; the room is not waiting on
         // a database write.
         waitUntil(

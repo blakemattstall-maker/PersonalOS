@@ -199,13 +199,16 @@ export async function handleDeskCommand(text) {
   const said = text
     .toLowerCase()
     .replace(/[^a-z\s]/g, " ")
-    .replace(/\b(jarvis|hey|ok|okay|um|uh|please|can you|could you|just)\b/g, " ")
+    // "travis"/"jervis": what the transcriber actually hears the wake word
+    // as, often enough that "Jarvis, never mind" once became "Travis
+    // Neverland" and got routed as a question.
+    .replace(/\b(jarvis|travis|jervis|hey|ok|okay|um|uh|please|can you|could you|just)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
   const DISMISS = new RegExp(
     "^(" + [
-      "never ?mind", "nevermind", "forget it", "forget that",
+      "never ?mind", "nevermind", "never ?land", "forget it", "forget that",
       "go back", "go back home", "go home", "back", "home",
       "back to home", "back to the home ?screen", "home ?screen",
       "dismiss( that| it)?", "clear( that| it| the screen)?",

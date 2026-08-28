@@ -295,6 +295,26 @@ async function desk(req, res) {
 }
 
 
+// The laptop helper's poll. GET drains the command queue — delivery is the
+// acknowledgement — and stamps the heartbeat the desk consults to say
+// "opening on your laptop" versus "your helper isn't running". Commands
+// only ever enter the queue from an explicit spoken instruction that named
+// the laptop (see open_on_laptop in lib/toolDefinitions.js).
+async function laptop(req, res) {
+
+  if (req.method === "GET") {
+
+    const { drainLaptopCommands } = await import("../../../lib/laptopQueue.js");
+
+    return res.status(200).json({ success: true, commands: await drainLaptopCommands() });
+
+  }
+
+  return res.status(405).json({ error: "Method not allowed" });
+
+}
+
+
 async function projects(req, res) {
 
   if (req.method === "GET") {
@@ -996,7 +1016,7 @@ async function graph(req, res) {
 }
 
 
-const RESOURCES = { data, history, nudges, desk, projects, deepThoughts, brief, settings, diag, practice, people, news, finance, graph, dining, health, jobs };
+const RESOURCES = { data, history, nudges, desk, laptop, projects, deepThoughts, brief, settings, diag, practice, people, news, finance, graph, dining, health, jobs };
 
 
 export default async function handler(req, res) {
