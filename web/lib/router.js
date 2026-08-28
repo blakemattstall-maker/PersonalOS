@@ -385,25 +385,12 @@ export async function executeTool(data, originalText = null) {
 
         if (data.shortcut) {
           command = { kind: "shortcut", query: data.shortcut, label: data.shortcut };
-          spoken = `Running your ${data.shortcut} shortcut on your laptop.`;
+          spoken = `Ran your ${data.shortcut} shortcut on your laptop.`;
         } else if (data.message_to) {
-          // The people table supplies the number; the laptop just opens the
-          // thread. No number saved is an answer, not a guess.
-          const { default: supabase } = await import("./supabase.js");
-          const { data: person } = await supabase
-            .from("people")
-            .select("name, phone")
-            .ilike("name", `%${data.message_to.trim()}%`)
-            .limit(1)
-            .maybeSingle();
-          const phone = (person?.phone || "").replace(/[^+\d]/g, "");
-          if (!phone) {
-            result = { success: false,
-                       message: `I don't have a phone number saved for ${data.message_to}.` };
-            break;
-          }
-          command = { kind: "sms", phone, label: `message ${person.name}` };
-          spoken = `Opening your conversation with ${person.name} on your laptop.`;
+          // The laptop searches its OWN Contacts app — names and numbers
+          // never leave the machine; only the spoken name travels.
+          command = { kind: "sms", query: data.message_to, label: `message ${data.message_to}` };
+          spoken = `Your conversation with ${data.message_to} is open on your laptop.`;
         } else if (data.app) {
           command = { kind: "app", app: data.app, label: data.app };
           spoken = `Opening ${data.app} on your laptop.`;
@@ -426,16 +413,41 @@ export async function executeTool(data, originalText = null) {
           break;
         }
 
-        const { pushed, online, paused } = await pushLaptopCommand(command);
+        const { pushed, online, paused, id } = await pushLaptopCommand(command);
+
+        // The truth-wait. The helper polls within two seconds, executes,
+        // and reports what actually happened; a few seconds of patience
+        // here is what lets the voice say "opened" only about things that
+        // opened, and repeat the machine's own reason when they did not.
+        let outcome = null;
+
+        if (pushed && online) {
+          const { awaitLaptopResult } = await import("./laptopQueue.js");
+          outcome = await awaitLaptopResult(id);
+        }
 
         result = {
-          success: pushed,
+          success: pushed && outcome?.ok !== false,
           message: paused ? "Laptop control is paused. Say resume laptop control first."
             : !pushed ? "That didn't look like something I can open."
-            : online ? spoken
-            : "Queued for your laptop — the helper doesn't look like it's running.",
+            : !online ? "Queued for your laptop — the helper doesn't look like it's running."
+            : outcome === null ? "Sent to your laptop, but it hasn't confirmed yet."
+            : outcome.ok ? (outcome.detail || spoken)
+            : `Your laptop says: ${outcome.detail || "that didn't work"}.`,
           data: { ...command }
         };
+
+        break;
+
+      }
+
+
+
+      case "run_chain": {
+
+        const { runChain } = await import("./chains.js");
+
+        result = await runChain({ request: data.request });
 
         break;
 
@@ -456,16 +468,25 @@ export async function executeTool(data, originalText = null) {
           break;
         }
 
-        const { pushed, online, paused } = await pushLaptopCommand({
+        const { pushed, online, paused, id } = await pushLaptopCommand({
           kind: "verb", query: data.verb, label: data.verb.replace(/_/g, " ")
         });
 
+        let outcome = null;
+
+        if (pushed && online) {
+          const { awaitLaptopResult } = await import("./laptopQueue.js");
+          outcome = await awaitLaptopResult(id);
+        }
+
         result = {
-          success: pushed,
+          success: pushed && outcome?.ok !== false,
           message: paused ? "Laptop control is paused. Say resume laptop control first."
             : !pushed ? "That didn't go through."
-            : online ? `Done — ${data.verb.replace(/_/g, " ")} on your laptop.`
-            : "Queued for your laptop — the helper doesn't look like it's running.",
+            : !online ? "Queued for your laptop — the helper doesn't look like it's running."
+            : outcome === null ? "Sent to your laptop, but it hasn't confirmed yet."
+            : outcome.ok ? `Done — ${data.verb.replace(/_/g, " ")} on your laptop.`
+            : `Your laptop says: ${outcome.detail || "that didn't work"}.`,
           data: { verb: data.verb }
         };
 

@@ -310,6 +310,22 @@ async function laptop(req, res) {
 
   }
 
+  // The helper reporting what a command actually did, so the desk's voice
+  // can tell the truth instead of optimism.
+  if (req.method === "POST" && req.body?.action === "report") {
+
+    const { reportLaptopResult } = await import("../../../lib/laptopQueue.js");
+
+    await reportLaptopResult({
+      id: req.body.id,
+      ok: req.body.ok === true,
+      detail: req.body.detail || ""
+    });
+
+    return res.status(200).json({ success: true });
+
+  }
+
   return res.status(405).json({ error: "Method not allowed" });
 
 }

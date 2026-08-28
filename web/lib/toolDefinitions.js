@@ -811,6 +811,28 @@ export const TOOLS = [
     type: "function",
     function: {
 
+      name: "run_chain",
+      description: "Execute a MULTI-STEP request where a LATER step needs an EARLIER step's output — 'research the top espresso machines, then put a comparison in a doc, then draft an email to my roommate about which to buy': the doc needs the research, the email needs the doc. Runs in the background and reports to the dashboard and desk when done. Do NOT use this for a single action, or for several INDEPENDENT actions (call their tools directly, together). Never for anything involving the laptop.",
+
+      parameters: {
+        type: "object",
+        properties: {
+          request: {
+            type: "string",
+            description: "The complete multi-step request, verbatim, every specific included — the executor sees only this."
+          }
+        },
+        required: ["request"]
+      }
+
+    }
+  },
+
+
+  {
+    type: "function",
+    function: {
+
       name: "laptop_action",
       description: "One fixed media/system action on the user's laptop, from a closed menu — nothing outside the verb list is possible. ONLY when the user EXPLICITLY names the laptop/computer: 'pause spotify on my laptop', 'turn my laptop volume down', 'sleep my laptop screen'. NEVER volunteer it; if the laptop was not named, do not call it.",
 

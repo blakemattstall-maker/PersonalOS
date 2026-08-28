@@ -58,10 +58,31 @@ test("shortcuts only run what exists, and the allowlist narrows it", () => {
 
 test("the messages kind can open a thread and nothing else", () => {
   assert.match(HELPER, /open", f"sms:\{phone\}/);
-  assert.match(QUEUE, /\^\\\+\?\\d\{7,15\}\$/);
+  // Contacts are resolved ON the laptop — only the spoken name travels.
+  assert.match(HELPER, /application "Contacts"/);
   // The only route into Messages is the sms: URL, which opens a thread.
   // Scripting Messages is the send pathway, and it must not exist here.
   assert.ok(!HELPER.includes('application "Messages"'), "no Messages scripting in the helper");
+});
+
+test("chains can never reach the laptop or nest", () => {
+  const CHAINS = read("web/lib/chains.js");
+  // The allowlist IS the boundary — only what it names is callable.
+  const allow = CHAINS.slice(CHAINS.indexOf("CHAIN_TOOLS = new Set"), CHAINS.indexOf("MAX_STEPS"));
+  assert.ok(allow.length > 100, "allowlist block found");
+  assert.ok(!allow.includes("open_on_laptop"), "no laptop tools inside a chain");
+  assert.ok(!allow.includes("laptop_action"), "no laptop verbs inside a chain");
+  assert.ok(!allow.includes("start_deep_thinking"), "no nesting deep thought");
+  assert.ok(!allow.includes("run_chain"), "a chain cannot start a chain");
+  assert.match(CHAINS, /CHAIN_TOOLS\.has\(toolName\)/);
+  assert.match(CHAINS, /MAX_STEPS = 6/);
+});
+
+test("the desk speaks the laptop's own verdict, not optimism", () => {
+  const ROUTER = read("web/lib/router.js");
+  assert.match(ROUTER, /awaitLaptopResult\(id\)/);
+  assert.match(ROUTER, /Your laptop says:/);
+  assert.match(HELPER, /"action": "report"/);
 });
 
 test("the pause flag lives where the drain cannot touch it", () => {

@@ -356,7 +356,17 @@ FIRST decide which of these the user is doing:
    choose a range: "today" is today only; "this week" runs through the
    coming Sunday; if unclear use today through 7 days out.
 
-Call every tool needed to satisfy the request — if one message asks for two things, make two calls.
+4. A SEQUENCE where a later step needs an earlier step's RESULT — "research
+   X, THEN put the findings in a doc, THEN draft an email about that doc";
+   "look at Y, then make a task for each thing it lists" -> run_chain, with
+   the user's complete request. The chained words ("then", "using that",
+   "for each of those") are the tell. Do NOT split such a request into
+   separate calls: separate tools cannot see each other's results, so the
+   doc would ignore the research and the email would ignore the doc.
+
+Call every tool needed to satisfy the request — if one message asks for two
+INDEPENDENT things, make two calls; if the things feed each other, that is
+rule 4.
 ${isDesk ? `
 THIS REQUEST CAME FROM THE DESK DEVICE. It was spoken out loud, and the user
 is standing in front of a small screen and a speaker expecting to be answered
