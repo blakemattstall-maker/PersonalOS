@@ -484,6 +484,47 @@ export const TOOLS = [
     type: "function",
     function: {
 
+      name: "log_work",
+      description: "Record what he did during a shift, day or session at a JOB or internship, so it accumulates into a record he can use later for LinkedIn posts, resume bullets and performance reviews. Use for 'today at work I...', 'just finished my shift, I edited...', 'first day at X, I did...'. This is the tool for WORK HE PERFORMED — it appends to a permanent, ordered log and is not the same as save_memory, which stores a standing fact. If he describes what he did at a job, use this, even if he also says something worth remembering.",
+
+      parameters: {
+        type: "object",
+        properties: {
+          org: { type: "string", description: "The employer or internship the work was for, e.g. 'Redbird Creative'." },
+          content: { type: "string", description: "What he did, in HIS words and in full detail. Do not summarise, do not shorten, do not tidy — the detail is the whole point of storing it. Include every number he said." },
+          occurred_at: { type: "string", description: "ISO date if he named a different day, e.g. yesterday. Omit for today." }
+        },
+        required: ["org", "content"]
+      }
+
+    }
+  },
+
+
+  {
+    type: "function",
+    function: {
+
+      name: "query_work",
+      description: "Answer a question about what he has DONE at a job or internship — 'what have I done for X so far', 'how many hours/pieces have I made', 'write me a LinkedIn post about my internship', 'what should go on my resume from this job'. Reads the complete work log in order. Use this and NOT query_projects whenever the question is about work performed at an employer; query_projects reads personal projects and cannot see the work log.",
+
+      parameters: {
+        type: "object",
+        properties: {
+          question: { type: "string" },
+          org: { type: "string", description: "The employer, if he named one." }
+        },
+        required: ["question"]
+      }
+
+    }
+  },
+
+
+  {
+    type: "function",
+    function: {
+
       name: "query_people",
       description: "Answer a question about the user's saved relationships — who they know, when they last talked to someone, a person's details. Use for 'who do I know in marketing', 'when did I last talk to Sarah', 'tell me about my aunt'.",
 

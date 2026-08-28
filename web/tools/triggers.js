@@ -175,6 +175,29 @@ export async function fireTrigger(trigger, { reason = null, fireKey }) {
 
   if (!fireKey) throw new Error("fireTrigger needs a fireKey — it is the lock.");
 
+  // ── the second guard, and it is not redundant ───────────────────────────
+  //
+  // The unique key stops one OCCASION firing twice. It does nothing about
+  // several occasions in quick succession, and a person's calendar is full of
+  // those: one barbell meeting was on his calendar three times — "Barbell
+  // meeting", "Meet early @ barbell" and "Redbird Barbell club meeting" — each
+  // a distinct Google event id, so each was a legitimately new occasion by the
+  // lock's reckoning, and each fired. Three notifications for one evening.
+  //
+  // cooldown_minutes existed for this from the start and was left unenforced
+  // when the lock became a unique index. Checked BEFORE the claim, deliberately:
+  // consuming the key here would mark the occasion fired without firing it, and
+  // the real one later in the window would then be swallowed.
+  if (trigger.last_fired_at) {
+
+    const sinceLast = (Date.now() - new Date(trigger.last_fired_at).getTime()) / 60000;
+
+    if (sinceLast < (trigger.cooldown_minutes ?? 360)) {
+      return { fired: false, skipped: "within cooldown" };
+    }
+
+  }
+
   if (!(await claim(trigger, fireKey))) return { fired: false, skipped: "already fired" };
 
   const { data: card, error: cardError } = await supabase
@@ -651,7 +674,50 @@ export async function findPlaceByName(name) {
 }
 
 
+// Does one of these already cover the same ground?
+//
+// Two triggers fired for one barbell meeting because the extraction pass
+// created "Redbird media capture" (matching "Redbird Barbell") alongside the
+// existing "Barbell — film it" (matching "barbell") — a strict superset of the
+// same event. Nothing checked, so mentioning a standing reminder a second time
+// bought a second notification forever.
+//
+// Deliberately blunt, in the same shape as the project check in tools/extract.js:
+// for a calendar match, either string containing the other is the same rule; for
+// a place, the same place is the same rule.
+export function overlapsExisting(existing, spec) {
+
+  const kind = spec.kind;
+
+  return (existing || []).some(t => {
+
+    if (t.kind !== kind || t.active === false) return false;
+
+    if (kind === "place_arrival") return t.place_id && t.place_id === spec.place_id;
+
+    if (kind === "before_event") {
+      const a = String(t.event_match || "").toLowerCase().trim();
+      const b = String(spec.event_match || "").toLowerCase().trim();
+      if (!a || !b) return false;
+      return a === b || a.includes(b) || b.includes(a);
+    }
+
+    if (kind === "time_of_day") return t.at_time === spec.at_time;
+
+    return false;
+
+  });
+
+}
+
+
 export async function createTrigger(spec) {
+
+  const existing = await getTriggers({ activeOnly: true }).catch(() => []);
+
+  if (overlapsExisting(existing, spec)) {
+    return { success: false, duplicate: true, error: "A reminder already covers that." };
+  }
 
   const row = {
     kind: spec.kind,

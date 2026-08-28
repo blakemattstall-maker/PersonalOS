@@ -33,6 +33,8 @@ const PAGE_FOR_TOOL = {
   save_intention: "/data",
   query_notes: "/data",
   save_person: "/people",
+  log_work: "/data",
+  query_work: "/data",
   query_people: "/people",
   record_contact: "/people",
   review_inbox: "/",
@@ -53,6 +55,8 @@ const TITLE_FOR_TOOL = {
   save_memory: "Saved",
   save_intention: "Saved",
   save_person: "Person saved",
+  log_work: "Work logged",
+  query_work: "Your work log",
   record_contact: "Contact logged",
   draft_email: "Draft ready",
   export_to_doc: "Doc created",
@@ -231,7 +235,7 @@ export function describeCapture(results = [], heard = null) {
 // to the rest of it. Anything substantial now lands in the dashboard's "needs
 // you" queue with its full text and its own read-aloud.
 const ANSWER_TOOLS = new Set([
-  "general_question", "query_health", "query_finances", "query_tasks",
+  "general_question", "query_health", "query_finances", "query_tasks", "query_work",
   "query_schedule", "query_notes", "query_projects", "query_people",
   "query_connections", "query_dining", "research_query", "review_inbox"
 ]);

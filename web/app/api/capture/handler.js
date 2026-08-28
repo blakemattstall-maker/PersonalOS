@@ -640,7 +640,8 @@ export default async function handler(req, res) {
         // general_question, and the answerer obediently disclaimed data it
         // was holding. A rephrase must never be able to assert facts about
         // what the system knows.
-        const wantsVerbatim = toolName === "general_question" || toolName === "query_health";
+        const wantsVerbatim = toolName === "general_question" || toolName === "query_health"
+          || toolName === "query_work";
 
         const result = await executeTool(
           { tool: toolName, ...args },

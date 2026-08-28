@@ -95,8 +95,17 @@ set a reminder himself, which is the assistant asking him to do its job.
     event_match "barbell", lead_minutes 30.
   · "when I'm at the gym, tell me to practise negatives and ask how many I got"
     -> place_arrival, place "gym", asks "How many did you get?", log_kind "muscle_up".
+  · A TRIGGER IS A STANDING RULE, NOT A ONE-OFF. "I have a calendar event
+    tomorrow at noon to pick up my package" is a single errand — the calendar
+    already holds it and a create_event tool already handled it. Turning that
+    into a before_event trigger matching "pick up" arms a reminder that fires on
+    every event containing those words, forever. That happened. Only create a
+    trigger for something RECURRING or open-ended: "any barbell event", "when
+    I'm at the gym", "every Sunday night".
   · Only create one when he actually expressed a standing want. Never invent a
     reminder he did not ask for.
+  · If a reminder like this plainly already exists, do not make a second one.
+    Two triggers matching the same calendar event means two notifications.
   · If he describes practising or training toward something REPEATEDLY at a
     place, a place_arrival trigger that asks for the count is usually right —
     that is how progress gets tracked at all.
@@ -104,6 +113,15 @@ set a reminder himself, which is the assistant asking him to do its job.
 Be conservative. An empty result is a good result. The cost of a wrong project
 is clutter he has to clean up; the cost of a missed one is nothing, because he
 will say it again.`;
+
+
+// Words too common to be a calendar rule. Matching on any of these arms a
+// trigger against events that have nothing to do with the request.
+const GENERIC_MATCHES = new Set([
+  "pick up", "pickup", "meeting", "meet", "call", "class", "work", "event",
+  "appointment", "lunch", "dinner", "breakfast", "practice", "session", "shift",
+  "study", "exam", "test", "due", "deadline", "reminder", "todo", "task"
+]);
 
 
 // Turn a spoken place name into a real one, a spoken kind into a real one, and
@@ -156,6 +174,11 @@ async function resolveTrigger(spec) {
     const match = String(spec.event_match || "").trim();
 
     if (match.length < 3) return null;
+
+    // A match string this generic will catch events that have nothing to do
+    // with what he asked for. "pick up" armed a standing reminder against every
+    // future calendar entry containing those two words.
+    if (GENERIC_MATCHES.has(match.toLowerCase())) return null;
 
     const lead = Number(spec.lead_minutes);
 

@@ -31,6 +31,13 @@ import { probeTable } from "./tableProbe.js";
 const MIGRATIONS = [
 
   {
+    file: "docs/schema-work-log.sql",
+    purpose: "an append-only, ordered record of what he did at a job — read whole, never deduplicated",
+    tables: ["work_log"],
+    breaksWithout: "Work he reports after a shift is stored as a memory instead, which is retrieved as semantic top-N rather than in full — so 'everything I did this semester' returns the highest-scoring handful and quietly omits the rest."
+  },
+
+  {
     file: "docs/schema-jobs-attempts.sql",
     purpose: "tell a failed description fetch from a successful one",
     columns: [["job_postings", "detail_attempts"]],

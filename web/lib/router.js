@@ -291,6 +291,27 @@ export async function executeTool(data, originalText = null) {
 
 
 
+      case "log_work": {
+        const { logWork } = await import("../tools/workLog.js");
+        result = await logWork({
+          org: data.org,
+          content: data.content,
+          occurred_at: data.occurred_at ?? null
+        });
+        break;
+      }
+
+
+      case "query_work": {
+        const { answerWorkQuestion } = await import("../tools/workLog.js");
+        result = await answerWorkQuestion({
+          question: originalText || data.question,
+          org: data.org ?? null
+        });
+        break;
+      }
+
+
       case "query_people":
 
         result = await queryPeople({

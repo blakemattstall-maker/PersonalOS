@@ -371,10 +371,15 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     // line the nudge writer cannot know a reminder already exists and will
     // cheerfully tell him to go and set one up — the exact failure the trigger
     // engine was built to end.
-    import("../tools/triggers.js").then(m => m.triggerSignal())
+    import("../tools/triggers.js").then(m => m.triggerSignal()),
+    // What he has actually been doing at work. Without this the brief and the
+    // nudge writer keep saying he has no record of a job he has been logging
+    // for weeks — which is the same class of failure as the empty projects
+    // table blanking the Projects line.
+    import("../tools/workLog.js").then(m => m.workSignal())
   ]);
 
-  const [finance, completions, overdue, intentions, relationships, projects, presence, body, nutrition, trends, standing] =
+  const [finance, completions, overdue, intentions, relationships, projects, presence, body, nutrition, trends, standing, work] =
     results.map(r => (r.status === "fulfilled" ? r.value : null));
 
   // A rejected signal is a bug, not a quiet week — allSettled keeps it from
@@ -397,7 +402,8 @@ export async function buildSignals({ days = 30, tz = FALLBACK_TIMEZONE } = {}) {
     body && `Body: ${body}`,
     nutrition && `Food: ${nutrition}`,
     trends && `Trends: ${trends}`,
-    standing && `Already handled: ${standing}`
+    standing && `Already handled: ${standing}`,
+    work && `Work logged: ${work}`
   ].filter(Boolean);
 
   return lines.length ? lines.join("\n") : null;
