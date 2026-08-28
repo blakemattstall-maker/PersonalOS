@@ -203,7 +203,7 @@ async function composeAndRenderScreen({ send, question, answer, results, device,
 
 // One spoken exchange. Returns a streaming Response; all the work happens
 // inside the stream so the first frames leave while later stages still run.
-export function deskConverse({ audio, mime, device, signal = null }) {
+export function deskConverse({ audio, mime, device, signal = null, followup = false }) {
 
   // Whether the device is still on the line. Interrupting an exchange
   // ("Jarvis" mid-answer) closes the socket, but the work here kept going:
@@ -357,6 +357,45 @@ export function deskConverse({ audio, mime, device, signal = null }) {
           }
 
           // Not an answer — they moved on. Route normally.
+
+        }
+
+        // The follow-up gate. A window that listens without a wake word is
+        // exactly where background noise, music, and half-sentences become
+        // hallucinated screens — the "Travis Neverland" class. So an
+        // utterance from the window must EARN routing: a matched command
+        // (already handled above), a real sentence, one of a few natural
+        // reply words, or a distinctive word shared with the answer it
+        // follows. Everything else is a silent no-op: no screen, no voice,
+        // no acknowledgement that anything was heard.
+        if (followup) {
+
+          const words = text.trim().split(/\s+/).filter(Boolean);
+
+          const REPLY_WORDS = /^(why|how|when|where|who|more|again|elaborate|continue|explain|really|meaning)\??$/i;
+
+          const STOP = new Set([
+            "about", "there", "which", "would", "could", "should", "these", "those",
+            "their", "other", "where", "after", "before", "still", "going", "first",
+            "thing", "things", "really", "actual", "point", "right", "great"
+          ]);
+
+          const previousWords = new Set(
+            (deskContext?.answer || "").toLowerCase().match(/[a-z]{5,}/g)?.filter(w => !STOP.has(w)) || []
+          );
+
+          const sharesContext = words.some(w =>
+            previousWords.has(w.toLowerCase().replace(/[^a-z]/g, "")));
+
+          const accept = words.length >= 4
+            || (words.length === 1 && REPLY_WORDS.test(words[0]))
+            || sharesContext;
+
+          if (!accept) {
+            console.log("DESK follow-up ignored:", text);
+            send("M", { kind: "ignored", heard: text });
+            return finish({ ok: true });
+          }
 
         }
 

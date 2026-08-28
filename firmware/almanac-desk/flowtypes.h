@@ -18,4 +18,7 @@ struct ConverseOutcome {
   bool gotScreen = false;
   bool interrupted = false;
   bool commandHandled = false;
+  // The server's follow-up gate judged the utterance to be noise and did
+  // nothing — the device must equally do nothing.
+  bool ignored = false;
 };

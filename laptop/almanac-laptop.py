@@ -105,11 +105,41 @@ def find_file(query, cfg):
         hits += found
 
     if not hits:
+        # Loose pass, for files with names that match nothing you'd say out
+        # loud: a plain Spotlight query tokenizes across file names AND
+        # content, so "trifilm logo" finds `TF_logo_v3_FINAL.aep` through
+        # the words inside it. Ranked by how much of the name matches, then
+        # by recency, so the strict pass's precision is preferred whenever
+        # it exists.
+        for d in dirs:
+            d = str(pathlib.Path(d).expanduser())
+            try:
+                out = subprocess.run(["mdfind", "-onlyin", d, " ".join(words)],
+                                     capture_output=True, text=True, timeout=10,
+                                     check=False).stdout
+            except Exception:
+                continue
+            hits += [h for h in out.splitlines() if h]
+        if hits:
+            log(f"loose match used for: {' '.join(words)!r}")
+
+    if not hits:
         return None
 
-    # Newest modification first — "my premiere project" means the recent one.
-    hits.sort(key=lambda p: pathlib.Path(p).stat().st_mtime if pathlib.Path(p).exists() else 0,
-              reverse=True)
+    def name_score(p):
+        name = pathlib.Path(p).name.lower()
+        return sum(1 for w in words if w in name)
+
+    def mtime(p):
+        try:
+            return pathlib.Path(p).stat().st_mtime
+        except OSError:
+            return 0
+
+    # Most name-words matched first; newest breaks ties — "my premiere
+    # project" means the recent one.
+    hits.sort(key=mtime, reverse=True)
+    hits.sort(key=name_score, reverse=True)
     return hits[0]
 
 

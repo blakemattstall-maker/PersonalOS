@@ -58,7 +58,10 @@ export async function POST(request, context) {
         mic: request.headers.get("x-desk-mic") === "off" ? "off" : "on",
         asks: Math.max(0, Math.min(99, Number(request.headers.get("x-desk-asks")) || 0)),
         tts: request.headers.get("x-desk-tts") !== "off"
-      }
+      },
+      // A reply captured in the 5s window after an answer, with no wake
+      // word — it faces a stricter gate than a deliberate "Jarvis".
+      followup: request.headers.get("x-desk-followup") === "1"
     });
 
   }

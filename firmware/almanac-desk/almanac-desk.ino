@@ -1132,7 +1132,7 @@ static const int32_t SPEECH_PEAK = 600;
 // phrase once its speaker has actually stopped talking (the 350ms guard is
 // what keeps "cancel" inside "cancel my three o'clock" from firing early;
 // the caller still checks total length before trusting the match).
-size_t captureViaTee(int16_t *dst, size_t maxSamples, bool holdMode) {
+size_t captureViaTee(int16_t *dst, size_t maxSamples, bool holdMode, unsigned long onsetMs = 3500) {
 
   teeBuf = dst;
   teeMax = maxSamples;
@@ -1177,7 +1177,9 @@ size_t captureViaTee(int16_t *dst, size_t maxSamples, bool holdMode) {
 
       if (heard && lastLoud && millis() - lastLoud > 800UL) break;
 
-      if (!heard && millis() - start > 3500UL) break;
+      // Nobody started talking. The wake path allows 3.5s; the follow-up
+      // window passes 5s, because there the silence is the normal outcome.
+      if (!heard && millis() - start > onsetMs) break;
 
       // The engine matched a phrase and the voice has stopped: no reason to
       // sit out the rest of the silence window.
@@ -1673,7 +1675,7 @@ bool pumpAudio() {
 // frames until the server says it is done — playing audio as it arrives,
 // blitting the composed screen the moment it lands, animating "thinking"
 // in the waiting gaps.
-ConverseOutcome converse(const int16_t *mono, size_t samples) {
+ConverseOutcome converse(const int16_t *mono, size_t samples, bool followup = false) {
 
   ConverseOutcome out;
 
@@ -1719,6 +1721,7 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
   http.addHeader("x-desk-mic", micArmed ? "on" : "off");
   http.addHeader("x-desk-asks", String(asksSent));
   http.addHeader("x-desk-tts", ttsEnabled ? "on" : "off");
+  if (followup) http.addHeader("x-desk-followup", "1");
   http.setTimeout(60'000);
 
   const char *wanted[] = { "Transfer-Encoding" };
@@ -1888,6 +1891,8 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
 
           if (strcmp(kind, "command") == 0 || strcmp(kind, "silent") == 0) out.commandHandled = true;
 
+          if (strcmp(kind, "ignored") == 0) out.ignored = true;
+
           Serial.printf("[converse] heard: %s (%s)\n", (const char *)(doc["heard"] | ""), kind);
 
         }
@@ -1948,6 +1953,97 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
                 out.ok, out.gotScreen, out.interrupted, (unsigned)ESP.getFreeHeap());
 
   return out;
+
+}
+
+
+// The answer-and-reply window: for five seconds after an answer, the desk
+// keeps listening — no wake word needed to respond, and a reply reopens the
+// window after ITS answer, so a real back-and-forth flows. Turn-taking
+// decides when it opens: the moment the device stops talking (or the
+// screen lands, when the voice is muted) — never before, because you reply
+// to a speaker when they finish.
+//
+// Honesty on the glass: an ember disc sits in the corner the whole time
+// the window is open, because for those five seconds this is an open
+// microphone and anyone in the room deserves to see that. The privacy
+// budget is bounded — silence closes it, and captures still face the
+// server's strict follow-up gate before anything routes: noise, music and
+// stray words end as silent no-ops.
+void followUpLoop() {
+
+  while (micArmed && !wakeFired) {
+
+    // Visible the entire time the window is open.
+    gfx->fillCircle(LCD_WIDTH - 22, 22, 9, C_EMBER);
+
+    // Commands stay instant in the window; the wake engine's mode comes
+    // back below either way.
+    localCmdId = -1;
+    cmdWindowTimedOut = false;
+    sr_set_mode(SR_MODE_COMMAND);
+
+    startPreconnect();
+
+    const size_t MAX_SAMPLES = RECORD_RATE * 10;
+
+    int16_t *mono = (int16_t *)heap_caps_malloc(MAX_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+
+    if (!mono) break;
+
+    const size_t samples = captureViaTee(mono, MAX_SAMPLES, false, 5000);
+
+    sr_set_mode(SR_MODE_WAKEWORD);
+
+    // The dot comes down with whatever was on the glass restored.
+    if (frame) gfx->draw16bitBeRGBBitmap(0, 0, frame, LCD_WIDTH, LCD_HEIGHT);
+
+    // Silence: the window simply closes. This is the normal exit.
+    if (samples < RECORD_RATE / 2) {
+      free(mono);
+      dropPreconnect();
+      break;
+    }
+
+    // A recognized phrase ("never mind", "quieter") acts locally and closes
+    // the window — same gate as the wake path.
+    if (localCmdId >= 0 && samples < RECORD_RATE * 3) {
+      const int id = localCmdId;
+      localCmdId = -1;
+      free(mono);
+      executeLocalCommand(id);
+      dropPreconnect();
+      break;
+    }
+    localCmdId = -1;
+
+    phase = THINKING;
+    drawThinking(false);
+
+    asksSent++;
+
+    const ConverseOutcome result = converse(mono, samples, true);
+    free(mono);
+
+    phase = IDLE;
+
+    // Judged as noise by the server: nothing happened, nothing changes,
+    // and the window does not reopen — noise means stop listening.
+    if (result.ignored) break;
+
+    if (result.interrupted && wakeFired) return;
+
+    if (result.commandHandled || result.interrupted) {
+      if (blitResting()) screenRefreshAt = millis() + 1500;
+      else fetchScreen(true);
+      break;
+    }
+
+    if (!result.gotScreen) { fetchScreen(true); break; }
+
+    // A real exchange completed — the conversation continues.
+
+  }
 
 }
 
@@ -2143,7 +2239,12 @@ void voiceFlow(bool fromWake = false) {
 
   }
 
-  if (!result.gotScreen) fetchScreen(true);
+  if (!result.gotScreen) { fetchScreen(true); return; }
+
+  // The answer is delivered — glass painted, voice finished. The reply
+  // window opens now, engine paths only (the mic-off button flow has no
+  // engine to listen with).
+  if (viaEngine && result.ok) followUpLoop();
 
 }
 
