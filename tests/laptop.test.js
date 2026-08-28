@@ -76,6 +76,11 @@ test("chains can never reach the laptop or nest", () => {
   assert.ok(!allow.includes("run_chain"), "a chain cannot start a chain");
   assert.match(CHAINS, /CHAIN_TOOLS\.has\(toolName\)/);
   assert.match(CHAINS, /MAX_STEPS = 6/);
+  // End-of-chain laptop delivery exists but ONLY when the spoken request
+  // named the laptop — the same gate as everywhere else.
+  const delivery = CHAINS.indexOf("pushLaptopCommand");
+  const gate = CHAINS.indexOf("(laptop|computer|mac)");
+  assert.ok(delivery > 0 && gate > 0 && gate < delivery, "laptop delivery must sit behind the naming gate");
 });
 
 test("the desk speaks the laptop's own verdict, not optimism", () => {

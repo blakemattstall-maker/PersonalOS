@@ -84,7 +84,12 @@ async function executeChain(request) {
 
     const req = {
       model: MODELS.JUDGMENT,
-      reasoning_effort: "low",
+      // 'none', explicitly: the 5.6 family refuses function tools in chat
+      // completions at ANY other effort — the registry's luna note, learned
+      // again here for terra ("set reasoning_effort to 'none'", says the
+      // 400). Deleting the param does not help; only 'none' does. Step
+      // decisions are tool dispatch, not deliberation, so nothing is lost.
+      reasoning_effort: "none",
       messages,
       tools,
       tool_choice: "auto"
@@ -153,6 +158,38 @@ async function executeChain(request) {
   }
 
   console.log(`CHAIN done: ${results.length} steps in ${Math.round((Date.now() - t0) / 1000)}s`);
+
+  // "…and open them on my laptop": when the ORIGINAL spoken request named
+  // the laptop, everything the chain produced with a URL — the doc, the
+  // draft — opens there on completion. This is not the chain operating the
+  // laptop (it still has no laptop tools); it is the user's own explicit
+  // instruction, carried out when its results finally exist. The pause
+  // switch, the expiry, and the machine-side kill file all still apply at
+  // the moment of opening.
+  if (/\b(on|to) (my |the )?(laptop|computer|mac)\b/i.test(request)) {
+
+    try {
+
+      const { pushLaptopCommand } = await import("./laptopQueue.js");
+
+      const produced = results
+        .filter(r => /^https?:\/\//.test(r.result?.data?.url || ""))
+        .map(r => ({ kind: "url", url: r.result.data.url, label: r.tool.replace(/_/g, " ") }));
+
+      for (const command of produced) {
+        await pushLaptopCommand(command);
+      }
+
+      if (produced.length) {
+        final = `${final} I've opened the results on your laptop.`;
+        console.log(`CHAIN opened ${produced.length} result(s) on the laptop`);
+      }
+
+    } catch (error) {
+      console.error("CHAIN laptop delivery failed:", error.message);
+    }
+
+  }
 
   // Delivery, all three surfaces: the phone push + dashboard filing that
   // notifyCapture already owns, and the desk's own composed screen so the
