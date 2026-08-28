@@ -545,7 +545,15 @@ export function deskConverse({ audio, mime, device, signal = null, followup = fa
 
         await Promise.all([ttsStarted, screenDone]);
 
-        finish({ ok: true });
+        // A launched background chain ends this conversation: the device
+        // must NOT open its reply window afterward — the user is done
+        // talking and probably narrating to a camera or a person, and the
+        // window was catching those sentences and hijacking the flow.
+        // "Jarvis" remains the explicit way back in.
+        finish({
+          ok: true,
+          ...(results.some(r => r.result?.data?.chained === true) ? { chained: true } : {})
+        });
 
       } catch (error) {
 

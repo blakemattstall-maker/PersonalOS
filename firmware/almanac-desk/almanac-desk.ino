@@ -1922,6 +1922,14 @@ ConverseOutcome converse(const int16_t *mono, size_t samples, bool followup = fa
         ended = true;
         out.ok = true;
 
+        meta[min((size_t)need, sizeof(meta) - 1)] = 0;
+
+        JsonDocument doc;
+
+        if (need > 0 && !deserializeJson(doc, meta)) {
+          out.chained = doc["chained"] | false;
+        }
+
       }
 
       headGot = 0;
@@ -2030,6 +2038,9 @@ void followUpLoop() {
     // Judged as noise by the server: nothing happened, nothing changes,
     // and the window does not reopen — noise means stop listening.
     if (result.ignored) break;
+
+    // A reply that launched a chain also ends the conversation.
+    if (result.chained) break;
 
     if (result.interrupted && wakeFired) return;
 
@@ -2243,8 +2254,11 @@ void voiceFlow(bool fromWake = false) {
 
   // The answer is delivered — glass painted, voice finished. The reply
   // window opens now, engine paths only (the mic-off button flow has no
-  // engine to listen with).
-  if (viaEngine && result.ok) followUpLoop();
+  // engine to listen with) — and NEVER after launching a background chain:
+  // the user is done talking, likely narrating to someone, and the window
+  // was catching those sentences and hijacking a demo mid-run. "Jarvis"
+  // stays the explicit way back in.
+  if (viaEngine && result.ok && !result.chained) followUpLoop();
 
 }
 

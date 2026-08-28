@@ -21,4 +21,7 @@ struct ConverseOutcome {
   // The server's follow-up gate judged the utterance to be noise and did
   // nothing — the device must equally do nothing.
   bool ignored = false;
+  // The exchange launched a background chain: the conversation is over and
+  // the reply window must not open — its results arrive by themselves.
+  bool chained = false;
 };
