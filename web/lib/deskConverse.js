@@ -100,7 +100,7 @@ function frameBuf(type, payload) {
 // Synthesize straight through to the device: OpenAI's raw-PCM stream (24kHz)
 // through the stateful resampler, out as audio frames. First frame typically
 // leaves ~half a second after the request — that is the whole point.
-async function streamTts({ text, voice, speed, send }) {
+async function streamTts({ text, voice, speed, send, isClosed = () => false }) {
 
   const res = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
@@ -140,6 +140,11 @@ async function streamTts({ text, voice, speed, send }) {
   };
 
   for (;;) {
+    if (isClosed()) {
+      // Nobody is listening — stop paying for the rest of the synthesis.
+      try { await reader.cancel(); } catch {}
+      return;
+    }
     const { done, value } = await reader.read();
     if (done) break;
     emit(ds.push(Buffer.from(value)));
@@ -153,7 +158,11 @@ async function streamTts({ text, voice, speed, send }) {
 // The composed screen, rendered here and pushed down the same socket, so the
 // device never opens a second connection mid-exchange. Failures cost the
 // picture, never the voice.
-async function composeAndRenderScreen({ send, question, answer, results, device }) {
+async function composeAndRenderScreen({ send, question, answer, results, device, isClosed }) {
+
+  // The device hung up (an interrupt): nothing composed here would ever be
+  // seen, and nothing may be stashed to haunt the next refresh.
+  if (isClosed()) return;
 
   const { designDeskScreen, stashDeskScreen } = await import("./deskScreens.js");
 
@@ -165,6 +174,9 @@ async function composeAndRenderScreen({ send, question, answer, results, device 
   const waiting = results.some(r => r.result?.data?.waiting);
 
   const spec = await designDeskScreen({ question, answer, facts, waiting });
+
+  // Design takes seconds; the device may have hung up during them.
+  if (isClosed()) return;
 
   // The stash is what the 60s poll, a tap-dismiss and the next follow-up all
   // read; none of them read it within this response's lifetime.
@@ -193,11 +205,22 @@ async function composeAndRenderScreen({ send, question, answer, results, device 
 // inside the stream so the first frames leave while later stages still run.
 export function deskConverse({ audio, mime, device }) {
 
+  // Whether the device is still on the line. Interrupting an exchange
+  // ("Jarvis" mid-answer) closes the socket, but the work here kept going:
+  // the abandoned answer was composed, STASHED, and resurfaced on the next
+  // screen refresh five seconds after the user had already moved on — and a
+  // spoken dismissal could not prevent it, because the stash was written
+  // after the dismissal landed. An abandoned exchange must leave nothing
+  // behind.
+  let closed = false;
+
   const stream = new ReadableStream({
 
-    async start(controller) {
+    cancel() {
+      closed = true;
+    },
 
-      let closed = false;
+    async start(controller) {
 
       const send = (type, payload) => {
         if (closed) return;
@@ -259,7 +282,7 @@ export function deskConverse({ audio, mime, device }) {
           if (ttsStarted || !device.tts) return;
           const line = (spokenText || "").trim();
           if (!line) return;
-          ttsStarted = streamTts({ text: line, voice, speed, send })
+          ttsStarted = streamTts({ text: line, voice, speed, send, isClosed: () => closed })
             .catch(error => {
               console.error("DESK tts failed:", error.message);
               send("M", { kind: "tts-failed" });
@@ -443,6 +466,7 @@ export function deskConverse({ audio, mime, device }) {
         );
 
         const screenDone = composeAndRenderScreen({
+          isClosed: () => closed,
           send,
           question: text,
           answer: fullAnswer,
