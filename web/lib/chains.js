@@ -72,7 +72,9 @@ async function executeChain(request) {
         `depend on each other. When every step is done, reply in plain text ` +
         `with a short factual account of what was done and where it lives ` +
         `(doc created, drafts written, tasks added). No markdown. If a step ` +
-        `fails, carry on with what you have and say plainly what failed.`
+        `fails, carry on with what you have and say plainly what failed. ` +
+        `Never research the same thing twice: when a research step already ` +
+        `ran, later steps build FROM its findings in this conversation.`
     },
     { role: "user", content: request }
   ];
@@ -127,6 +129,14 @@ async function executeChain(request) {
       try { args = JSON.parse(call.function.arguments || "{}"); } catch {}
 
       let outcome;
+
+      // A doc step must not re-run research a previous step already did —
+      // the findings are in its own context, and the redundant search was
+      // the single fattest slice of a chain's runtime.
+      if (toolName === "export_to_doc" && args.research === true
+          && results.some(r => r.tool === "research_query" && r.result?.success)) {
+        args.research = false;
+      }
 
       if (!CHAIN_TOOLS.has(toolName)) {
         outcome = { success: false, message: "That tool is not available inside a chain." };

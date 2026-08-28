@@ -2,7 +2,13 @@ import { nodeRoute } from "../_node.js";
 import handler from "./handler.js";
 
 // The spine. Voice or text in, a tool run, a push back out.
-export const maxDuration = 60;
+//
+// 300, not 60: a dependent chain (research -> doc -> email -> delivery)
+// runs BEHIND the response via waitUntil, and background work dies at this
+// wall — a four-step chain was silently losing its doc, email, and
+// delivery at the sixty-second mark. Responses themselves still return in
+// seconds; this bound exists for the work that outlives them.
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 const run = nodeRoute(handler);
