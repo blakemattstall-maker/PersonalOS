@@ -82,11 +82,19 @@ MEMORIES — a fact that will still be true and still be useful in a month.
   · "Asked whether losing weight or more pull-ups helps more" — no, that is the question, not a fact.
   · Write them in the third person, and date anything that will age.
 
-PROJECTS — something with an end state he is actively working toward, that will
-take more than one sitting. A competition, a build, an application. Not a chore,
-not a one-off task, not a topic he merely asked about.
+PROJECTS — something with an end state HE is actively working toward, that will
+take more than one sitting OF HIS OWN EFFORT. A competition, a build, an
+application. Not a chore, not a one-off task, not a topic he merely asked about.
   · "racing my roommate to a muscle-up" — yes, that is a project with a finish line.
   · "what should I eat tonight" — no.
+  · NEVER from work the ASSISTANT was asked to do. A research request, a
+    document or email it produced, a comparison, a lookup, a task it was told
+    to create — "research the best earbuds, then make a doc and draft me an
+    email" is the assistant's errand, finished in minutes, not his project, no
+    matter how many artifacts it leaves behind. This class of capture produced
+    ten junk projects in one afternoon of normal use.
+  · One capture yields at most ONE project, and only when HE is the one who
+    will be doing the work across days.
 
 TRIGGERS — a standing instruction about WHEN he wants to be told something. This
 is the one that matters most, because the alternative is telling him to go and
