@@ -35,6 +35,13 @@
 // Requires PartitionScheme=esp_sr_16 so the model blob has somewhere to
 // live; that scheme's upload flags flash it automatically.
 #define WAKE_WORD 1
+// The barge-in experiment: feed the AFE a software playback-reference
+// channel ("MR") so its echo canceller can subtract the speaker from the
+// microphone, letting "Jarvis" be heard OVER the device's own voice. No
+// project ships this on an ES8311-only board; if it destabilizes anything
+// (heap pressure, missed wakes in silence), set 0 and reflash — everything
+// else in Move B stands without it.
+#define AEC_REF 1
 
 // Prints the microphone's actual signal level for a few seconds at boot.
 // On while the audio path is in question; off for normal use.

@@ -825,11 +825,11 @@ export async function renderDeskScreen({ preview = null, spec = null, mic = "on"
                     key={i}
                     style={{
                       display: "flex",
-                      width: 5,
-                      height: 5,
-                      borderRadius: 5,
-                      marginRight: i < 4 ? 5 : 0,
-                      background: i < Math.max(0, Math.min(5, Math.round((vol - 40) / 12))) ? C.inkSoft : C.line
+                      width: 9,
+                      height: 9,
+                      borderRadius: 9,
+                      marginRight: i < 4 ? 7 : 0,
+                      background: i < Math.max(0, Math.min(5, Math.round((vol - 40) / 12))) ? C.ink : C.line
                     }}
                   />
                 ))}

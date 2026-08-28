@@ -181,6 +181,11 @@ int asksSent = 0;
 
 volatile bool wakeFired = false;
 
+// True while audio is playing (or an exchange is in flight), so a touch —
+// or the wake word itself — can stop it. Lives up here because the engine's
+// event handler is what sets it on a barge-in.
+volatile bool stopSpeaking = false;
+
 // Whether answers are spoken at all. There is a button for this on the
 // resting face and a pair of voice commands, because wanting the screen
 // without the noise is a normal thing to want in a shared room.
@@ -198,21 +203,177 @@ void applyVolume() {
   Serial.printf("[vol] %d%%\n", volumePercent);
 }
 
+// A tap must change the glass NOW, not after a network round trip.
+//
+// The first volume buttons re-fetched the whole screen per press: 3-4
+// seconds of blocked loop during which no touch was read — which is
+// indistinguishable from a freeze, and was reported as exactly that. Now a
+// press paints this overlay immediately (five discs, drawn locally — shapes
+// need no typeface), further presses land instantly, and ONE deferred
+// re-fetch restores the designed face after the fingers stop.
+unsigned long screenRefreshAt = 0;
+
+void drawVolumeOverlay() {
+
+  const int y = 230;
+  const int r = 13;
+  const int spacing = 62;
+  const int x0 = LCD_WIDTH / 2 - 2 * spacing;
+
+  const int filled = max(0, min(5, (volumePercent - 40 + 11) / 12));
+
+  gfx->fillRect(0, y - r - 18, LCD_WIDTH, (r + 18) * 2, C_BLACK);
+
+  for (int i = 0; i < 5; i++) {
+    if (i < filled) gfx->fillCircle(x0 + i * spacing, y, r, C_MOSS);
+    else gfx->drawCircle(x0 + i * spacing, y, r, C_LINE);
+  }
+
+}
+
 #if WAKE_WORD
 
-// The wake word engine only ever sets a flag. Everything that follows —
-// recording, uploading, speaking — happens on the main loop where it is
-// visible and interruptible, rather than inside an audio callback.
-void onSrEvent(sr_event_t event, int command_id, int phrase_id) {
+// ---------------------------------------------------------------------------
+// The speech engine, driven directly.
+//
+// The ESP_SR class wrapper owned the microphone: it read the I2S bus itself,
+// which is why the engine had to be paused to record and why nothing could
+// listen while the speaker played. The C layer underneath (esp32-hal-sr.c)
+// takes a caller-supplied fill callback instead — so the callback below is
+// now the ONE place mic audio enters the system, and it tees each chunk
+// three ways at once: to the wake-word/command engine, to the capture buffer
+// when an utterance is being recorded, and (as the R channel) to the echo
+// canceller alongside what the speaker is currently saying.
+//
+// Three things fall out, and they are the point of Move B:
+//   - the engine NEVER pauses: "Jarvis" works mid-answer, mid-playback,
+//     mid-anything — it is the universal interrupt;
+//   - a short list of commands is recognized ON-DEVICE in ~200ms with no
+//     network ("stop", "never mind", "louder"...), because MultiNet was
+//     already loaded in this partition and only needed phrases;
+//   - with AEC_REF, the AFE subtracts the speaker's own output from the mic
+//     before the wake word looks at it — the barge-in experiment. Nobody
+//     ships software-reference AEC on this codec topology; if it works we
+//     are first, and if it does not, everything above still stands.
+// ---------------------------------------------------------------------------
 
-  // WAKEWORD fires on detection. On a multi-channel input the engine then
-  // verifies which channel heard it and puts ITSELF into SR_MODE_OFF
-  // (esp32-hal-sr.c: sr_set_mode(SR_MODE_OFF) on WAKENET_CHANNEL_VERIFIED),
-  // waiting for the application to say what happens next. Nothing here was
-  // saying anything, so a second "Jarvis" could never be heard.
+// The on-device command grammar. Plain English — the engine runs its own
+// grapheme-to-phoneme conversion at boot. IDs start at 1 (0 is invalid at
+// the esp-sr layer). Phrases here must also stay in the server's matcher
+// (handleDeskCommand) as the fallback for anything MultiNet mishears.
+enum LocalCmd { LC_STOP = 1, LC_DISMISS, LC_QUIET, LC_SPEAK, LC_LOUDER, LC_SOFTER };
+
+static const sr_cmd_t LOCAL_COMMANDS[] = {
+  { LC_STOP,    "stop" },
+  { LC_STOP,    "stop talking" },
+  { LC_DISMISS, "never mind" },
+  { LC_DISMISS, "forget it" },
+  { LC_DISMISS, "cancel" },
+  { LC_DISMISS, "go home" },
+  { LC_DISMISS, "go back" },
+  { LC_DISMISS, "put that away" },
+  { LC_QUIET,   "be quiet" },
+  { LC_QUIET,   "mute" },
+  { LC_SPEAK,   "you can talk" },
+  { LC_SPEAK,   "voice on" },
+  { LC_LOUDER,  "louder" },
+  { LC_LOUDER,  "volume up" },
+  { LC_LOUDER,  "speak up" },
+  { LC_SOFTER,  "quieter" },
+  { LC_SOFTER,  "volume down" },
+  { LC_SOFTER,  "softer" }
+};
+
+// The capture tee: while active, the fill callback appends every mic sample
+// here. Written on the engine's feed task (core 0), read by the main loop —
+// count is the only shared word, and it only ever grows while active.
+static int16_t *teeBuf = nullptr;
+static volatile size_t teeCount = 0;
+static size_t teeMax = 0;
+static volatile bool teeActive = false;
+
+// What the speaker is playing right now, for the echo canceller's reference
+// channel. Single producer (the playback pump, core 1), single consumer
+// (the fill callback, core 0).
+#if AEC_REF
+static const size_t REF_SAMPS = 8192;   // half a second
+static int16_t refRing[REF_SAMPS];
+static volatile size_t refWrite = 0, refRead = 0;
+
+void refPush(const int16_t *s, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    refRing[refWrite % REF_SAMPS] = s[i];
+    refWrite++;
+  }
+}
+#endif
+
+// What the command window heard, delivered from the engine's handler task.
+static volatile int localCmdId = -1;
+static volatile bool cmdWindowTimedOut = false;
+
+// The engine's audio source. Reads the mono mic, tees it into the capture
+// buffer, and — in AEC mode — interleaves the playback reference so the
+// AFE sees [mic, speaker] pairs and can subtract one from the other.
+esp_err_t srFill(void *arg, void *dest, size_t len, size_t *bytes_read, uint32_t timeout_ms) {
+
+  char *out = (char *)dest;
+
+#if AEC_REF
+  const size_t frames = len / (2 * sizeof(int16_t));
+#else
+  const size_t frames = len / sizeof(int16_t);
+#endif
+
+  static int16_t *mic = nullptr;
+  static size_t micCap = 0;
+
+  if (micCap < frames) {
+    if (mic) free(mic);
+    micCap = frames;
+    mic = (int16_t *)heap_caps_malloc(micCap * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!mic) { micCap = 0; *bytes_read = 0; return ESP_FAIL; }
+  }
+
+  const size_t got = i2s.readBytes((char *)mic, frames * sizeof(int16_t)) / sizeof(int16_t);
+
+  if (teeActive && teeBuf) {
+    const size_t room = teeMax - teeCount;
+    const size_t take = got < room ? got : room;
+    memcpy(teeBuf + teeCount, mic, take * sizeof(int16_t));
+    teeCount += take;
+  }
+
+  int16_t *o = (int16_t *)out;
+
+#if AEC_REF
+  for (size_t i = 0; i < frames; i++) {
+    o[2 * i] = i < got ? mic[i] : 0;
+    o[2 * i + 1] = (refRead < refWrite) ? refRing[refRead++ % REF_SAMPS] : 0;
+  }
+#else
+  for (size_t i = 0; i < frames; i++) o[i] = i < got ? mic[i] : 0;
+#endif
+
+  *bytes_read = len;
+
+  return ESP_OK;
+
+}
+
+// Events arrive on the engine's handler task; only flags cross to the main
+// loop, where everything visible happens.
+void onSr(void *arg, sr_event_t event, int command_id, int phrase_id) {
+
   if (event == SR_EVENT_WAKEWORD || event == SR_EVENT_WAKEWORD_CHANNEL) {
     wakeFired = true;
+    // "Jarvis" is the interrupt: if it is talking, this is what stops it.
+    stopSpeaking = true;
   }
+
+  if (event == SR_EVENT_COMMAND) localCmdId = command_id;
+
+  if (event == SR_EVENT_TIMEOUT) cmdWindowTimedOut = true;
 
   Serial.printf("[sr] event=%d cmd=%d phrase=%d\n", (int)event, command_id, phrase_id);
 
@@ -264,16 +425,29 @@ bool armMic() {
 
   if (!audioConfigure(RECORD_RATE, true)) return false;
 
-  ESP_SR.onEvent(onSrEvent);
+  // The C layer directly, with our own audio source (srFill) and the local
+  // command grammar. In AEC mode the input format is "MR" — microphone plus
+  // the playback-reference channel srFill synthesizes — and the channel
+  // count is declared as 2 so the HAL's own channel-padding stays out of
+  // the way. Without AEC it is plain mono.
+#if AEC_REF
+  const esp_err_t rc = sr_start(srFill, NULL, SR_CHANNELS_STEREO, SR_MODE_WAKEWORD, "MR",
+                                LOCAL_COMMANDS, sizeof(LOCAL_COMMANDS) / sizeof(LOCAL_COMMANDS[0]),
+                                onSr, NULL);
+#else
+  const esp_err_t rc = sr_start(srFill, NULL, SR_CHANNELS_MONO, SR_MODE_WAKEWORD, "M",
+                                LOCAL_COMMANDS, sizeof(LOCAL_COMMANDS) / sizeof(LOCAL_COMMANDS[0]),
+                                onSr, NULL);
+#endif
 
-  // "M": one channel, and it is the microphone. See audioConfigure.
-  if (!ESP_SR.begin(i2s, NULL, 0, SR_CHANNELS_MONO, SR_MODE_WAKEWORD, "M")) {
-    Serial.println("[mic] wake word engine failed to start");
+  if (rc != ESP_OK) {
+    Serial.printf("[mic] engine failed to start (%d)\n", (int)rc);
     return false;
   }
 
-  Serial.printf("[mic] armed - wake word listening on-device (heap %u)\n",
-                (unsigned)ESP.getFreeHeap());
+  Serial.printf("[mic] armed - wake + %u local phrases on-device (aec=%d, heap %u)\n",
+                (unsigned)(sizeof(LOCAL_COMMANDS) / sizeof(LOCAL_COMMANDS[0])),
+                AEC_REF, (unsigned)ESP.getFreeHeap());
 
 #endif
 
@@ -287,7 +461,7 @@ bool armMic() {
 void disarmMic() {
 
 #if WAKE_WORD
-  ESP_SR.end();
+  sr_stop();
 #endif
 
   i2s.end();
@@ -841,10 +1015,6 @@ bool stillHeld() {
   return digitalRead(BOOT_BTN) == LOW;
 }
 
-// A fixed window, used after a wake word: there is no button being held to
-// tell us when the sentence ended, and an open-ended microphone is exactly
-// the thing this device promises not to be. Six seconds, then it stops
-// whether or not anyone spoke.
 // Speech-level energy, at the gain this microphone actually runs at.
 //
 // These were first calibrated with the codec at gain 6 and then the gain was
@@ -856,67 +1026,129 @@ static const int32_t SPEECH_RMS = 90;
 static const int32_t SPEECH_PEAK = 600;
 
 
-size_t recordFixed(int16_t *mono, size_t maxSamples) {
+#if WAKE_WORD
 
-  // PSRAM, not a static array: 8KB of internal RAM held forever is 8KB the
-  // TLS handshake does not have.
-  int32_t *stereo = (int32_t *)heap_caps_malloc(2048 * sizeof(int32_t), MALLOC_CAP_SPIRAM);
+// Record through the engine's own audio path instead of competing with it.
+//
+// The engine's fill callback tees every mic chunk into `dst` while MultiNet
+// listens to the same stream for the fixed phrases — so a spoken "never
+// mind" is recognized WHILE it is being recorded, not after a round trip.
+// Ends on the same signals as before: a second of quiet after speech, 3.5s
+// of nothing, release of the button in hold mode — or, new, a recognized
+// phrase once its speaker has actually stopped talking (the 350ms guard is
+// what keeps "cancel" inside "cancel my three o'clock" from firing early;
+// the caller still checks total length before trusting the match).
+size_t captureViaTee(int16_t *dst, size_t maxSamples, bool holdMode) {
 
-  if (!stereo) return 0;
+  teeBuf = dst;
+  teeMax = maxSamples;
+  teeCount = 0;
+  teeActive = true;
 
-  size_t written = 0;
+  bool heard = false;
+  unsigned long lastLoud = 0;
+  size_t scanned = 0;
+
+  const size_t FRAME = RECORD_RATE / 50;   // 20ms
 
   const unsigned long start = millis();
 
-  // Stop when they stop, rather than always recording six seconds.
-  //
-  // A fixed window meant "never mind" was one second of speech inside five
-  // of silence — which failed a percentage-of-loud-frames test, and gave the
-  // transcriber five seconds of nothing to invent over. Ending on a pause
-  // makes short commands work and makes the whole thing feel answered
-  // rather than timed.
-  bool heardAnything = false;
-  unsigned long lastLoud = 0;
+  while (teeCount < maxSamples && millis() - start < (holdMode ? 10'000UL : 9'000UL)) {
 
-  while (written < maxSamples && millis() - start < 9'000UL) {
+    delay(20);
 
-    const size_t want = min((size_t)2048, maxSamples - written) * sizeof(int16_t);
-    const size_t got = i2s.readBytes((char *)stereo, want);
+    if (holdMode && millis() - start > 500 && !stillHeld()) break;
 
-    const int16_t *samples = (const int16_t *)stereo;
+    // Scan whatever arrived since the last pass, one 20ms frame at a time.
+    const size_t upto = teeCount;
 
-    uint64_t sum = 0;
-    size_t counted = 0;
+    while (scanned + FRAME <= upto) {
 
-    // Mono slot mode: every sample is the microphone, none are a duplicate.
-    for (size_t i = 0; i < got / sizeof(int16_t); i++) {
-      const int32_t v = samples[i];
-      sum += (uint64_t)((int64_t)v * v);
-      counted++;
-      mono[written++] = v;
-      if (written >= maxSamples) break;
+      uint64_t sum = 0;
+
+      for (size_t i = scanned; i < scanned + FRAME; i++) {
+        sum += (uint64_t)((int64_t)dst[i] * dst[i]);
+      }
+
+      if ((int32_t)sqrt((double)(sum / FRAME)) > SPEECH_RMS) {
+        heard = true;
+        lastLoud = millis();
+      }
+
+      scanned += FRAME;
+
     }
 
-    const int32_t rms = counted ? (int32_t)sqrt((double)(sum / counted)) : 0;
+    if (!holdMode) {
 
-    if (rms > SPEECH_RMS) {
-      heardAnything = true;
-      lastLoud = millis();
+      if (heard && lastLoud && millis() - lastLoud > 1000UL) break;
+
+      if (!heard && millis() - start > 3500UL) break;
+
+      // The engine matched a phrase and the voice has stopped: no reason to
+      // sit out the rest of the silence window.
+      if (localCmdId >= 0 && heard && millis() - lastLoud > 350UL) break;
+
     }
-
-    // A second of quiet after something was said means the sentence is over.
-    if (heardAnything && lastLoud && millis() - lastLoud > 1000UL) break;
-
-    // Nobody started talking at all.
-    if (!heardAnything && millis() - start > 3500UL) break;
 
   }
 
-  free(stereo);
+  teeActive = false;
 
-  return written;
+  return teeCount;
 
 }
+
+
+// A phrase the engine recognized, acted on with no network in the loop.
+// Anything needing the server (a real dismissal syncs the stash; the screen
+// eventually refreshes) still touches it — but the device responds NOW.
+void executeLocalCommand(int id) {
+
+  Serial.printf("[local] command %d\n", id);
+
+  switch (id) {
+
+    case LC_STOP:
+      // The wake word already silenced it; "stop" confirms there is nothing
+      // else coming. The answer stays on the glass.
+      break;
+
+    case LC_DISMISS:
+      drawPhase("", "putting that away", C_INK_SOFT);
+      dismissAnswer();
+      state.showingAnswer = false;
+      break;
+
+    case LC_QUIET:
+      ttsEnabled = false;
+      break;
+
+    case LC_SPEAK:
+      ttsEnabled = true;
+      break;
+
+    case LC_LOUDER:
+      volumePercent += 12;
+      applyVolume();
+      drawVolumeOverlay();
+      screenRefreshAt = millis() + 1600;
+      return;
+
+    case LC_SOFTER:
+      volumePercent -= 12;
+      applyVolume();
+      drawVolumeOverlay();
+      screenRefreshAt = millis() + 1600;
+      return;
+
+  }
+
+  fetchScreen(true);
+
+}
+
+#endif
 
 
 // 16kHz 16-bit, downmixed to mono on the fly. 10s hard cap.
@@ -974,10 +1206,6 @@ void writeWavHeader(uint8_t *h, uint32_t dataBytes, uint32_t rate) {
   memcpy(h + 36, "data", 4); *(uint32_t *)(h + 40) = dataBytes;
 
 }
-
-// True while audio is playing, so a touch can stop it.
-volatile bool stopSpeaking = false;
-
 
 // ---------------------------------------------------------------------------
 // The streaming exchange.
@@ -1198,7 +1426,19 @@ bool pumpAudio() {
 
   const size_t n = ring.read(out, sizeof(out));
 
-  if (n) i2s.write(out, n);
+  if (n) {
+
+    i2s.write(out, n);
+
+#if WAKE_WORD && AEC_REF
+    // The echo canceller's reference: exactly what just went to the
+    // speaker, sample for sample, so the AFE can subtract it from what the
+    // microphone hears and "Jarvis" stays audible over the device's own
+    // voice.
+    refPush((const int16_t *)out, n / sizeof(int16_t));
+#endif
+
+  }
 
   if (digitalRead(BOOT_BTN) == LOW) stopSpeaking = true;
 
@@ -1291,6 +1531,12 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
 
     // Nothing for 30s means the server died mid-answer; don't sit forever.
     if (millis() - lastData > 30'000UL) { Serial.println("[converse] stalled"); break; }
+
+    // "Jarvis" — or a touch — at ANY point in the exchange, including while
+    // it is still thinking. The wake engine stays live through all of this
+    // now; its event handler sets stopSpeaking, and this is where that
+    // lands.
+    if (stopSpeaking) { out.interrupted = true; break; }
 
     // Keep the speaker fed before anything else.
     if (playbackStarted && !pumpAudio()) { out.interrupted = true; break; }
@@ -1460,32 +1706,64 @@ void voiceFlow(bool fromWake = false) {
   // being spoken, which deletes it from the perceived response time.
   startPreconnect();
 
-#if WAKE_WORD
-  // The detector and the recorder cannot share the I2S stream, so the engine
-  // steps aside for the length of the conversation and is restarted after.
-  // Paused, not ended.
-  //
-  // Every question used to tear the engine down and build it back up, which
-  // reloads three megabytes of models from flash and allocates the whole AFE
-  // again. It worked for the first few and then quietly stopped: the wake
-  // word "worked accurately at first, then after a bit of runtime stopped".
-  // Pausing keeps the models loaded and the tasks alive.
-  //
-  // Whenever the engine is armed — not only on a wake. The button path used
-  // to leave it running, so the engine and the recorder raced each other for
-  // the same samples and each got half a conversation.
-  if (micArmed) ESP_SR.pause();
-#endif
-
   const size_t MAX_SAMPLES = RECORD_RATE * 10;
 
   int16_t *mono = (int16_t *)heap_caps_malloc(MAX_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
   if (!mono) { phase = IDLE; fetchScreen(); return; }
 
-  const size_t samples = fromWake
-    ? recordFixed(mono, RECORD_RATE * 6)   // six seconds, then it stops itself
-    : recordWhileHeld(mono, MAX_SAMPLES);
+  size_t samples = 0;
+  bool viaEngine = false;
+
+#if WAKE_WORD
+  // The engine is never paused any more — it IS the recorder (the tee) and
+  // the command listener, and after this capture it stays hot as the
+  // wake-word interrupt through the whole answer.
+  if (micArmed) {
+
+    viaEngine = true;
+
+    localCmdId = -1;
+    cmdWindowTimedOut = false;
+
+    sr_set_mode(SR_MODE_COMMAND);
+
+    samples = captureViaTee(mono, MAX_SAMPLES, !fromWake);
+
+    // Wake stays live from here on — saying "Jarvis" over the answer is
+    // what interrupts it.
+    sr_set_mode(SR_MODE_WAKEWORD);
+
+    // A short utterance the engine recognized is handled right here, no
+    // network in the loop. Length-gated: "cancel" inside "cancel my three
+    // o'clock meeting" fires the recognizer too, but a real command is over
+    // in under three seconds — anything longer is a sentence, and sentences
+    // go to the server with the match ignored.
+    if (localCmdId >= 0 && samples < RECORD_RATE * 3) {
+
+      const int id = localCmdId;
+      localCmdId = -1;
+
+      free(mono);
+
+      executeLocalCommand(id);
+
+      phase = IDLE;
+
+      return;
+
+    }
+
+    localCmdId = -1;
+
+  }
+#endif
+
+  if (!viaEngine) {
+    // Mic disarmed, BOOT held: the engine is not running, so the bus is
+    // read directly.
+    samples = recordWhileHeld(mono, MAX_SAMPLES);
+  }
 
   // Was anyone actually speaking.
   //
@@ -1567,10 +1845,12 @@ void voiceFlow(bool fromWake = false) {
   free(mono);
 
   phase = IDLE;
-#if WAKE_WORD
-  // Back to listening for the wake word only — never left recording.
-  if (micArmed) ESP_SR.resume();
-#endif
+
+  // Interrupted by "Jarvis": skip the screen refresh entirely — the loop is
+  // about to drop straight back into listening, and a fetch here would put
+  // three seconds between the wake word and the ear. The refresh happens
+  // after THAT exchange instead.
+  if (result.interrupted && wakeFired) return;
 
   // The screen the exchange painted is current; anything else — a handled
   // command, an interruption, a failure — changed state the glass has not
@@ -1947,6 +2227,13 @@ void loop() {
 
   const unsigned long nowMs = millis();
 
+  // The deferred refresh a footer tap scheduled: taken only once the
+  // fingers have stopped, so five volume presses cost one fetch.
+  if (screenRefreshAt && nowMs > screenRefreshAt) {
+    screenRefreshAt = 0;
+    fetchScreen();
+  }
+
   if (nowMs - lastPoll > pollIntervalMs || lastPoll == 0) {
 
     Serial.println("[poll] polling /api/desk...");
@@ -2031,15 +2318,21 @@ void loop() {
 
         Serial.printf("[tts] %s by button\n", ttsEnabled ? "on" : "off");
 
+        // Instant cue: the footer dot flips locally; the designed footer
+        // catches up on the deferred refresh.
+        gfx->fillCircle(28, 420, 7, ttsEnabled ? C_MOSS : C_LINE);
+
       } else if (t.x < 195) {
 
         volumePercent -= 12;
         applyVolume();
+        drawVolumeOverlay();
 
       } else if (t.x < 290) {
 
         volumePercent += 12;
         applyVolume();
+        drawVolumeOverlay();
 
       } else {
 
@@ -2048,9 +2341,10 @@ void loop() {
 
       }
 
-      fetchScreen();
+      // One refresh after the fingers stop, not one per press.
+      screenRefreshAt = millis() + 1600;
 
-      delay(250);
+      delay(180);
 
       return;
 
@@ -2085,7 +2379,9 @@ void loop() {
 
       Serial.printf("[mic] toggle took %lums\n", millis() - t0);
 
-      fetchScreen();
+      // The phase text above is already on the glass; let the designed face
+      // arrive on the deferred refresh instead of blocking touch for it.
+      screenRefreshAt = millis() + 400;
 
       return;
 
