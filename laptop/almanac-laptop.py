@@ -201,12 +201,19 @@ def run_shortcut(name, cfg):
         log(f"shortcuts list failed: {error}")
         return
 
-    words = [w.lower() for w in name.split() if len(w) > 1]
-    matches = [s for s in installed if s.strip() and all(w in s.lower() for w in words)]
+    # Only shortcuts OFFERED to Jarvis are runnable: ones whose name starts
+    # with "Jarvis" (naming it is the opt-in — create "Jarvis Focus" and
+    # it's a voice power), plus anything explicitly allowlisted in the
+    # config. The rest of the library — legacy projects, shortcuts with
+    # their own automations — is invisible here, so a mishear can never
+    # fire something that was not built for this.
+    allow = [a.lower() for a in (cfg.get("shortcuts_allowlist") or [])]
 
-    allow = cfg.get("shortcuts_allowlist")
-    if allow:
-        matches = [m for m in matches if m.lower() in [a.lower() for a in allow]]
+    offered = [s for s in installed if s.strip()
+               and (s.lower().startswith("jarvis") or s.lower() in allow)]
+
+    words = [w.lower() for w in name.split() if len(w) > 1 and w.lower() != "jarvis"]
+    matches = [s for s in offered if all(w in s.lower() for w in words)]
 
     if not matches:
         log(f"no shortcut match for: {name!r}")
