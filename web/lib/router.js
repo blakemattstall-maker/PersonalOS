@@ -377,27 +377,42 @@ export async function executeTool(data, originalText = null) {
           drive: "https://drive.google.com/drive/u/0/"
         };
 
-        const url = data.url && /^https?:\/\//.test(data.url) ? data.url
-          : data.site && SITES[data.site] ? SITES[data.site]
-          : data.search ? `https://www.google.com/search?q=${encodeURIComponent(data.search)}`
-          : null;
+        // One command, one kind. Apps and files are handled entirely by the
+        // helper on the laptop — file names and search hits never leave the
+        // machine; only the spoken words travel.
+        let command = null;
+        let spoken = null;
 
-        if (!url) {
+        if (data.app) {
+          command = { kind: "app", app: data.app, label: data.app };
+          spoken = `Opening ${data.app} on your laptop.`;
+        } else if (data.file) {
+          command = { kind: "file", query: data.file, app: data.app || null, label: data.file };
+          spoken = `Looking for ${data.file} on your laptop.`;
+        } else {
+          const url = data.url && /^https?:\/\//.test(data.url) ? data.url
+            : data.site && SITES[data.site] ? SITES[data.site]
+            : data.search ? `https://www.google.com/search?q=${encodeURIComponent(data.search)}`
+            : null;
+          if (url) {
+            command = { kind: "url", url, label: data.search || data.site || "link" };
+            spoken = "Opening on your laptop.";
+          }
+        }
+
+        if (!command) {
           result = { success: false, message: "I wasn't sure what to open on the laptop." };
           break;
         }
 
-        const { pushed, online } = await pushLaptopCommand({
-          url,
-          label: data.search || data.site || "link"
-        });
+        const { pushed, online } = await pushLaptopCommand(command);
 
         result = {
           success: pushed,
           message: !pushed ? "That didn't look like something I can open."
-            : online ? "Opening on your laptop."
+            : online ? spoken
             : "Queued for your laptop — the helper doesn't look like it's running.",
-          data: { url }
+          data: { ...command }
         };
 
         break;

@@ -69,6 +69,80 @@ def fresh(command):
         return False
 
 
+def find_file(query, cfg):
+    """Spotlight lookup, entirely local — the query came from the spoken
+    words; the file names and paths never leave this machine. Scoped to the
+    configured directories (default: the usual creative/work homes), newest
+    match wins."""
+    dirs = cfg.get("file_dirs") or ["~/Documents", "~/Desktop", "~/Movies", "~/Downloads"]
+
+    words = [w for w in query.split() if len(w) > 2][:4]
+    if not words:
+        return None
+
+    # Every word must appear in the file's name (case-insensitive).
+    spotlight = " && ".join(f'kMDItemFSName == "*{w}*"c' for w in words)
+
+    hits = []
+    for d in dirs:
+        d = str(pathlib.Path(d).expanduser())
+        try:
+            out = subprocess.run(
+                ["mdfind", "-onlyin", d, spotlight],
+                capture_output=True, text=True, timeout=10, check=False
+            ).stdout.strip()
+        except Exception:
+            continue
+        hits += [h for h in out.splitlines() if h]
+
+    if not hits:
+        return None
+
+    # Newest modification first — "my premiere project" means the recent one.
+    hits.sort(key=lambda p: pathlib.Path(p).stat().st_mtime if pathlib.Path(p).exists() else 0,
+              reverse=True)
+    return hits[0]
+
+
+def execute(command, cfg):
+    kind = command.get("kind", "url")
+    label = command.get("label", "")
+
+    if kind == "url":
+        url = command.get("url", "")
+        if not url.startswith(("http://", "https://")):
+            log(f"refused non-http: {url!r}")
+            return
+        log(f"open url: {url}  ({label})")
+        subprocess.run(["open", url], check=False)
+        return
+
+    if kind == "app":
+        app = command.get("app", "")
+        allow = cfg.get("apps_allowlist")  # optional; absent = any app name
+        if allow and app.lower() not in [a.lower() for a in allow]:
+            log(f"app not in allowlist - dropped: {app}")
+            return
+        # `open -a` only launches real applications; an unknown or misheard
+        # name fails harmlessly.
+        log(f"open app: {app}")
+        subprocess.run(["open", "-a", app], check=False)
+        return
+
+    if kind == "file":
+        query = command.get("query", "")
+        path = find_file(query, cfg)
+        if not path:
+            log(f"no file match for: {query!r}")
+            return
+        app = command.get("app")
+        log(f"open file: {path}" + (f" with {app}" if app else ""))
+        subprocess.run(["open", "-a", app, path] if app else ["open", path], check=False)
+        return
+
+    log(f"unknown kind dropped: {kind}")
+
+
 def main():
     cfg = load_config()
     log(f"helper up, polling {cfg['base']} every {POLL_SECONDS}s")
@@ -88,22 +162,17 @@ def main():
             continue
 
         for command in payload.get("commands", []):
-            url = command.get("url", "")
+            label = command.get("label", "")
 
             if PAUSE.exists():
-                log(f"PAUSED - dropped: {url}")
+                log(f"PAUSED - dropped: {label}")
                 continue
 
             if not fresh(command):
-                log(f"stale - dropped: {url}")
+                log(f"stale - dropped: {label}")
                 continue
 
-            if not url.startswith(("http://", "https://")):
-                log(f"refused non-http: {url!r}")
-                continue
-
-            log(f"open: {url}  ({command.get('label', '')})")
-            subprocess.run(["open", url], check=False)
+            execute(command, cfg)
 
 
 if __name__ == "__main__":

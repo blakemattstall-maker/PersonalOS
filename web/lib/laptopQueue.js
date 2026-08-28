@@ -47,9 +47,23 @@ async function store(value) {
 }
 
 
-export async function pushLaptopCommand({ url, label = "" }) {
+export async function pushLaptopCommand({ kind = "url", url = null, app = null, query = null, label = "" }) {
 
-  if (!/^https?:\/\//.test(url || "")) return { pushed: false };
+  // Validation by kind, so nothing malformed ever reaches the helper: URLs
+  // must be http(s); app names and file queries are plain short text (the
+  // helper additionally refuses anything but `open -a` and a Spotlight
+  // lookup, so these are belt on top of its braces).
+  const clean = (s, max) => typeof s === "string" && /^[\w .,'&()\/-]{1,80}$/.test(s.trim())
+    ? s.trim().slice(0, max) : null;
+
+  if (!["url", "app", "file"].includes(kind)) return { pushed: false };
+  if (kind === "url" && !/^https?:\/\//.test(url || "")) return { pushed: false };
+  if (kind === "file" && !(query = clean(query, 80))) return { pushed: false };
+
+  // An app name rides on both "app" and "file" (the file's opener hint);
+  // sanitized wherever it appears, required only when it IS the command.
+  app = app ? clean(app, 40) : null;
+  if (kind === "app" && !app) return { pushed: false };
 
   const value = await load();
 
@@ -61,7 +75,10 @@ export async function pushLaptopCommand({ url, label = "" }) {
 
   value.commands.push({
     id: `${now.toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`,
-    url,
+    kind,
+    ...(url ? { url } : {}),
+    ...(app ? { app } : {}),
+    ...(query ? { query } : {}),
     label: String(label).slice(0, 120),
     at: new Date(now).toISOString()
   });

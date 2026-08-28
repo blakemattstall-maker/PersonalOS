@@ -766,7 +766,7 @@ export const TOOLS = [
     function: {
 
       name: "open_on_laptop",
-      description: "Open something in the browser on the user's laptop. ONLY when the user EXPLICITLY names the laptop/computer as the destination — 'google X on my laptop', 'open gmail on my computer', 'pull that doc up on my laptop'. NEVER volunteer this: if the laptop was not named, do not call it — an unexpected window opening on his machine (during an exam, a call, a screen-share) is genuinely harmful. Pair it freely with other tools when he asks for both ('draft the email and open it on my laptop' = draft_email + open_on_laptop).",
+      description: "Open something on the user's laptop: a web search, a site, an application, or a local file. ONLY when the user EXPLICITLY names the laptop/computer as the destination — 'google X on my laptop', 'open premiere on my laptop', 'open my resume file on my computer'. NEVER volunteer this: if the laptop was not named, do not call it — an unexpected window opening on his machine (during an exam, a call, a screen-share) is genuinely harmful. Pair it freely with other tools when he asks for both ('draft the email and open it on my laptop' = draft_email + open_on_laptop).",
 
       parameters: {
         type: "object",
@@ -783,6 +783,14 @@ export const TOOLS = [
           url: {
             type: "string",
             description: "An exact URL, only when he gave one or it is unambiguous."
+          },
+          app: {
+            type: "string",
+            description: "An application to launch, by its plain name as he said it: 'Premiere Pro', 'Messages', 'Spotify'."
+          },
+          file: {
+            type: "string",
+            description: "Words identifying a local file to find and open ('the ISU highlight project', 'my resume'). The laptop searches its own disk; nothing is guessed here."
           }
         }
       }
