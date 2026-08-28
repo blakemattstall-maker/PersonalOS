@@ -203,7 +203,7 @@ async function composeAndRenderScreen({ send, question, answer, results, device,
 
 // One spoken exchange. Returns a streaming Response; all the work happens
 // inside the stream so the first frames leave while later stages still run.
-export function deskConverse({ audio, mime, device }) {
+export function deskConverse({ audio, mime, device, signal = null }) {
 
   // Whether the device is still on the line. Interrupting an exchange
   // ("Jarvis" mid-answer) closes the socket, but the work here kept going:
@@ -212,7 +212,15 @@ export function deskConverse({ audio, mime, device }) {
   // spoken dismissal could not prevent it, because the stash was written
   // after the dismissal landed. An abandoned exchange must leave nothing
   // behind.
+  //
+  // Two detectors, because each alone missed a case: a failed send only
+  // notices the hangup while something is being SENT (an interrupt during
+  // thinking sends nothing, and the ghost survived exactly there), and the
+  // request's abort signal is the platform's own word that the client
+  // dropped, whatever the exchange was doing at the time.
   let closed = false;
+
+  const gone = () => closed || Boolean(signal?.aborted);
 
   const stream = new ReadableStream({
 
@@ -282,7 +290,7 @@ export function deskConverse({ audio, mime, device }) {
           if (ttsStarted || !device.tts) return;
           const line = (spokenText || "").trim();
           if (!line) return;
-          ttsStarted = streamTts({ text: line, voice, speed, send, isClosed: () => closed })
+          ttsStarted = streamTts({ text: line, voice, speed, send, isClosed: gone })
             .catch(error => {
               console.error("DESK tts failed:", error.message);
               send("M", { kind: "tts-failed" });
@@ -466,7 +474,7 @@ export function deskConverse({ audio, mime, device }) {
         );
 
         const screenDone = composeAndRenderScreen({
-          isClosed: () => closed,
+          isClosed: gone,
           send,
           question: text,
           answer: fullAnswer,

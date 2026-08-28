@@ -50,6 +50,9 @@ export async function POST(request, context) {
     return deskConverse({
       audio,
       mime: contentType.split(";")[0],
+      // Fires when the device hangs up (an interrupt) — the reliable signal
+      // that nothing further should be composed, stashed, or synthesized.
+      signal: request.signal,
       // The device owns its own state; the renderer only draws it.
       device: {
         mic: request.headers.get("x-desk-mic") === "off" ? "off" : "on",
