@@ -232,6 +232,12 @@ export async function designDeskScreen({ question, answer, facts = "", waiting =
           `- TWO SENTENCES. Three only if the second genuinely could not carry ` +
           `it. This is read aloud while he waits; twenty seconds of speech is ` +
           `a monologue, not an answer.\n` +
+          `- Never claim an action happened. "Created", "added", "drafted", ` +
+          `"sent" may ONLY be spoken if the answer text explicitly states ` +
+          `that action was completed. If the material shows a lookup and the ` +
+          `question merely ASKED for an action, report the lookup — a spoken ` +
+          `claim of work that was not done is the worst thing this voice can ` +
+          `produce.\n` +
           `- Say only what you actually know. Do NOT manufacture a connection ` +
           `to his projects, his background or his goals to sound insightful — ` +
           `"your creative-production background gives you an edge here" is ` +

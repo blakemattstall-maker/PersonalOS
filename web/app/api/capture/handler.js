@@ -356,16 +356,24 @@ FIRST decide which of these the user is doing:
    choose a range: "today" is today only; "this week" runs through the
    coming Sunday; if unclear use today through 7 days out.
 
-4. A SEQUENCE where a later step needs an earlier step's RESULT — "research
-   X, THEN put the findings in a doc, THEN draft an email about that doc";
-   "look at Y, then make a task for each thing it lists" -> run_chain, with
-   the user's complete request. The chained words ("then", "using that",
-   "for each of those") are the tell. Do NOT split such a request into
-   separate calls: separate tools cannot see each other's results, so the
-   doc would ignore the research and the email would ignore the doc.
+4. AN OUTPUT THAT NEEDS ANOTHER STEP'S RESULT -> run_chain, ALONE, with the
+   user's complete request. This rule BEATS rules 1-3 whenever it applies,
+   and run_chain is never paired with other calls. Two shapes trigger it:
+   - Explicit sequence: "research X, THEN put the findings in a doc, THEN
+     email me about that doc"; "look at my open tasks, then create a task
+     saying how many I have". The word "then" linking two actions is the
+     tell.
+   - Implicit dependency, no "then" needed: "create a task that lists the
+     total number of my open tasks" (the task's CONTENT requires counting
+     first); "draft an email containing tomorrow's schedule" (the email
+     needs the schedule looked up). If the thing being created must CONTAIN
+     information you'd have to query for, that is a chain.
+   Never split these into separate calls: separate tools cannot see each
+   other's results, so a blind create_task would hold no count and a blind
+   doc would ignore the research.
 
 Call every tool needed to satisfy the request — if one message asks for two
-INDEPENDENT things, make two calls; if the things feed each other, that is
+INDEPENDENT things, make two calls; if anything feeds anything, that is
 rule 4.
 ${isDesk ? `
 THIS REQUEST CAME FROM THE DESK DEVICE. It was spoken out loud, and the user
