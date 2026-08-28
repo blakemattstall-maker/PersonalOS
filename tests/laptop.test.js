@@ -43,6 +43,27 @@ test("the helper enforces TTL, pause, and http-only, and uses no shell", () => {
   assert.ok(!HELPER.includes("shell=True"), "no shell execution, ever");
 });
 
+test("verbs are a closed dictionary the server can only name, never write", () => {
+  assert.match(HELPER, /argv = VERBS\.get\(verb\)/);
+  const ROUTER = read("web/lib/router.js");
+  assert.match(ROUTER, /VERBS = new Set\(/);
+  assert.match(QUEUE, /\^\[a-z_\]\{3,30\}\$/);
+});
+
+test("shortcuts only run what exists, and the allowlist narrows it", () => {
+  assert.match(HELPER, /\["shortcuts", "list"\]/);
+  assert.match(HELPER, /shortcuts_allowlist/);
+  assert.match(HELPER, /\["shortcuts", "run", best\]/);
+});
+
+test("the messages kind can open a thread and nothing else", () => {
+  assert.match(HELPER, /open", f"sms:\{phone\}/);
+  assert.match(QUEUE, /\^\\\+\?\\d\{7,15\}\$/);
+  // The only route into Messages is the sms: URL, which opens a thread.
+  // Scripting Messages is the send pathway, and it must not exist here.
+  assert.ok(!HELPER.includes('application "Messages"'), "no Messages scripting in the helper");
+});
+
 test("the pause flag lives where the drain cannot touch it", () => {
   // Two shipped regressions, one root: the pause shared a record with the
   // queue, and the helper's 2-second read-modify-write poll first erased a

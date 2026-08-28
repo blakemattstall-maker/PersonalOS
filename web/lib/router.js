@@ -383,7 +383,28 @@ export async function executeTool(data, originalText = null) {
         let command = null;
         let spoken = null;
 
-        if (data.app) {
+        if (data.shortcut) {
+          command = { kind: "shortcut", query: data.shortcut, label: data.shortcut };
+          spoken = `Running your ${data.shortcut} shortcut on your laptop.`;
+        } else if (data.message_to) {
+          // The people table supplies the number; the laptop just opens the
+          // thread. No number saved is an answer, not a guess.
+          const { default: supabase } = await import("./supabase.js");
+          const { data: person } = await supabase
+            .from("people")
+            .select("name, phone")
+            .ilike("name", `%${data.message_to.trim()}%`)
+            .limit(1)
+            .maybeSingle();
+          const phone = (person?.phone || "").replace(/[^+\d]/g, "");
+          if (!phone) {
+            result = { success: false,
+                       message: `I don't have a phone number saved for ${data.message_to}.` };
+            break;
+          }
+          command = { kind: "sms", phone, label: `message ${person.name}` };
+          spoken = `Opening your conversation with ${person.name} on your laptop.`;
+        } else if (data.app) {
           command = { kind: "app", app: data.app, label: data.app };
           spoken = `Opening ${data.app} on your laptop.`;
         } else if (data.file) {
@@ -414,6 +435,38 @@ export async function executeTool(data, originalText = null) {
             : online ? spoken
             : "Queued for your laptop — the helper doesn't look like it's running.",
           data: { ...command }
+        };
+
+        break;
+
+      }
+
+
+
+      case "laptop_action": {
+
+        const { pushLaptopCommand } = await import("./laptopQueue.js");
+
+        const VERBS = new Set(["spotify_play", "spotify_pause", "spotify_next", "spotify_previous",
+                               "volume_up", "volume_down", "mute", "unmute",
+                               "sleep_display", "screenshot"]);
+
+        if (!VERBS.has(data.verb)) {
+          result = { success: false, message: "That's not an action the laptop knows." };
+          break;
+        }
+
+        const { pushed, online, paused } = await pushLaptopCommand({
+          kind: "verb", query: data.verb, label: data.verb.replace(/_/g, " ")
+        });
+
+        result = {
+          success: pushed,
+          message: paused ? "Laptop control is paused. Say resume laptop control first."
+            : !pushed ? "That didn't go through."
+            : online ? `Done — ${data.verb.replace(/_/g, " ")} on your laptop.`
+            : "Queued for your laptop — the helper doesn't look like it's running.",
+          data: { verb: data.verb }
         };
 
         break;

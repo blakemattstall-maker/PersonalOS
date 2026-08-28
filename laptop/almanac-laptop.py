@@ -171,6 +171,52 @@ def find_app(name):
     return apps[0]
 
 
+# The verb library: every action the laptop can PERFORM (as opposed to
+# open), each one a fixed argv — the server can only ever name a key in
+# this dictionary, so free text can never become execution. Additions to
+# Jarvis's physical vocabulary happen here, by hand, on this machine.
+VERBS = {
+    "spotify_play":     ["osascript", "-e", 'tell application "Spotify" to play'],
+    "spotify_pause":    ["osascript", "-e", 'tell application "Spotify" to pause'],
+    "spotify_next":     ["osascript", "-e", 'tell application "Spotify" to next track'],
+    "spotify_previous": ["osascript", "-e", 'tell application "Spotify" to previous track'],
+    "volume_up":        ["osascript", "-e", "set volume output volume ((output volume of (get volume settings)) + 10)"],
+    "volume_down":      ["osascript", "-e", "set volume output volume ((output volume of (get volume settings)) - 10)"],
+    "mute":             ["osascript", "-e", "set volume with output muted"],
+    "unmute":           ["osascript", "-e", "set volume without output muted"],
+    "sleep_display":    ["pmset", "displaysleepnow"],
+}
+
+
+def run_shortcut(name, cfg):
+    """His own Shortcuts automations, run by name — the big unlock, because
+    he authored them and that authorship is the consent. Fuzzy matched
+    (every spoken word in the shortcut's name, shortest match wins) against
+    what actually exists; an optional shortcuts_allowlist in the config
+    narrows it further."""
+    try:
+        installed = subprocess.run(["shortcuts", "list"], capture_output=True,
+                                   text=True, timeout=15, check=False).stdout.splitlines()
+    except Exception as error:
+        log(f"shortcuts list failed: {error}")
+        return
+
+    words = [w.lower() for w in name.split() if len(w) > 1]
+    matches = [s for s in installed if s.strip() and all(w in s.lower() for w in words)]
+
+    allow = cfg.get("shortcuts_allowlist")
+    if allow:
+        matches = [m for m in matches if m.lower() in [a.lower() for a in allow]]
+
+    if not matches:
+        log(f"no shortcut match for: {name!r}")
+        return
+
+    best = min(matches, key=len)
+    log(f"run shortcut: {best}")
+    subprocess.run(["shortcuts", "run", best], timeout=120, check=False)
+
+
 def execute(command, cfg):
     kind = command.get("kind", "url")
     label = command.get("label", "")
@@ -226,6 +272,36 @@ def execute(command, cfg):
                 subprocess.run(["open", path], check=False)
         else:
             subprocess.run(["open", path], check=False)
+        return
+
+    if kind == "shortcut":
+        run_shortcut(command.get("query", ""), cfg)
+        return
+
+    if kind == "verb":
+        verb = command.get("query", "")
+        if verb == "screenshot":
+            shot = str(pathlib.Path.home() / "Desktop" /
+                       f"jarvis-{datetime.now().strftime('%H%M%S')}.png")
+            log(f"verb: screenshot -> {shot}")
+            subprocess.run(["screencapture", "-x", shot], check=False)
+            return
+        argv = VERBS.get(verb)
+        if argv:
+            log(f"verb: {verb}")
+            subprocess.run(argv, capture_output=True, timeout=15, check=False)
+        else:
+            log(f"unknown verb dropped: {verb!r}")
+        return
+
+    if kind == "sms":
+        phone = command.get("phone", "")
+        if not phone.replace("+", "").isdigit():
+            log(f"refused sms target: {phone!r}")
+            return
+        # Opens the Messages thread. Nothing here can type or send.
+        log(f"open messages thread: {phone}")
+        subprocess.run(["open", f"sms:{phone}"], check=False)
         return
 
     log(f"unknown kind dropped: {kind}")

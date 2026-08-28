@@ -791,8 +791,41 @@ export const TOOLS = [
           file: {
             type: "string",
             description: "Words identifying a local file to find and open ('the ISU highlight project', 'my resume'). The laptop searches its own disk; nothing is guessed here."
+          },
+          shortcut: {
+            type: "string",
+            description: "A Shortcuts automation to RUN by name, when he says so: 'run my log weight shortcut on my laptop'. His own authored automations only."
+          },
+          message_to: {
+            type: "string",
+            description: "A person to open a Messages conversation with, by name: 'message Sarah from my laptop'. Opens the thread — this can never send anything."
           }
         }
+      }
+
+    }
+  },
+
+
+  {
+    type: "function",
+    function: {
+
+      name: "laptop_action",
+      description: "One fixed media/system action on the user's laptop, from a closed menu — nothing outside the verb list is possible. ONLY when the user EXPLICITLY names the laptop/computer: 'pause spotify on my laptop', 'turn my laptop volume down', 'sleep my laptop screen'. NEVER volunteer it; if the laptop was not named, do not call it.",
+
+      parameters: {
+        type: "object",
+        properties: {
+          verb: {
+            type: "string",
+            enum: ["spotify_play", "spotify_pause", "spotify_next", "spotify_previous",
+                   "volume_up", "volume_down", "mute", "unmute",
+                   "sleep_display", "screenshot"],
+            description: "The action."
+          }
+        },
+        required: ["verb"]
       }
 
     }

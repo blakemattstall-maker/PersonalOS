@@ -82,7 +82,7 @@ async function isPaused() {
 }
 
 
-export async function pushLaptopCommand({ kind = "url", url = null, app = null, query = null, label = "" }) {
+export async function pushLaptopCommand({ kind = "url", url = null, app = null, query = null, phone = null, label = "" }) {
 
   // Validation by kind, so nothing malformed ever reaches the helper: URLs
   // must be http(s); app names and file queries are plain short text (the
@@ -91,9 +91,15 @@ export async function pushLaptopCommand({ kind = "url", url = null, app = null, 
   const clean = (s, max) => typeof s === "string" && /^[\w .,'&()\/-]{1,80}$/.test(s.trim())
     ? s.trim().slice(0, max) : null;
 
-  if (!["url", "app", "file"].includes(kind)) return { pushed: false };
+  if (!["url", "app", "file", "shortcut", "verb", "sms"].includes(kind)) return { pushed: false };
   if (kind === "url" && !/^https?:\/\//.test(url || "")) return { pushed: false };
   if (kind === "file" && !(query = clean(query, 80))) return { pushed: false };
+  if (kind === "shortcut" && !(query = clean(query, 60))) return { pushed: false };
+  // Verbs are a fixed vocabulary end to end: enum'd in the tool schema,
+  // checked in the router, shaped here, and finally a dictionary lookup on
+  // the laptop. Free text cannot reach an action.
+  if (kind === "verb" && !/^[a-z_]{3,30}$/.test(query || "")) return { pushed: false };
+  if (kind === "sms" && !/^\+?\d{7,15}$/.test(phone || "")) return { pushed: false };
 
   // An app name rides on both "app" and "file" (the file's opener hint);
   // sanitized wherever it appears, required only when it IS the command.
@@ -116,6 +122,7 @@ export async function pushLaptopCommand({ kind = "url", url = null, app = null, 
     ...(url ? { url } : {}),
     ...(app ? { app } : {}),
     ...(query ? { query } : {}),
+    ...(phone ? { phone } : {}),
     label: String(label).slice(0, 120),
     at: new Date(now).toISOString()
   });
