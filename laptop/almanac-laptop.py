@@ -76,7 +76,13 @@ def find_file(query, cfg):
     match wins."""
     dirs = cfg.get("file_dirs") or ["~/Documents", "~/Desktop", "~/Movies", "~/Downloads"]
 
-    words = [w for w in query.split() if len(w) > 2][:4]
+    # "open my headshot cutout FILE" — the words describing that it IS a
+    # file are not part of its name, and requiring them yields zero matches
+    # every time. Only distinctive words constrain the search.
+    STOP = {"file", "files", "project", "document", "doc", "folder",
+            "the", "and", "for", "named", "called", "that", "one"}
+
+    words = [w for w in query.lower().split() if len(w) > 2 and w not in STOP][:4]
     if not words:
         return None
 
@@ -87,13 +93,16 @@ def find_file(query, cfg):
     for d in dirs:
         d = str(pathlib.Path(d).expanduser())
         try:
-            out = subprocess.run(
+            r = subprocess.run(
                 ["mdfind", "-onlyin", d, spotlight],
                 capture_output=True, text=True, timeout=10, check=False
-            ).stdout.strip()
-        except Exception:
+            )
+        except Exception as error:
+            log(f"mdfind blew up in {d}: {error}")
             continue
-        hits += [h for h in out.splitlines() if h]
+        found = [h for h in r.stdout.strip().splitlines() if h]
+        log(f"mdfind {d}: rc={r.returncode} hits={len(found)} err={r.stderr.strip()[:120]!r}")
+        hits += found
 
     if not hits:
         return None
