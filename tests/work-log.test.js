@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { orgMatches } from "../web/tools/workLog.js";
-import { overlapsExisting } from "../web/tools/triggers.js";
+import { overlapsExisting, parseNumbers } from "../web/tools/triggers.js";
 
 
 // Two failures on one evening, both of which looked like the app losing data
@@ -205,5 +205,24 @@ test("the work log reaches every reasoning surface", () => {
 
   assert.match(signals, /workSignal\(\)/);
   assert.match(signals, /work && `Work logged: \$\{work\}`/);
+
+});
+
+
+test("a pronoun is never counted as a unit of work", () => {
+
+  // "Cut 3 hype reels and color graded 2 of them" parsed as { them: 2 }. In a
+  // trigger series that is noise; in a work log the totals become resume
+  // bullets, and "2 them" is worse than no number at all.
+  const parsed = parseNumbers("Cut 3 hype reels for the soccer team and color graded 2 of them");
+
+  assert.equal(parsed.hype_reels, 3);
+  assert.ok(!("them" in parsed), "'them' is not a unit");
+
+  assert.ok(!("these" in parseNumbers("edited 4 videos and posted 2 of these")));
+  assert.ok(!("both" in parseNumbers("shot 2 games and cut both")));
+
+  // The real units survive.
+  assert.deepEqual(parseNumbers("exported about 15 GIFs with custom overlays"), { gifs: 15 });
 
 });

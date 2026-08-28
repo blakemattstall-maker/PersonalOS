@@ -55,7 +55,12 @@ function tableMissing(error) {
 const FILLER = new Set([
   "and", "the", "of", "at", "in", "on", "for", "with", "to", "a", "an", "my",
   "it", "was", "were", "is", "are", "then", "plus", "more", "some", "about",
-  "or", "but", "did", "got", "i", "we", "he", "she", "they", "today", "just"
+  "or", "but", "did", "got", "i", "we", "he", "she", "they", "today", "just",
+  // Pronouns and back-references. "color graded 2 of them" parsed as
+  // { them: 2 }, and a work log's totals become resume bullets — "2 them" is
+  // worse than no number at all.
+  "them", "these", "those", "others", "ones", "each", "both", "one", "another",
+  "that", "this", "there", "here", "him", "her", "us", "you", "your", "my"
 ]);
 
 
