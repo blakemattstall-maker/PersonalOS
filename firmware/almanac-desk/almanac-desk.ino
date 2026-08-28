@@ -208,28 +208,11 @@ void applyVolume() {
 // The first volume buttons re-fetched the whole screen per press: 3-4
 // seconds of blocked loop during which no touch was read — which is
 // indistinguishable from a freeze, and was reported as exactly that. Now a
-// press paints this overlay immediately (five discs, drawn locally — shapes
-// need no typeface), further presses land instantly, and ONE deferred
+// press paints an overlay immediately (five discs, drawn locally — shapes
+// need no typeface; see drawVolumeOverlay, which lives with the frame
+// cache it draws over), further presses land instantly, and ONE deferred
 // re-fetch restores the designed face after the fingers stop.
 unsigned long screenRefreshAt = 0;
-
-void drawVolumeOverlay() {
-
-  const int y = 230;
-  const int r = 13;
-  const int spacing = 62;
-  const int x0 = LCD_WIDTH / 2 - 2 * spacing;
-
-  const int filled = max(0, min(5, (volumePercent - 40 + 11) / 12));
-
-  gfx->fillRect(0, y - r - 18, LCD_WIDTH, (r + 18) * 2, C_BLACK);
-
-  for (int i = 0; i < 5; i++) {
-    if (i < filled) gfx->fillCircle(x0 + i * spacing, y, r, C_MOSS);
-    else gfx->drawCircle(x0 + i * spacing, y, r, C_LINE);
-  }
-
-}
 
 #if WAKE_WORD
 
@@ -688,6 +671,33 @@ bool blitResting() {
   return true;
 
 }
+
+// The volume feedback, painted the instant a press or a phrase lands.
+void drawVolumeOverlay() {
+
+  // The overlay belongs on the face it interrupts. A spoken "louder" lands
+  // while the LISTENING frame is still up; painting dots over that read as
+  // a glitch. Underlay the resting face first (unless an answer is
+  // deliberately on show — then the band alone is right).
+  if (!state.showingAnswer) blitResting();
+
+  const int y = 230;
+  const int r = 13;
+  const int spacing = 62;
+  const int x0 = LCD_WIDTH / 2 - 2 * spacing;
+
+  const int filled = max(0, min(5, (volumePercent - 40 + 11) / 12));
+
+  gfx->fillRect(0, y - r - 18, LCD_WIDTH, (r + 18) * 2, C_BLACK);
+
+  // Solid discs both ways — an outlined circle at this size renders as a
+  // rough ring and was read as "squarish".
+  for (int i = 0; i < 5; i++) {
+    gfx->fillCircle(x0 + i * spacing, y, r, i < filled ? C_MOSS : C_LINE);
+  }
+
+}
+
 
 // Where the current decode is writing — the idle framebuffer above, or one
 // of the cached phase frames.
@@ -1299,6 +1309,19 @@ void startPreconnect() {
   }
 }
 
+// For every path that armed a connection and then didn't use it. A local
+// command, a silent recording, an aborted flow — each had started the TLS
+// handshake for an exchange that never happened, and the session sat
+// resident holding ~46KB of the internal RAM the next screen poll needed to
+// handshake with. The polls failed with a bare -1 and the desk declared
+// itself offline on a healthy network. Confirmed in the heap log: 102KB
+// free before a local command, 56KB after, restored by nothing.
+void dropPreconnect() {
+  const unsigned long t0 = millis();
+  while (!preconnectDone && millis() - t0 < 20'000UL) delay(10);
+  exchangeClient.stop();
+}
+
 
 // Pull-based body reader that understands chunked transfer.
 //
@@ -1759,7 +1782,7 @@ void voiceFlow(bool fromWake = false) {
 
   int16_t *mono = (int16_t *)heap_caps_malloc(MAX_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM);
 
-  if (!mono) { phase = IDLE; fetchScreen(); return; }
+  if (!mono) { dropPreconnect(); phase = IDLE; fetchScreen(); return; }
 
   size_t samples = 0;
   bool viaEngine = false;
@@ -1779,6 +1802,18 @@ void voiceFlow(bool fromWake = false) {
 
     samples = captureViaTee(mono, MAX_SAMPLES, !fromWake);
 
+    // Grace for a verdict already in flight. MultiNet delivers a detection
+    // a few hundred milliseconds AFTER the phrase ends — and the capture
+    // window used to slam back to wake mode the instant the voice stopped,
+    // cutting the recognizer off mid-decision. "Louder" landed locally only
+    // when the timing was lucky; "never mind" never did. Short utterances —
+    // the only ones a command could be — now wait out that beat. Questions
+    // are longer and skip it entirely, so they lose nothing.
+    if (localCmdId < 0 && !cmdWindowTimedOut && samples < RECORD_RATE * 5 / 2) {
+      const unsigned long g0 = millis();
+      while (localCmdId < 0 && !cmdWindowTimedOut && millis() - g0 < 700UL) delay(20);
+    }
+
     // Wake stays live from here on — saying "Jarvis" over the answer is
     // what interrupts it.
     sr_set_mode(SR_MODE_WAKEWORD);
@@ -1796,6 +1831,9 @@ void voiceFlow(bool fromWake = false) {
       free(mono);
 
       executeLocalCommand(id);
+
+      // The handshake that was armed for an exchange that never happened.
+      dropPreconnect();
 
       phase = IDLE;
 
@@ -1867,18 +1905,20 @@ void voiceFlow(bool fromWake = false) {
   if (samples >= RECORD_RATE / 2 && !heardSpeech) {
     Serial.println("[voice] no speech in that - not uploading");
     free(mono);
+    dropPreconnect();
     phase = SPEAKING;
     drawPhase("", "nothing heard", C_INK_SOFT);
     delay(1200);
     phase = IDLE;
-    fetchScreen();
+    if (!blitResting()) fetchScreen();
     return;
   }
 
   if (samples < RECORD_RATE / 2) {  // under half a second of audio
     free(mono);
+    dropPreconnect();
     phase = IDLE;
-    fetchScreen();
+    if (!blitResting()) fetchScreen();
     return;
   }
 
@@ -2307,7 +2347,13 @@ void loop() {
     const bool ok = fetchScreen();
     Serial.printf("[poll] %s - attention=%d heap=%u\n", ok ? "ok" : "FAILED",
                   state.attentionCount, (unsigned)ESP.getFreeHeap());
-    if (!ok) drawOffline("almanac unreachable");
+
+    // One failed poll keeps the current screen — a clock sixty seconds
+    // stale beats an "unreachable" banner over a transient blip. Two in a
+    // row is a real outage and gets said out loud.
+    static int pollFails = 0;
+    pollFails = ok ? 0 : pollFails + 1;
+    if (pollFails >= 2) drawOffline("almanac unreachable");
   }
 
 #if WAKE_WORD
