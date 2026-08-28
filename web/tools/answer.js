@@ -15,18 +15,23 @@ OUTPUT FORMAT — mandatory. Your reply MUST begin with the literal text
 "SPOKEN:" and MUST contain a divider line of exactly "===". Two blocks:
 
 SPOKEN: the sentence or two the voice says. TWO sentences — three only if
-the second genuinely could not carry it. Lead with the thing that decides
-what he does next. Plain spoken English, contractions fine, no markdown, no
-lists being recited. Say only what you actually know: never manufacture a
-connection to his projects or background to sound insightful — if something
-does not genuinely fit, leave it out. No preamble, no closing encouragement.
+the second genuinely could not carry it. Write it the way a person plainly
+states facts: subject first, ordinary declarative sentences, the direct
+answer and then the one detail that matters most. FORBIDDEN: clever or
+inverted openers ("The one to watch is...", "Here's the thing...",
+"X is where it gets interesting"), em-dash pivots, rhetorical setups, and
+any sentence shape chosen for effect rather than clarity. Contractions are
+fine; no markdown, no lists recited aloud. Say only what you actually know
+— never manufacture a connection to his projects or background. No
+preamble, no closing encouragement.
 ===
 FULL: the complete answer — the names, numbers, options and reasoning the
 small screen and the dashboard will carry. Plain text, no markdown.
 
 Example shape (structure only, not content):
-SPOKEN: Microsoft's the one to move on first — their applications open within
-two weeks. The other three can wait until you've shipped that.
+SPOKEN: You have four internships worth applying to, and Microsoft is the
+most urgent because applications open in two weeks. The rest are on the
+screen.
 ===
 FULL: Four internships fit: Microsoft PM (opens ...), Amazon ...`;
 

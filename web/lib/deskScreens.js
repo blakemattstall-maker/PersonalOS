@@ -219,8 +219,11 @@ export async function designDeskScreen({ question, answer, facts = "", waiting =
           `Amazon, product marketing" is a list being recited at someone; ` +
           `"Microsoft is the one to move on first, their summer applications ` +
           `open in the next few weeks" is an answer.\n` +
-          `- Lead with the thing that actually decides what he does next — ` +
-          `what is urgent, what is at risk, what he is getting wrong.\n` +
+          `- State the answer plainly, subject first, in ordinary declarative ` +
+          `sentences — the direct answer, then the one detail that matters ` +
+          `most. Never use clever or inverted openers ("The one to watch ` +
+          `is...", "Here's the thing..."); a sentence shape chosen for effect ` +
+          `instead of clarity is wrong here.\n` +
           `- Plain spoken English. No markdown, no bullet points, no headings, ` +
           `no colons introducing lists. Contractions are good. It is read ` +
           `aloud by a voice in a room, not printed.\n` +

@@ -71,10 +71,10 @@ function spokenCut(text) {
 // (Next validates their exports), and these two surfaces are allowed to
 // drift apart if the desk's delivery ever needs its own tuning.
 const DESK_TTS_INSTRUCTIONS =
-  "You are answering someone standing a couple of feet away who just asked " +
-  "you a question out loud. Speak like a sharp friend replying in the moment " +
-  "— unhurried, conversational, real sentence rhythm. Not a presenter, not a " +
-  "bulletin, no rising announcer energy. Pause properly at full stops.";
+  "Read this exactly as written, like a person plainly relaying information " +
+  "to someone in the same room. Even, matter-of-fact, unhurried. No " +
+  "announcer energy, no performative emphasis, no brightness added to " +
+  "neutral facts. Pause properly at full stops.";
 
 const VOICES = new Set([
   "alloy", "ash", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"

@@ -268,12 +268,18 @@ static const sr_cmd_t LOCAL_COMMANDS[] = {
 };
 
 // The capture tee: while active, the fill callback appends every mic sample
-// here. Written on the engine's feed task (core 0), read by the main loop —
-// count is the only shared word, and it only ever grows while active.
-static int16_t *teeBuf = nullptr;
+// here. Written on the engine's feed task (core 0), read by the main loop.
+// All volatile so the publish order (buf, max, count, THEN active) is real,
+// and teeInUse is the handshake that makes freeing the buffer safe: the
+// main loop clears teeActive and then waits for the feed task to finish any
+// memcpy already in flight before the memory behind teeBuf is released —
+// without it, a chunk landing in the microseconds between "capture over"
+// and free() writes 32ms of audio into freed PSRAM.
+static int16_t *volatile teeBuf = nullptr;
 static volatile size_t teeCount = 0;
-static size_t teeMax = 0;
+static volatile size_t teeMax = 0;
 static volatile bool teeActive = false;
+static volatile bool teeInUse = false;
 
 // What the speaker is playing right now, for the echo canceller's reference
 // channel. Single producer (the playback pump, core 1), single consumer
@@ -294,6 +300,18 @@ void refPush(const int16_t *s, size_t n) {
 // What the command window heard, delivered from the engine's handler task.
 static volatile int localCmdId = -1;
 static volatile bool cmdWindowTimedOut = false;
+
+// The deafness race, closed from the event side.
+//
+// The engine's detect task reacts to a MultiNet verdict (DETECTED or
+// TIMEOUT) by putting the mode to OFF — asynchronously. When the verdict
+// lands just AFTER voiceFlow has already switched back to WAKEWORD (the
+// expected case for verdicts straddling the grace window), that OFF
+// disables the wake word and nothing ever re-enables it: the device sits
+// looking attentive and is deaf until physically touched. Every verdict
+// therefore raises this flag, and the main loop (and the exchange loop)
+// re-assert WAKEWORD — harmless when nothing raced, curative when it did.
+static volatile bool srReassertWake = false;
 
 // The engine's audio source. Reads the mono mic, tees it into the capture
 // buffer, and — in AEC mode — interleaves the playback reference so the
@@ -320,12 +338,16 @@ esp_err_t srFill(void *arg, void *dest, size_t len, size_t *bytes_read, uint32_t
 
   const size_t got = i2s.readBytes((char *)mic, frames * sizeof(int16_t)) / sizeof(int16_t);
 
+  teeInUse = true;
+
   if (teeActive && teeBuf) {
     const size_t room = teeMax - teeCount;
     const size_t take = got < room ? got : room;
     memcpy(teeBuf + teeCount, mic, take * sizeof(int16_t));
     teeCount += take;
   }
+
+  teeInUse = false;
 
   int16_t *o = (int16_t *)out;
 
@@ -354,9 +376,9 @@ void onSr(void *arg, sr_event_t event, int command_id, int phrase_id) {
     stopSpeaking = true;
   }
 
-  if (event == SR_EVENT_COMMAND) localCmdId = command_id;
+  if (event == SR_EVENT_COMMAND) { localCmdId = command_id; srReassertWake = true; }
 
-  if (event == SR_EVENT_TIMEOUT) cmdWindowTimedOut = true;
+  if (event == SR_EVENT_TIMEOUT) { cmdWindowTimedOut = true; srReassertWake = true; }
 
   Serial.printf("[sr] event=%d cmd=%d phrase=%d\n", (int)event, command_id, phrase_id);
 
@@ -1137,6 +1159,13 @@ size_t captureViaTee(int16_t *dst, size_t maxSamples, bool holdMode) {
 
   teeActive = false;
 
+  // Wait out any append the feed task already started — one feed period at
+  // most — so the caller may free the buffer the moment this returns.
+  { const unsigned long h0 = millis();
+    while (teeInUse && millis() - h0 < 200UL) delay(1); }
+
+  teeBuf = nullptr;
+
   return teeCount;
 
 }
@@ -1291,20 +1320,37 @@ String apiHost() {
   return slash >= 0 ? host.substring(0, slash) : host;
 }
 
+// If a waiter gives up on the handshake, it must NOT touch exchangeClient —
+// the task on the other core may be mid-mbedtls inside it, and stop() under
+// its feet is a use-after-free. The waiter poisons instead; the task cleans
+// up after itself when it finally lands.
+volatile bool preconnectBusy = false;
+volatile bool preconnectPoisoned = false;
+
 void preconnectTask(void *arg) {
   exchangeClient.setInsecure();
   if (!exchangeClient.connected()) {
     exchangeClient.connect(apiHost().c_str(), 443, 15000);
   }
+  if (preconnectPoisoned) {
+    exchangeClient.stop();
+    preconnectPoisoned = false;
+  }
   preconnectDone = true;
+  preconnectBusy = false;
   vTaskDelete(NULL);
 }
 
 void startPreconnect() {
+  // A previous task still at it: don't spawn a second one onto the same
+  // TLS context — its preconnectDone will flip when it lands.
+  if (preconnectBusy) return;
   preconnectDone = false;
   if (exchangeClient.connected()) { preconnectDone = true; return; }
+  preconnectBusy = true;
   if (xTaskCreatePinnedToCore(preconnectTask, "tlspre", 12288, NULL, 1, NULL, 0) != pdPASS) {
     // No task, no parallelism — the POST below will connect inline instead.
+    preconnectBusy = false;
     preconnectDone = true;
   }
 }
@@ -1319,6 +1365,7 @@ void startPreconnect() {
 void dropPreconnect() {
   const unsigned long t0 = millis();
   while (!preconnectDone && millis() - t0 < 20'000UL) delay(10);
+  if (!preconnectDone) { preconnectPoisoned = true; return; }
   exchangeClient.stop();
 }
 
@@ -1333,107 +1380,183 @@ void dropPreconnect() {
 // "nothing yet", and only a closed socket or the terminal chunk means done.
 struct HttpBody {
 
+  // The chunked-transfer parser, third time, done properly: a byte-wise
+  // state machine whose state survives a timeout at ANY position.
+  //
+  // The previous version parsed a whole chunk header in one call. With a
+  // one-second read deadline that worked by luck: headers arrive in one
+  // packet well inside a second. The moment the deadline dropped to 5ms —
+  // so playback never starves — the parser would routinely consume the CRLF
+  // between chunks, time out before the size digits arrived, FORGET it had
+  // consumed them, and on resume re-eat two payload bytes as framing. The
+  // stream desynced, the exchange died, and the device spoke exactly one
+  // syllable of every answer. A parser on a tight clock is only correct if
+  // interrupting it costs nothing; every byte here advances an explicit
+  // state, so a timeout is just "continue later".
+
   WiFiClientSecure *cl = nullptr;
   bool chunked = false;
-  long remaining = 0;      // plain: bytes left in body; chunked: in this chunk
-  bool started = false;    // chunked: whether any chunk header has been read
   bool done = false;
+  long remaining = 0;      // plain: bytes left in body; chunked: in this chunk
+
+  enum CState : uint8_t {
+    C_SIZE,      // hex size digits
+    C_EXT,       // ";extension" — skip to LF
+    C_SIZE_LF,   // saw CR after size, expect LF
+    C_DATA,      // payload bytes (remaining of them)
+    C_DATA_CR,   // chunk data finished, expect CR
+    C_DATA_LF,   // expect LF, then the next size
+    C_TRAILER,   // final chunk seen — trailer lines until an empty one
+    C_END
+  };
+
+  CState cstate = C_SIZE;
+  long chunkSize = 0;
+  bool sawDigit = false;
+  int trailerLen = 0;
 
   void begin(WiFiClientSecure *client, bool isChunked, long contentLength) {
     cl = client;
     chunked = isChunked;
     remaining = isChunked ? 0 : contentLength;
-    started = false;
     done = false;
+    cstate = C_SIZE;
+    chunkSize = 0;
+    sawDigit = false;
+    trailerLen = 0;
   }
 
-  int rawByte(uint32_t deadline) {
-    while (!cl->available()) {
-      if (!cl->connected() && !cl->available()) return -1;
-      if (millis() > deadline) return -2;
-      delay(1);
-    }
-    return cl->read();
+  void finishSize() {
+    if (chunkSize == 0) { cstate = C_TRAILER; trailerLen = 0; }
+    else { remaining = chunkSize; cstate = C_DATA; }
   }
 
-  // Reads the "\r\nSIZE\r\n" between chunks. Returns false on end-of-body or
-  // error, with `done` telling the two apart.
-  bool nextChunk(uint32_t deadline) {
-
-    if (started) {
-      // The CRLF that closes the previous chunk's data.
-      if (rawByte(deadline) < 0 || rawByte(deadline) < 0) return false;
-    }
-
-    long size = 0;
-    bool any = false;
-
-    for (;;) {
-      const int c = rawByte(deadline);
-      if (c < 0) return false;
-      if (c == '\r') continue;
-      if (c == '\n') { if (any) break; else continue; }
-      if (c == ';') { while (rawByte(deadline) != '\n') {} break; }   // chunk extension
-      const int v = (c >= '0' && c <= '9') ? c - '0'
-                  : (c >= 'a' && c <= 'f') ? c - 'a' + 10
-                  : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
-      if (v < 0) return false;
-      size = size * 16 + v;
-      any = true;
-    }
-
-    started = true;
-
-    if (size == 0) {
-      // Trailer section: consume lines until the empty one that ends the
-      // body. Usually there are no trailers, so this is one bare CRLF.
-      int lineLen = 0;
-      for (;;) {
-        const int c = rawByte(deadline);
-        if (c < 0) break;
-        if (c == '\n') { if (lineLen == 0) break; lineLen = 0; continue; }
-        if (c != '\r') lineLen++;
-      }
-      done = true;
-      return false;
-    }
-
-    remaining = size;
-    return true;
-
-  }
+  void nextSize() { cstate = C_SIZE; chunkSize = 0; sawDigit = false; }
 
   // Up to `max` payload bytes. >0 data, 0 nothing-yet (call again), <0 over.
   int read(uint8_t *out, int max, uint32_t timeoutMs) {
 
     if (done) return -1;
 
-    const uint32_t deadline = millis() + timeoutMs;
+    // Subtraction idiom, not an absolute deadline: a wall-mounted device
+    // runs past the 49.7-day millis() wrap, where `now >= t0 + timeout`
+    // stalls for weeks while `now - t0 >= timeout` keeps working.
+    const uint32_t t0 = millis();
 
-    if (chunked && remaining == 0) {
-      if (!nextChunk(deadline)) return done ? -1 : (cl->connected() ? 0 : -1);
+    if (!chunked) {
+
+      if (remaining == 0) { done = true; return -1; }
+
+      for (;;) {
+        const int avail = cl->available();
+        if (avail > 0) {
+          int take = min(avail, max);
+          if (remaining > 0) take = (int)min((long)take, remaining);
+          const int got = cl->read(out, take);
+          if (got > 0) {
+            if (remaining > 0) { remaining -= got; if (remaining == 0) done = true; }
+            return got;
+          }
+        }
+        if (!cl->connected() && !cl->available()) { done = true; return -1; }
+        if (millis() - t0 >= timeoutMs) return 0;
+        delay(1);
+      }
+
     }
 
-    if (!chunked && remaining == 0) { done = true; return -1; }
+    for (;;) {
 
-    const int avail = cl->available();
+      if (cstate == C_DATA) {
 
-    if (avail <= 0) {
-      if (!cl->connected()) { done = true; return -1; }
-      return 0;
+        const int avail = cl->available();
+
+        if (avail > 0) {
+          int take = min(avail, max);
+          take = (int)min((long)take, remaining);
+          const int got = cl->read(out, take);
+          if (got > 0) {
+            remaining -= got;
+            if (remaining == 0) cstate = C_DATA_CR;
+            return got;
+          }
+        }
+
+        if (!cl->connected() && !cl->available()) { done = true; return -1; }
+        if (millis() - t0 >= timeoutMs) return 0;
+        delay(1);
+        continue;
+
+      }
+
+      if (cstate == C_END) { done = true; return -1; }
+
+      // Every framing state consumes exactly one byte, then decides.
+      if (!cl->available()) {
+        if (!cl->connected()) { done = true; return -1; }
+        if (millis() - t0 >= timeoutMs) return 0;   // state intact — resume later
+        delay(1);
+        continue;
+      }
+
+      const int c = cl->read();
+
+      if (c < 0) continue;
+
+      switch (cstate) {
+
+        case C_SIZE: {
+          const int v = (c >= '0' && c <= '9') ? c - '0'
+                      : (c >= 'a' && c <= 'f') ? c - 'a' + 10
+                      : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
+          // Capped BEFORE the multiply: an attacker-sized or corrupted
+          // header must never overflow into a negative `remaining`, which
+          // downstream would widen into a multi-gigabyte read length.
+          if (v >= 0 && chunkSize > 0x100000) { done = true; return -1; }
+          if (v >= 0) { chunkSize = chunkSize * 16 + v; sawDigit = true; }
+          else if (c == ';' && sawDigit) cstate = C_EXT;
+          else if (c == '\r' && sawDigit) cstate = C_SIZE_LF;
+          else if (c == '\n' && sawDigit) finishSize();
+          else { done = true; return -1; }   // framing violated — fail loudly
+          break;
+        }
+
+        case C_EXT:
+          if (c == '\n') finishSize();
+          break;
+
+        case C_SIZE_LF:
+          if (c == '\n') finishSize();
+          else { done = true; return -1; }
+          break;
+
+        case C_DATA_CR:
+          if (c == '\r') cstate = C_DATA_LF;
+          else if (c == '\n') nextSize();     // lenient: bare LF
+          else { done = true; return -1; }
+          break;
+
+        case C_DATA_LF:
+          if (c == '\n') nextSize();
+          else { done = true; return -1; }
+          break;
+
+        case C_TRAILER:
+          if (c == '\n') {
+            if (trailerLen == 0) { cstate = C_END; }
+            trailerLen = 0;
+          } else if (c != '\r') {
+            trailerLen++;
+          }
+          break;
+
+        default:
+          done = true;
+          return -1;
+
+      }
+
     }
-
-    int take = min(avail, max);
-    if (remaining > 0) take = (int)min((long)take, remaining);
-
-    const int got = cl->read(out, take);
-
-    if (got > 0 && remaining > 0) {
-      remaining -= got;
-      if (!chunked && remaining == 0) done = true;
-    }
-
-    return got > 0 ? got : 0;
 
   }
 
@@ -1529,11 +1652,25 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
   writeWavHeader(wav, dataBytes, RECORD_RATE);
   memcpy(wav + 44, mono, dataBytes);
 
-  // Let the handshake that started during recording finish its work.
+  // A fresh exchange begins here: the initiating wake word set the
+  // interrupt flag on its way in, and a NEW wake arriving during the upload
+  // must survive to break the frame loop — so the reset happens before the
+  // POST, never after it.
+  ring.clear();
+  stopSpeaking = false;
+
+  // Let the handshake that started during recording finish its work. If it
+  // never lands, the client cannot be touched (the task owns it): poison it
+  // and fail this exchange rather than fight over one TLS context.
   { const unsigned long t0 = millis();
     while (!preconnectDone && millis() - t0 < 20'000UL) delay(10);
     Serial.printf("[pre] waited %lums, connected=%d\n",
-                  millis() - t0, (int)exchangeClient.connected()); }
+                  millis() - t0, (int)exchangeClient.connected());
+    if (!preconnectDone) {
+      preconnectPoisoned = true;
+      free(wav);
+      return out;
+    } }
 
   HTTPClient http;
 
@@ -1568,9 +1705,6 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
              http.header("Transfer-Encoding").indexOf("chunked") >= 0,
              http.getSize());
 
-  ring.clear();
-  stopSpeaking = false;
-
   // Frame parse state.
   uint8_t head[5];
   size_t headGot = 0;
@@ -1587,13 +1721,25 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
   unsigned long lastData = millis();
   unsigned long lastAnim = 0;
   bool animFlip = false;
+  bool anyData = false;
 
   static uint8_t chunk[4096];
 
   while (!ended) {
 
-    // Nothing for 30s means the server died mid-answer; don't sit forever.
-    if (millis() - lastData > 30'000UL) { Serial.println("[converse] stalled"); break; }
+    // The watchdog distinguishes a slow answer from a dead socket: before
+    // the first byte, a multi-tool answer is allowed the same 45s the HTTP
+    // timeout would give it; once data has flowed, 30s of silence means
+    // the server died mid-answer.
+    if (millis() - lastData > (anyData ? 30'000UL : 45'000UL)) {
+      Serial.println("[converse] stalled");
+      break;
+    }
+
+    // A MultiNet verdict that landed after the mode went back to WAKEWORD
+    // knocked the wake word out through the engine's own OFF transition —
+    // re-assert it, here too, so barge-in survives the race mid-exchange.
+    if (srReassertWake) { srReassertWake = false; sr_set_mode(SR_MODE_WAKEWORD); }
 
     // "Jarvis" — or a touch — at ANY point in the exchange, including while
     // it is still thinking. The wake engine stays live through all of this
@@ -1638,6 +1784,7 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
 
       headGot += n;
       lastData = millis();
+      anyData = true;
 
       if (headGot == 5) {
         type = (char)head[0];
@@ -1658,6 +1805,7 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
     if (n == 0) continue;
 
     lastData = millis();
+    anyData = true;
 
     if (type == 'A') {
 
@@ -1675,7 +1823,7 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
 
       memcpy(pngBuf + got, chunk, n);
 
-    } else if ((type == 'M' || type == 'E') && got + n < sizeof(meta)) {
+    } else if ((type == 'M' || type == 'E') && got + n <= sizeof(meta) - 1) {
 
       memcpy(meta + got, chunk, n);
 
@@ -1714,8 +1862,11 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
         // Decoded and painted mid-speech — the decoder lives in PSRAM (see
         // decodePngTo), so this no longer competes with the live TLS
         // connection for the internal RAM that used to make these two
-        // mutually exclusive.
-        if (frame || (frame = (uint16_t *)heap_caps_malloc((size_t)LCD_WIDTH * LCD_HEIGHT * 2, MALLOC_CAP_SPIRAM))) {
+        // mutually exclusive. An oversized frame was stored truncated, and
+        // decoding past what was written reads garbage — skip it loudly.
+        if (got > PNG_CAP) {
+          Serial.printf("[converse] screen frame %u exceeds cap - dropped\n", (unsigned)got);
+        } else if (frame || (frame = (uint16_t *)heap_caps_malloc((size_t)LCD_WIDTH * LCD_HEIGHT * 2, MALLOC_CAP_SPIRAM))) {
           if (decodePngTo(pngBuf, got, frame)) {
             gfx->draw16bitBeRGBBitmap(0, 0, frame, LCD_WIDTH, LCD_HEIGHT);
             state.showingAnswer = true;
@@ -2326,9 +2477,26 @@ void loop() {
 
   const unsigned long nowMs = millis();
 
+#if WAKE_WORD
+  // Wake handling outranks housekeeping: a deferred screen fetch or the
+  // minute-poll blocking the loop for seconds while somebody has already
+  // said "Jarvis" means their question starts before recording does. The
+  // flag survives either way; the ORDER is what makes it feel awake.
+  if (srReassertWake) { srReassertWake = false; sr_set_mode(SR_MODE_WAKEWORD); }
+
+  if (wakeFired) {
+    wakeFired = false;
+    if (micArmed) {
+      voiceFlow(true);
+      return;
+    }
+  }
+#endif
+
   // The deferred refresh a footer tap scheduled: taken only once the
-  // fingers have stopped, so five volume presses cost one fetch.
-  if (screenRefreshAt && nowMs > screenRefreshAt) {
+  // fingers have stopped, so five volume presses cost one fetch. (Signed
+  // difference, so the 49.7-day millis() wrap cannot park it.)
+  if (screenRefreshAt && (long)(nowMs - screenRefreshAt) >= 0) {
     screenRefreshAt = 0;
     fetchScreen();
   }
@@ -2355,18 +2523,6 @@ void loop() {
     pollFails = ok ? 0 : pollFails + 1;
     if (pollFails >= 2) drawOffline("almanac unreachable");
   }
-
-#if WAKE_WORD
-  // A wake word was heard on-device. Nothing has been recorded or sent yet;
-  // that starts here, in the open, with the screen showing it.
-  if (wakeFired) {
-    wakeFired = false;
-    if (micArmed) {
-      voiceFlow(true);
-      return;
-    }
-  }
-#endif
 
   // Inputs. The BOOT side button and the bottom bar both start a capture;
   // a tap on the nudge card resolves it. The button works whether or not the
