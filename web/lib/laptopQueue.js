@@ -18,6 +18,15 @@ import supabase from "./supabase.js";
 
 const KEY = "laptop_queue";
 
+// The pause flag lives in its OWN record, untouched by the drain. When it
+// shared the queue's record, the helper's two-second read-modify-write
+// poll raced every state change: first it erased a fresh pause (drain
+// rewrote the record wholesale), and after that was patched to preserve
+// fields, a drain that READ paused:true just before a spoken resume WROTE
+// it back just after — resurrecting the pause. Separate rows, no shared
+// write, no race to lose.
+const PAUSE_KEY = "laptop_paused";
+
 export const COMMAND_TTL_MS = 60_000;
 
 // A helper that has polled this recently is "online"; the desk uses this to
@@ -52,11 +61,23 @@ async function store(value) {
 // because the person AT the machine outranks the person at the desk.
 export async function setLaptopPaused(paused) {
 
-  const value = await load();
+  await supabase
+    .from("app_settings")
+    .upsert([{ key: PAUSE_KEY, value: { paused: Boolean(paused) }, updated_at: new Date().toISOString() }],
+            { onConflict: "key" });
 
-  value.paused = Boolean(paused);
+}
 
-  await store(value);
+
+async function isPaused() {
+
+  const { data } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", PAUSE_KEY)
+    .maybeSingle();
+
+  return Boolean(data?.value?.paused);
 
 }
 
@@ -79,9 +100,9 @@ export async function pushLaptopCommand({ kind = "url", url = null, app = null, 
   app = app ? clean(app, 40) : null;
   if (kind === "app" && !app) return { pushed: false };
 
-  const value = await load();
+  const [value, paused] = await Promise.all([load(), isPaused()]);
 
-  if (value.paused) return { pushed: false, paused: true };
+  if (paused) return { pushed: false, paused: true };
 
   const now = Date.now();
 
@@ -129,7 +150,12 @@ export async function drainLaptopCommands() {
   const fresh = (value.commands || [])
     .filter(c => now - new Date(c.at).getTime() < COMMAND_TTL_MS);
 
-  await store({ commands: [], last_seen: new Date(now).toISOString() });
+  // Everything EXCEPT the queue and the heartbeat survives the drain. The
+  // first version rewrote the record wholesale, which meant the helper's
+  // own two-second poll silently erased the paused flag — "pause laptop
+  // control" held for at most one poll cycle and then everything worked
+  // again, which is worse than no pause at all.
+  await store({ ...value, commands: [], last_seen: new Date(now).toISOString() });
 
   return fresh;
 

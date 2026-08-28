@@ -43,6 +43,16 @@ test("the helper enforces TTL, pause, and http-only, and uses no shell", () => {
   assert.ok(!HELPER.includes("shell=True"), "no shell execution, ever");
 });
 
+test("the pause flag lives where the drain cannot touch it", () => {
+  // Two shipped regressions, one root: the pause shared a record with the
+  // queue, and the helper's 2-second read-modify-write poll first erased a
+  // fresh pause, then resurrected a lifted one. Its own key ends the race.
+  assert.match(QUEUE, /PAUSE_KEY = "laptop_paused"/);
+  assert.match(QUEUE, /if \(paused\) return \{ pushed: false, paused: true \}/);
+  const drain = QUEUE.slice(QUEUE.indexOf("drainLaptopCommands"));
+  assert.ok(!drain.includes("PAUSE_KEY"), "drain must never write the pause record");
+});
+
 test("the desk's URL handoff is gated on the laptop being named", () => {
   const at = CONVERSE.indexOf("laptop handoff");
   assert.ok(at >= 0);
