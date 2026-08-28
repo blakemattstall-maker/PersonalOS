@@ -405,11 +405,12 @@ export async function executeTool(data, originalText = null) {
           break;
         }
 
-        const { pushed, online } = await pushLaptopCommand(command);
+        const { pushed, online, paused } = await pushLaptopCommand(command);
 
         result = {
           success: pushed,
-          message: !pushed ? "That didn't look like something I can open."
+          message: paused ? "Laptop control is paused. Say resume laptop control first."
+            : !pushed ? "That didn't look like something I can open."
             : online ? spoken
             : "Queued for your laptop — the helper doesn't look like it's running.",
           data: { ...command }

@@ -104,6 +104,34 @@ def find_file(query, cfg):
     return hits[0]
 
 
+def find_app(name):
+    """'After Effects' is really 'Adobe After Effects 2026.app'. When the
+    plain name fails to launch, Spotlight finds application bundles whose
+    display name contains every spoken word; the shortest name wins (the
+    real app beats its 'Render Engine' helpers) and, among equals, the
+    highest name (the newest year)."""
+    words = [w for w in name.split() if len(w) > 1][:4]
+    if not words:
+        return None
+
+    query = 'kMDItemContentType == "com.apple.application-bundle" && ' + \
+        " && ".join(f'kMDItemDisplayName == "*{w}*"c' for w in words)
+
+    try:
+        out = subprocess.run(["mdfind", query], capture_output=True, text=True,
+                             timeout=10, check=False).stdout
+    except Exception:
+        return None
+
+    apps = [a for a in out.splitlines() if a.endswith(".app")]
+    if not apps:
+        return None
+
+    apps.sort(key=lambda p: pathlib.Path(p).name, reverse=True)   # newest year
+    apps.sort(key=lambda p: len(pathlib.Path(p).stem))            # real app first
+    return apps[0]
+
+
 def execute(command, cfg):
     kind = command.get("kind", "url")
     label = command.get("label", "")
@@ -124,9 +152,18 @@ def execute(command, cfg):
             log(f"app not in allowlist - dropped: {app}")
             return
         # `open -a` only launches real applications; an unknown or misheard
-        # name fails harmlessly.
-        log(f"open app: {app}")
-        subprocess.run(["open", "-a", app], check=False)
+        # name fails harmlessly — and a REAL app under a longer formal name
+        # ("Adobe After Effects 2026") gets found by Spotlight on the retry.
+        rc = subprocess.run(["open", "-a", app], capture_output=True, check=False).returncode
+        if rc == 0:
+            log(f"open app: {app}")
+            return
+        path = find_app(app)
+        if path:
+            log(f"open app: {app} -> {path}")
+            subprocess.run(["open", path], check=False)
+        else:
+            log(f"no app match for: {app!r}")
         return
 
     if kind == "file":
@@ -137,7 +174,19 @@ def execute(command, cfg):
             return
         app = command.get("app")
         log(f"open file: {path}" + (f" with {app}" if app else ""))
-        subprocess.run(["open", "-a", app, path] if app else ["open", path], check=False)
+        if app:
+            # A bad app hint must not sink the file: fall back to the
+            # file's own default application.
+            rc = subprocess.run(["open", "-a", app, path], capture_output=True, check=False).returncode
+            if rc != 0:
+                hit = find_app(app)
+                rc = subprocess.run(["open", "-a", hit, path], capture_output=True,
+                                    check=False).returncode if hit else 1
+            if rc != 0:
+                log("app hint failed - opening with the default application")
+                subprocess.run(["open", path], check=False)
+        else:
+            subprocess.run(["open", path], check=False)
         return
 
     log(f"unknown kind dropped: {kind}")

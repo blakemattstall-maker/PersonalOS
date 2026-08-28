@@ -272,6 +272,23 @@ export async function handleDeskCommand(text) {
              result: { success: true, message: "Voice is back on." } };
   }
 
+  // Laptop control's spoken switch. Explicit "laptop" required in the
+  // phrase — a bare "pause" is far too collidable with everything else this
+  // matcher and MultiNet already own.
+  if (/^((pause|stop|disable) (the )?laptop( control)?|laptop( control)? off)$/.test(said)) {
+    const { setLaptopPaused } = await import("../../../lib/laptopQueue.js");
+    await setLaptopPaused(true);
+    return { success: true, tool: "desk_control",
+             result: { success: true, message: "Laptop control paused." } };
+  }
+
+  if (/^((resume|enable|unpause) (the )?laptop( control)?|laptop( control)? on)$/.test(said)) {
+    const { setLaptopPaused } = await import("../../../lib/laptopQueue.js");
+    await setLaptopPaused(false);
+    return { success: true, tool: "desk_control",
+             result: { success: true, message: "Laptop control is back on." } };
+  }
+
   // Volume, in steps. The device owns the actual level (it owns the codec);
   // this just tells it which way. Silent on purpose — the next answer
   // demonstrates the change better than an announcement at the old volume.

@@ -47,6 +47,20 @@ async function store(value) {
 }
 
 
+// The spoken switch. Server-side, so a paused system never even queues —
+// and the laptop's own pause file remains the absolute override on top,
+// because the person AT the machine outranks the person at the desk.
+export async function setLaptopPaused(paused) {
+
+  const value = await load();
+
+  value.paused = Boolean(paused);
+
+  await store(value);
+
+}
+
+
 export async function pushLaptopCommand({ kind = "url", url = null, app = null, query = null, label = "" }) {
 
   // Validation by kind, so nothing malformed ever reaches the helper: URLs
@@ -66,6 +80,8 @@ export async function pushLaptopCommand({ kind = "url", url = null, app = null, 
   if (kind === "app" && !app) return { pushed: false };
 
   const value = await load();
+
+  if (value.paused) return { pushed: false, paused: true };
 
   const now = Date.now();
 
