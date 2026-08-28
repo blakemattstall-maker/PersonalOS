@@ -670,6 +670,25 @@ volatile uint32_t linesDrawn = 0;
 // ever visible.
 static uint16_t *frame = nullptr;
 
+// The last RESTING face, kept whole. Dismissals used to wait on a network
+// round trip before the glass changed — "never mind" was recognized locally
+// in a second and then stared at you for five more while two TLS handshakes
+// happened. Now anything that means "put it away" blits this instantly (a
+// clock at most a minute stale) and lets the real refresh follow behind.
+static uint16_t *restingFrame = nullptr;
+
+bool blitResting() {
+
+  if (!restingFrame) return false;
+
+  gfx->draw16bitBeRGBBitmap(0, 0, restingFrame, LCD_WIDTH, LCD_HEIGHT);
+
+  state.showingAnswer = false;
+
+  return true;
+
+}
+
 // Where the current decode is writing — the idle framebuffer above, or one
 // of the cached phase frames.
 static uint16_t *decodeTarget = nullptr;
@@ -869,6 +888,19 @@ bool fetchScreen(bool fresh = false) {
 
   // One transfer for the whole screen.
   gfx->draw16bitBeRGBBitmap(0, 0, frame, LCD_WIDTH, LCD_HEIGHT);
+
+  // Remember the resting face for instant dismissals.
+  if (!state.showingAnswer) {
+
+    if (!restingFrame) {
+      restingFrame = (uint16_t *)heap_caps_malloc((size_t)LCD_WIDTH * LCD_HEIGHT * 2, MALLOC_CAP_SPIRAM);
+    }
+
+    if (restingFrame) {
+      memcpy(restingFrame, frame, (size_t)LCD_WIDTH * LCD_HEIGHT * 2);
+    }
+
+  }
 
   state.valid = true;
 
@@ -1081,7 +1113,7 @@ size_t captureViaTee(int16_t *dst, size_t maxSamples, bool holdMode) {
 
     if (!holdMode) {
 
-      if (heard && lastLoud && millis() - lastLoud > 1000UL) break;
+      if (heard && lastLoud && millis() - lastLoud > 800UL) break;
 
       if (!heard && millis() - start > 3500UL) break;
 
@@ -1111,22 +1143,30 @@ void executeLocalCommand(int id) {
 
     case LC_STOP:
       // The wake word already silenced it; "stop" confirms there is nothing
-      // else coming. The answer stays on the glass.
-      break;
+      // else coming. The answer stays on the glass, nothing to do.
+      return;
 
     case LC_DISMISS:
-      drawPhase("", "putting that away", C_INK_SOFT);
+      // Glass first, network after: the cached resting face appears the
+      // moment the phrase lands, the server-side dismissal syncs behind it,
+      // and the deferred refresh brings the clock current.
+      if (!blitResting()) drawPhase("", "putting that away", C_INK_SOFT);
       dismissAnswer();
       state.showingAnswer = false;
-      break;
+      screenRefreshAt = millis() + 1500;
+      return;
 
     case LC_QUIET:
       ttsEnabled = false;
-      break;
+      gfx->fillCircle(28, 420, 7, C_LINE);
+      screenRefreshAt = millis() + 1500;
+      return;
 
     case LC_SPEAK:
       ttsEnabled = true;
-      break;
+      gfx->fillCircle(28, 420, 7, C_MOSS);
+      screenRefreshAt = millis() + 1500;
+      return;
 
     case LC_LOUDER:
       volumePercent += 12;
@@ -1143,8 +1183,6 @@ void executeLocalCommand(int id) {
       return;
 
   }
-
-  fetchScreen(true);
 
 }
 
@@ -1470,7 +1508,9 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
 
   // Let the handshake that started during recording finish its work.
   { const unsigned long t0 = millis();
-    while (!preconnectDone && millis() - t0 < 20'000UL) delay(10); }
+    while (!preconnectDone && millis() - t0 < 20'000UL) delay(10);
+    Serial.printf("[pre] waited %lums, connected=%d\n",
+                  millis() - t0, (int)exchangeClient.connected()); }
 
   HTTPClient http;
 
@@ -1557,10 +1597,19 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
       if (t.touched) { out.interrupted = true; break; }
     }
 
+    // How long a read may wait for the socket decides everything about how
+    // this loop feels. While audio is playing it must be near-zero: the
+    // speaker needs feeding every 16ms, and a one-second wait for the next
+    // network frame starved it for exactly as long as the server took to
+    // compose the screen — a three-second hole in the middle of a sentence,
+    // and a faint roughness everywhere else. i2s.write's own DMA blocking
+    // paces the loop; the read just takes whatever has arrived.
+    const uint32_t readWait = playbackStarted ? 5 : 200;
+
     // Header, then payload, fed straight to where it belongs.
     if (headGot < 5) {
 
-      const int n = body.read(head + headGot, 5 - headGot, 1000);
+      const int n = body.read(head + headGot, 5 - headGot, readWait);
       if (n < 0) break;
       if (n == 0) continue;
 
@@ -1580,7 +1629,7 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
     }
 
     const uint32_t left = need - got;
-    const int n = body.read(chunk, min((uint32_t)sizeof(chunk), left), 1000);
+    const int n = body.read(chunk, min((uint32_t)sizeof(chunk), left), readWait);
 
     if (n < 0) break;
     if (n == 0) continue;
@@ -1628,8 +1677,8 @@ ConverseOutcome converse(const int16_t *mono, size_t samples) {
           if (strcmp(speech, "off") == 0) ttsEnabled = false;
           if (strcmp(speech, "on") == 0) ttsEnabled = true;
 
-          if (strcmp(vol, "up") == 0) { volumePercent += 12; applyVolume(); }
-          if (strcmp(vol, "down") == 0) { volumePercent -= 12; applyVolume(); }
+          if (strcmp(vol, "up") == 0) { volumePercent += 12; applyVolume(); drawVolumeOverlay(); }
+          if (strcmp(vol, "down") == 0) { volumePercent -= 12; applyVolume(); drawVolumeOverlay(); }
 
           if (strcmp(kind, "command") == 0 || strcmp(kind, "silent") == 0) out.commandHandled = true;
 
@@ -1852,13 +1901,23 @@ void voiceFlow(bool fromWake = false) {
   // after THAT exchange instead.
   if (result.interrupted && wakeFired) return;
 
-  // The screen the exchange painted is current; anything else — a handled
-  // command, an interruption, a failure — changed state the glass has not
-  // seen, so ask for a fresh picture (fresh=1 skips the server's short
-  // source cache: this fetch is the direct result of an action).
-  if (result.commandHandled || result.interrupted || !result.gotScreen) {
-    fetchScreen(true);
+  // A handled command or an interruption means "back to rest": the cached
+  // face appears now, the real refresh follows behind. Only an outright
+  // failure still pays for a blocking fetch, because there is nothing else
+  // sensible to show.
+  if (result.commandHandled || result.interrupted) {
+
+    if (blitResting()) {
+      screenRefreshAt = millis() + 1500;
+    } else {
+      fetchScreen(true);
+    }
+
+    return;
+
   }
+
+  if (!result.gotScreen) fetchScreen(true);
 
 }
 
@@ -2292,13 +2351,13 @@ void loop() {
       // acknowledge a touch is what made every control feel broken: the tap
       // registered immediately and the glass sat unchanged for two seconds,
       // so it read as a missed press and got pressed again.
-      drawPhase("", "putting that away", C_INK_SOFT);
+      if (!blitResting()) drawPhase("", "putting that away", C_INK_SOFT);
 
       dismissAnswer();
 
       state.showingAnswer = false;
 
-      fetchScreen(true);
+      screenRefreshAt = millis() + 1200;
 
       delay(250);
 

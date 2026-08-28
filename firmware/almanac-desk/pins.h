@@ -41,7 +41,13 @@
 // project ships this on an ES8311-only board; if it destabilizes anything
 // (heap pressure, missed wakes in silence), set 0 and reflash — everything
 // else in Move B stands without it.
-#define AEC_REF 1
+// Verdict from the first live session (Aug 27): the "MR" software-reference
+// path degraded the microphone even at idle — wake took three tries with
+// nothing playing, MultiNet missed phrases it should own, and barge-in went
+// 0-for-6. The bounded experiment failed its bar; mono restores the mic that
+// worked for weeks, and "Jarvis" over playback relies on the natural pauses
+// in speech instead. Revisit only with real reference-alignment work.
+#define AEC_REF 0
 
 // Prints the microphone's actual signal level for a few seconds at boot.
 // On while the audio path is in question; off for normal use.
