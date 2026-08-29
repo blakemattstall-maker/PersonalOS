@@ -266,6 +266,8 @@ unsigned long timerDoneAt = 0;
 unsigned long timerNextChime = 0;
 int timerChimesLeft = 0;
 unsigned long lastFlowEnd = 0;              // answers get 8s before the timer reclaims
+bool timerNeedsFull = false;                // full repaint after an answer overlaid the face
+float timerPrevFrac = 0;                    // arc progress already painted
 
 static uint16_t *timerFace = nullptr;
 
@@ -1048,9 +1050,8 @@ bool fetchTimerFace() {
   WiFiClientSecure client;
   HTTPClient http;
 
-  char path[96];
-  snprintf(path, sizeof(path), "/api/desk?screen=1&preview=timer&batt=%d&chg=%d",
-           battPercent, battOnUsb ? 1 : 0);
+  char path[64];
+  snprintf(path, sizeof(path), "/api/desk?screen=1&preview=timer");
 
   if (!httpBegin(http, client, path)) return false;
   if (http.GET() != 200) { http.end(); return false; }
@@ -1109,6 +1110,54 @@ void drawTimerNow() {
   gfx->setCursor(184 - w / 2, 220 - 4 * size);
   gfx->print(buf);
 
+  // Battery, drawn locally — the boot-cached face cannot know it.
+  if (battPercent >= 0) {
+    char bb[8];
+    snprintf(bb, sizeof(bb), "%d%%", battPercent);
+    gfx->setTextSize(2);
+    gfx->setTextColor(battOnUsb ? C_MOSS : battPercent < 20 ? C_EMBER : C_INK_SOFT);
+    gfx->setCursor(LCD_WIDTH - 24 - strlen(bb) * 12, 28);
+    gfx->print(bb);
+  }
+
+  timerPrevFrac = frac;
+
+}
+
+
+// The per-second update, incremental: clear and reprint only the digit box,
+// sweep only the arc's NEW sliver. The full-face blit every second left a
+// couple of milliseconds of faceless digits — a visible flash, once a
+// second, forever. Small regions do not flash.
+void drawTimerTick() {
+
+  const uint32_t elapsed = (uint32_t)((millis() - timerT0) / 1000UL);
+  const uint32_t remain = elapsed >= timerTotalS ? 0 : timerTotalS - elapsed;
+  const float frac = timerTotalS ? (float)min(elapsed, timerTotalS) / (float)timerTotalS : 1.0f;
+
+  if (frac > timerPrevFrac) {
+    gfx->fillArc(184, 220, 162, 150, -90 + timerPrevFrac * 360.0f, -90 + frac * 360.0f,
+                 timerDone ? C_EMBER : C_MOSS);
+    timerPrevFrac = frac;
+  }
+
+  char buf[10];
+
+  if (timerTotalS >= 3600) {
+    snprintf(buf, sizeof(buf), "%u:%02u:%02u", remain / 3600, (remain % 3600) / 60, remain % 60);
+  } else {
+    snprintf(buf, sizeof(buf), "%u:%02u", remain / 60, remain % 60);
+  }
+
+  const int size = strlen(buf) > 5 ? 6 : 8;
+  const int w = strlen(buf) * 6 * size;
+
+  gfx->fillRect(184 - 126, 220 - 36, 252, 72, C_BLACK);
+  gfx->setTextSize(size);
+  gfx->setTextColor(timerDone ? C_EMBER : C_INK);
+  gfx->setCursor(184 - w / 2, 220 - 4 * size);
+  gfx->print(buf);
+
 }
 
 
@@ -1137,10 +1186,19 @@ void startTimer(uint32_t seconds) {
   timerActive = true;
   timerDone = false;
   timerChimesLeft = 0;
+  timerNeedsFull = false;
+  timerPrevFrac = 0;
+
+  // Starting a timer IS the user's intent to see it — the 8s answer-grace
+  // must not muzzle the countdown it was just asked for. (It froze at 0:58
+  // for seven seconds; this was why.)
+  lastFlowEnd = 0;
+
+  // The face is cached at boot; a start-time fetch cost 3-5 seconds of
+  // staring at the previous screen.
+  if (!timerFace) fetchTimerFace();
 
   refreshBattery();
-  fetchTimerFace();
-
   drawTimerNow();
 
   timerLastTick = millis();
@@ -2733,6 +2791,10 @@ void setup() {
   // bitmap font again.
   loadPhaseFrames();
 
+  // And the timer face, so "Jarvis, twenty minutes" starts counting the
+  // moment it is understood instead of after a fetch.
+  fetchTimerFace();
+
   // Without this, loop()'s own "lastPoll == 0 means never polled" check reads
   // as true on its very first pass regardless of how recently the line above
   // ran, so every boot silently spent a second /api/desk round trip within
@@ -2834,9 +2896,17 @@ void loop() {
         timerDoneAt = millis();
         timerNextChime = millis();
         timerChimesLeft = 5;
+        timerNeedsFull = true;   // the done state repaints whole, in ember
       }
 
-      if (millis() - lastFlowEnd > 8000UL) drawTimerNow();
+      if (millis() - lastFlowEnd > 8000UL) {
+        if (timerNeedsFull) { timerNeedsFull = false; drawTimerNow(); }
+        else drawTimerTick();
+      } else {
+        // An answer currently owns the glass; when the grace expires, the
+        // timer comes back with one full repaint.
+        timerNeedsFull = true;
+      }
 
       if (timerDone && timerChimesLeft > 0 && (long)(millis() - timerNextChime) >= 0) {
         timerChime();
