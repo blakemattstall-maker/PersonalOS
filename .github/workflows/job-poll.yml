@@ -18,9 +18,21 @@ name: Poll job boards
 
 on:
   schedule:
-    # Every 15 minutes, all day. Postings go live during business hours but
-    # not on a schedule anyone publishes, and the polls are cheap.
-    - cron: "*/15 * * * *"
+    # A CANARY, not the poller.
+    #
+    # docs/cron-jobs.sql schedules this exact URL on pg_cron every 15 minutes
+    # and keeps time to the second. This workflow was the original scheduler and
+    # kept running alongside it, so checkJobs — the most expensive invocation in
+    # the system, 182 boards and an 11 MB dataset — was being run twice for the
+    # same result. GitHub throttles a */15 schedule on a free public repo down to
+    # roughly 18-30 runs a day anyway, which is precisely the unreliability
+    # pg_cron was adopted to escape.
+    #
+    # Kept rather than deleted, because `test "$code" = "200"` below is the only
+    # alarm anywhere that fires from OUTSIDE the app when the poller stops
+    # answering. Deleting it would be the silent-degradation version of this cut.
+    # Four times a day is enough for a liveness check and costs almost nothing.
+    - cron: "17 */6 * * *"
   # So a run can be forced from the Actions tab while testing.
   workflow_dispatch:
 

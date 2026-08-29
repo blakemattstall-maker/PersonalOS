@@ -273,19 +273,6 @@ async function desk(req, res) {
 
     }
 
-    // "I have read it." Drops the composed screen so the next fetch is the
-    // resting face, rather than making him wait out the expiry staring at an
-    // answer he is finished with.
-    if (action === "dismiss") {
-
-      const { clearDeskScreen } = await import("../../../lib/deskScreens.js");
-
-      await clearDeskScreen();
-
-      return res.status(200).json({ success: true });
-
-    }
-
     return res.status(400).json({ error: `Unknown action: ${action}` });
 
   }

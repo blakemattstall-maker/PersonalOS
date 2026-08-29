@@ -959,8 +959,16 @@ export async function renderDeskScreen({ preview = null, spec = null, mic = "on"
   // How long the device should wait before asking again: while an answer is
   // up the screen has a deadline, so it comes back promptly to replace it
   // with the resting face; otherwise a minute is plenty for a clock.
+  // The floor is 30, not 10, and that is insurance rather than a saving.
+  //
+  // pollIntervalMs is sticky on the device: fetchScreen returns early on any
+  // non-200 BEFORE it reads x-almanac-next, so an outage that begins while the
+  // interval happens to be parked at 10 seconds leaves the desk polling every
+  // ten seconds for the whole outage — 8,640 requests a day against a normal
+  // 1,440. Thirty caps that at 2x instead of 6x, and costs nothing while
+  // healthy: an answer on the glass is read in well under thirty seconds.
   const nextIn = answer
-    ? Math.max(10, Math.ceil((new Date(answer.expiresAt) - Date.now()) / 1000))
+    ? Math.max(30, Math.ceil((new Date(answer.expiresAt) - Date.now()) / 1000))
     : 60;
 
   return buffered(image, {

@@ -165,17 +165,45 @@ test("Career holds two pages, not one scroll", () => {
 
 test("the poller has a clock that is not a daily cron", () => {
 
+  // The clock moved. Vercel's free crons fire once a day, which is useless for
+  // "apply the day it posts", so this lived on GitHub Actions — and then
+  // pg_cron was adopted because GitHub throttles a */15 schedule on a free
+  // public repo down to roughly 18-30 runs a day. Both kept running, so the
+  // most expensive invocation in the system was being made twice for one
+  // result. pg_cron owns the cadence now; the workflow is a canary.
+  //
+  // Asserted against whichever file actually carries the schedule, which is the
+  // point of the test — not against the file that used to.
+  const schedule = read("docs/cron-jobs.sql");
+
+  assert.match(schedule, /'\*\/15 \* \* \* \*'/, "the 15-minute poll is the whole feature");
+  assert.match(schedule, /api\/cron\/checkJobs/);
+
+});
+
+
+test("the external liveness alarm on the poller still exists", () => {
+
+  // Demoting the workflow to a canary must not become deleting it. This is the
+  // only alarm anywhere that fires from OUTSIDE the app when the poller stops
+  // answering — pg_cron failing silently is exactly the case it catches, and
+  // pg_cron cannot report on itself.
   const workflow = read(".github/workflows/job-poll.yml");
 
-  // Vercel's free crons fire once a day, which is useless for "apply the day
-  // it posts". GitHub Actions is free and unlimited on a public repo.
-  assert.match(workflow, /cron: "\*\/15 \* \* \* \*"/);
   assert.match(workflow, /api\/cron\/checkJobs/);
   assert.match(workflow, /secrets\.CRON_SECRET/);
 
   // A failed poll must fail the workflow, or a dead endpoint reads as a quiet
   // hiring market for weeks.
   assert.match(workflow, /test "\$code" = "200"/);
+
+  // Still on a clock of its own, just not a duplicate of the real one.
+  const cron = workflow.match(/- cron: "([^"]+)"/);
+
+  assert.ok(cron, "the canary needs a schedule or it never fires");
+
+  assert.notEqual(cron[1], "*/15 * * * *",
+    "a canary on the same cadence as pg_cron is not a canary, it is a second poller");
 
 });
 
@@ -480,5 +508,35 @@ test("a late poll does not then spend its remaining seconds enriching", () => {
 
   assert.match(jobs, /enrichJobDetails\(\{ limit: result\.skipped \? \d+ : \d+ \}\)/,
     "the hourly enrichment job drains the backlog anyway");
+
+});
+
+
+test("the 11 MB Simplify dataset is only parsed when it has changed", () => {
+
+  // Measured: 11,192,190 bytes and 14,915 rows, re-downloaded and re-parsed on
+  // every poll — 113 times a day — to keep about sixty rows. The download is
+  // I/O and largely unbilled; inflating and parsing eleven megabytes is real
+  // active CPU, and collecting fifteen thousand discarded objects after it is
+  // more. It is a file in a git repo, it serves an ETag, and the code's own
+  // comment says it updates daily.
+  const jobs = read("web/tools/jobs.js");
+
+  const simplify = jobs.slice(
+    jobs.indexOf("async function fetchSimplify"),
+    jobs.indexOf("async function fetchSimplify") + 2200
+  );
+
+  assert.match(simplify, /"if-none-match": seen/);
+  assert.match(simplify, /if \(res\.status === 304\) return \[\]/,
+    "an unchanged dataset is the conclusion a full parse would have reached — not a failure");
+
+  // Stored after the parse, or a truncated download poisons the cache and the
+  // board goes quiet until the file next changes.
+  const parseAt = simplify.indexOf("await res.json()");
+  const storeAt = simplify.indexOf('setSetting("simplify_etag"');
+
+  assert.ok(parseAt > 0 && storeAt > parseAt,
+    "the etag must only be stored once the body actually parsed");
 
 });

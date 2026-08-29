@@ -253,16 +253,49 @@ const SIMPLIFY_URL = "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-
 
 const SIMPLIFY_CATEGORIES = /product/i;
 
+// The one board that is a whole file rather than a query.
+//
+// The Simplify dataset is 11.2 MB and 14,915 rows, re-downloaded and re-parsed
+// on every poll — 113 times a day — to keep the sixty-odd rows that match. The
+// download itself is I/O and mostly unbilled, but inflating and JSON-parsing
+// eleven megabytes is real active CPU, and the garbage collection of fifteen
+// thousand discarded objects after it is more.
+//
+// It is a file in a git repository and it serves an ETag, and the code's own
+// comment above says it is updated daily. So: send back the ETag we last saw,
+// and on a 304 there is nothing to inflate, nothing to parse and nothing to
+// collect.
+//
+// Cheap in the boring case, free in the common one.
 async function fetchSimplify(source) {
 
+  const { getSetting, setSetting } = await import("../lib/settings.js");
+
+  const seen = await getSetting("simplify_etag").catch(() => null);
+
   const res = await fetch(SIMPLIFY_URL, {
-    headers: { accept: "application/json" },
+    headers: {
+      accept: "application/json",
+      ...(seen ? { "if-none-match": seen } : {})
+    },
     signal: AbortSignal.timeout(25_000)
   });
 
+  // Nothing has changed since the last poll. Return no postings rather than
+  // throwing — an unchanged dataset is exactly the conclusion a full parse
+  // would have reached, and it must not read as a failed board.
+  if (res.status === 304) return [];
+
   if (!res.ok) throw new Error(`${res.status} from simplify`);
 
+  const etag = res.headers.get("etag");
+
   const rows = await res.json();
+
+  // Stored AFTER the parse succeeded. Storing it first would mean a truncated
+  // download poisons the cache and the board goes quiet until the file next
+  // changes.
+  if (etag) await setSetting("simplify_etag", etag).catch(() => {});
 
   return (rows || [])
     .filter(r =>

@@ -30,7 +30,24 @@ import { analyseDay } from "./eventKind.js";
 // screen ever showing anything meaningfully stale.
 let sourceCache = { at: 0, data: null };
 
-const SOURCE_CACHE_MS = 30_000;
+// Longer than the poll, or it can never hit.
+//
+// This was 30 seconds, written to take the live Google Calendar read "off the
+// poll's critical path" for a 60-second poll — and at 30 against 60 the hit
+// rate on that path is exactly zero. Every one of the 1,440 daily polls paid
+// the full source load: a live calendar events.list, four Supabase reads, then
+// analyseDay and a luxon pass that builds four DateTime objects per stretch of
+// the day.
+//
+// 90 seconds means roughly every other poll skips all of it. The clock is not
+// cached — buildDeskState computes `now` fresh on every call — so the time on
+// the glass stays exact.
+//
+// THE TRADE, stated rather than buried: a nudge or calendar change that
+// originates ELSEWHERE can be up to 90 seconds old on the desk instead of 30.
+// Anything he does at the device is unaffected — the firmware sends fresh=1
+// after every tap and every spoken command, which bypasses this entirely.
+const SOURCE_CACHE_MS = 90_000;
 
 async function loadSources(todayISO, fresh) {
 

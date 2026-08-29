@@ -164,6 +164,17 @@ export default function TabBar() {
             <Link
               key={tab.href}
               href={tab.href}
+              // The bar is fixed and never leaves the viewport, so without this
+              // Next prefetches all six other tabs on EVERY page view. Every
+              // route here is force-dynamic, so a prefetch cannot be answered
+              // from a prerender — it arrives as a real function invocation.
+              // Seven renders where one was asked for, and the /graph one runs
+              // fullGraph(), the heaviest read in the app.
+              //
+              // Nothing is lost: every route has a loading.js, so a tap still
+              // paints its skeleton immediately. Same reasoning as the date
+              // strip in app/health/page.js.
+              prefetch={false}
               aria-current={active ? "page" : undefined}
               className={`group flex flex-1 flex-col items-center gap-1 rounded-[var(--r-pill)] px-1 py-2 transition-colors active:bg-[var(--sunken)] ${
                 active ? "bg-[var(--sunken)] text-ink" : "text-ink-soft hover:text-ink"

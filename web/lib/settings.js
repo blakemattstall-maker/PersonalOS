@@ -169,6 +169,44 @@ export function clearSettingsCache() {
 }
 
 
+// One key, read and written directly.
+//
+// getSettings() is the shaped, cached, defaults-merged view of the handful of
+// keys the UI owns. This is the other kind of use: a single opaque value that
+// belongs to one caller, has no default worth merging, and must not be dragged
+// into the settings cache — a job poller's ETag has nothing to do with the
+// interruption dial and should not invalidate it.
+//
+// Both degrade quietly when the table is missing, the same as everything else
+// here: a null read simply means "no cached value", which is always safe.
+export async function getSetting(key) {
+
+  const { data, error } = await supabase
+    .from(TABLE).select("value").eq("key", key).maybeSingle();
+
+  if (error || !data) return null;
+
+  return data.value ?? null;
+
+}
+
+
+export async function setSetting(key, value) {
+
+  const { error } = await supabase
+    .from(TABLE)
+    .upsert([{ key, value, updated_at: new Date().toISOString() }], { onConflict: "key" });
+
+  if (error) {
+    console.error(`SETTING WRITE FAILED (${key}):`, error.message);
+    return { success: false };
+  }
+
+  return { success: true };
+
+}
+
+
 export async function getSettings() {
 
   if (cache && Date.now() - cachedAt < CACHE_TTL_MS) return cache;

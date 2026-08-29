@@ -32,6 +32,9 @@ export default function GraphButton() {
   return (
     <Link
       href="/graph"
+      // Fixed on every signed-in page, so this prefetched /graph — and
+      // therefore fullGraph() — on every page view in the app.
+      prefetch={false}
       aria-label="Connections"
       aria-current={active ? "page" : undefined}
       className={`pos-graph-frame fixed right-4 top-[max(1rem,env(safe-area-inset-top))] z-40 grid h-11 w-11 place-items-center rounded-[var(--r-pill)] border border-[var(--line)] bg-card/85 shadow-lift backdrop-blur-xl transition-colors ${
