@@ -969,7 +969,31 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
 
     const usable = postings.filter(p => p.external_id && p.title && p.url);
 
-    if (usable.length === 0) return;
+    // A board that answered and had nothing to say is a SUCCESSFUL poll.
+    //
+    // This used to be a bare `return`, which skipped the last_ok_at stamp at
+    // the bottom of this function. Harmless while every board returned rows;
+    // actively wrong the moment one legitimately returns none — which is now
+    // the COMMON case for Simplify, since a 304 means "nothing changed" and
+    // yields an empty array by design.
+    //
+    // Without this, the board that polls perfectly every fifteen minutes reads
+    // as one that has not answered since the last time the file changed: the
+    // Jobs page raises its stale-poll warning and the source health check
+    // counts it as dead. Exactly the silent-wrongness the 304 was meant to be
+    // invisible against.
+    if (usable.length === 0) {
+
+      await supabase.from("job_sources").update({
+        last_checked_at: now,
+        last_ok_at: now,
+        last_error: null,
+        consecutive_failures: 0
+      }).eq("id", source.id);
+
+      return;
+
+    }
 
     // Which of these have we never seen? Asked before writing, because the
     // upsert itself cannot tell us — an ON CONFLICT update returns the row

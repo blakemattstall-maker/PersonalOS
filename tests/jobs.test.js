@@ -540,3 +540,25 @@ test("the 11 MB Simplify dataset is only parsed when it has changed", () => {
     "the etag must only be stored once the body actually parsed");
 
 });
+
+
+test("a board that answered with nothing is still a successful poll", () => {
+
+  // This mattered the moment the Simplify conditional request shipped: a 304
+  // means "nothing changed" and yields an empty array BY DESIGN, so the common
+  // case for that board is now zero postings. A bare `return` there skips the
+  // last_ok_at stamp at the bottom of the function, and a board polling
+  // perfectly every fifteen minutes starts reading as one that has not answered
+  // since the file last changed — the Jobs page raises its stale-poll warning
+  // and the health check counts it dead.
+  const jobs = read("web/tools/jobs.js");
+
+  const empty = jobs.slice(
+    jobs.indexOf("if (usable.length === 0)"),
+    jobs.indexOf("if (usable.length === 0)") + 700
+  );
+
+  assert.match(empty, /last_ok_at: now/, "an empty poll must still record that the board answered");
+  assert.match(empty, /consecutive_failures: 0/, "and must not accumulate failures");
+
+});
