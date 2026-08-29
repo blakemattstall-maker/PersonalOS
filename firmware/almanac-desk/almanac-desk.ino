@@ -243,6 +243,32 @@ void refreshBattery() {
 // re-fetch restores the designed face after the fingers stop.
 unsigned long screenRefreshAt = 0;
 
+// ---------------------------------------------------------------------------
+// The timer. Parsed by the server ("twenty minutes" and "20 minutes" both
+// land), RUN here — the device owns the clock, the chime, and the screen,
+// which the countdown takes over exclusively: no polls, no deferred
+// refreshes, any tap cancels. The face is server-rendered once (Almanac's
+// real typefaces, battery in the corner); the digits and the sweeping arc
+// are drawn locally every second, because a per-second server render would
+// be absurd. Big chunky numerals are the one place the built-in font is
+// the right aesthetic instead of a compromise.
+// ---------------------------------------------------------------------------
+
+volatile uint32_t pendingTimerStartS = 0;   // handed over from the exchange
+volatile bool pendingTimerCancel = false;
+
+bool timerActive = false;
+bool timerDone = false;
+unsigned long timerT0 = 0;
+uint32_t timerTotalS = 0;
+unsigned long timerLastTick = 0;
+unsigned long timerDoneAt = 0;
+unsigned long timerNextChime = 0;
+int timerChimesLeft = 0;
+unsigned long lastFlowEnd = 0;              // answers get 8s before the timer reclaims
+
+static uint16_t *timerFace = nullptr;
+
 #if WAKE_WORD
 
 // ---------------------------------------------------------------------------
@@ -273,7 +299,7 @@ unsigned long screenRefreshAt = 0;
 // grapheme-to-phoneme conversion at boot. IDs start at 1 (0 is invalid at
 // the esp-sr layer). Phrases here must also stay in the server's matcher
 // (handleDeskCommand) as the fallback for anything MultiNet mishears.
-enum LocalCmd { LC_STOP = 1, LC_DISMISS, LC_QUIET, LC_SPEAK, LC_LOUDER, LC_SOFTER };
+enum LocalCmd { LC_STOP = 1, LC_DISMISS, LC_QUIET, LC_SPEAK, LC_LOUDER, LC_SOFTER, LC_TIMER_CANCEL };
 
 static const sr_cmd_t LOCAL_COMMANDS[] = {
   { LC_STOP,    "stop" },
@@ -293,7 +319,9 @@ static const sr_cmd_t LOCAL_COMMANDS[] = {
   { LC_LOUDER,  "speak up" },
   { LC_SOFTER,  "quieter" },
   { LC_SOFTER,  "volume down" },
-  { LC_SOFTER,  "softer" }
+  { LC_SOFTER,  "softer" },
+  { LC_TIMER_CANCEL, "cancel the timer" },
+  { LC_TIMER_CANCEL, "stop the timer" }
 };
 
 // The capture tee: while active, the fill callback appends every mic sample
@@ -1012,6 +1040,129 @@ bool loadPhaseFrame(PhaseFrame which) {
 }
 
 
+// The timer face, fetched once per timer start (fresh battery reading in
+// its corner). Geometry contract with the server's render: ring centred at
+// (184,220), band radii 150-162 — the two must move together.
+bool fetchTimerFace() {
+
+  WiFiClientSecure client;
+  HTTPClient http;
+
+  char path[96];
+  snprintf(path, sizeof(path), "/api/desk?screen=1&preview=timer&batt=%d&chg=%d",
+           battPercent, battOnUsb ? 1 : 0);
+
+  if (!httpBegin(http, client, path)) return false;
+  if (http.GET() != 200) { http.end(); return false; }
+
+  const size_t CAP = 400000;
+  uint8_t *buf = (uint8_t *)heap_caps_malloc(CAP, MALLOC_CAP_SPIRAM);
+  if (!buf) { http.end(); return false; }
+
+  BufferSink sink(buf, CAP);
+  http.writeToStream(&sink);
+  http.end();
+
+  if (!timerFace) {
+    timerFace = (uint16_t *)heap_caps_malloc((size_t)LCD_WIDTH * LCD_HEIGHT * 2, MALLOC_CAP_SPIRAM);
+  }
+
+  const bool ok = sink.len > 100 && timerFace && decodePngTo(buf, sink.len, timerFace);
+
+  free(buf);
+
+  return ok;
+
+}
+
+
+void drawTimerNow() {
+
+  if (timerFace) gfx->draw16bitBeRGBBitmap(0, 0, timerFace, LCD_WIDTH, LCD_HEIGHT);
+  else gfx->fillScreen(C_BLACK);
+
+  const uint32_t elapsed = (uint32_t)((millis() - timerT0) / 1000UL);
+  const uint32_t remain = elapsed >= timerTotalS ? 0 : timerTotalS - elapsed;
+
+  // The arc sweeps clockwise from 12 o'clock as time ELAPSES; done = full
+  // ember ring. Radii sit on the server-drawn track.
+  const float frac = timerTotalS ? (float)min(elapsed, timerTotalS) / (float)timerTotalS : 1.0f;
+
+  if (frac > 0.003f) {
+    gfx->fillArc(184, 220, 162, 150, -90, -90 + frac * 360.0f,
+                 timerDone ? C_EMBER : C_MOSS);
+  }
+
+  char buf[10];
+
+  if (timerTotalS >= 3600) {
+    snprintf(buf, sizeof(buf), "%u:%02u:%02u", remain / 3600, (remain % 3600) / 60, remain % 60);
+  } else {
+    snprintf(buf, sizeof(buf), "%u:%02u", remain / 60, remain % 60);
+  }
+
+  const int size = strlen(buf) > 5 ? 6 : 8;
+  const int w = strlen(buf) * 6 * size;
+
+  gfx->setTextSize(size);
+  gfx->setTextColor(timerDone ? C_EMBER : C_INK);
+  gfx->setCursor(184 - w / 2, 220 - 4 * size);
+  gfx->print(buf);
+
+}
+
+
+// Three short beeps out of the codec — playback shares the engine's bus, so
+// this is just samples to I2S, no reconfiguration.
+void timerChime() {
+
+  static int16_t tone[1600];   // 100ms of 880Hz at 16k
+
+  for (int i = 0; i < 1600; i++) {
+    tone[i] = (int16_t)(6000.0f * sinf(2.0f * PI * 880.0f * i / 16000.0f));
+  }
+
+  for (int b = 0; b < 3; b++) {
+    i2s.write((uint8_t *)tone, sizeof(tone));
+    delay(150);
+  }
+
+}
+
+
+void startTimer(uint32_t seconds) {
+
+  timerTotalS = seconds;
+  timerT0 = millis();
+  timerActive = true;
+  timerDone = false;
+  timerChimesLeft = 0;
+
+  refreshBattery();
+  fetchTimerFace();
+
+  drawTimerNow();
+
+  timerLastTick = millis();
+
+  Serial.printf("[timer] started: %us\n", seconds);
+
+}
+
+
+void stopTimer() {
+
+  timerActive = false;
+  timerDone = false;
+
+  Serial.println("[timer] stopped");
+
+  if (!blitResting()) fetchScreen(true);
+  else screenRefreshAt = millis() + 1200;
+
+}
+
+
 void loadPhaseFrames() {
 
   const unsigned long t0 = millis();
@@ -1251,6 +1402,10 @@ void executeLocalCommand(int id) {
       applyVolume();
       drawVolumeOverlay();
       screenRefreshAt = millis() + 1600;
+      return;
+
+    case LC_TIMER_CANCEL:
+      if (timerActive || timerDone) stopTimer();
       return;
 
   }
@@ -1889,6 +2044,14 @@ ConverseOutcome converse(const int16_t *mono, size_t samples, bool followup = fa
           if (strcmp(vol, "up") == 0) { volumePercent += 12; applyVolume(); drawVolumeOverlay(); }
           if (strcmp(vol, "down") == 0) { volumePercent -= 12; applyVolume(); drawVolumeOverlay(); }
 
+          // Timer actions land AFTER the exchange (the face fetch must not
+          // fight the open stream for the connection).
+          if (doc["timer"].is<JsonObjectConst>() || doc["timer"].is<JsonObject>()) {
+            const char *act = doc["timer"]["action"] | "";
+            if (strcmp(act, "start") == 0) pendingTimerStartS = doc["timer"]["seconds"] | 0;
+            if (strcmp(act, "cancel") == 0) pendingTimerCancel = true;
+          }
+
           if (strcmp(kind, "command") == 0 || strcmp(kind, "silent") == 0) out.commandHandled = true;
 
           if (strcmp(kind, "ignored") == 0) out.ignored = true;
@@ -2032,6 +2195,8 @@ void followUpLoop() {
 
     const ConverseOutcome result = converse(mono, samples, true);
     free(mono);
+
+    lastFlowEnd = millis();
 
     phase = IDLE;
 
@@ -2225,6 +2390,8 @@ void voiceFlow(bool fromWake = false) {
   // lands mid-sentence as a frame on the same socket.
   const ConverseOutcome result = converse(mono, samples);
   free(mono);
+
+  lastFlowEnd = millis();
 
   phase = IDLE;
 
@@ -2523,7 +2690,13 @@ void setup() {
   gfx->setCursor(24, 112);
   gfx->setTextColor(C_INK_SOFT);
   gfx->print("wifi: ");
+  // The network actually being tried FIRST — the boot screen said "Blake's
+  // iPhone" for weeks while the device was joining isunet.
+#if WIFI_ENTERPRISE
+  gfx->print(WIFI_EAP_SSID);
+#else
   gfx->print(WIFI_SSID);
+#endif
 
   const unsigned long t0 = millis();
 
@@ -2643,15 +2816,49 @@ void loop() {
   }
 #endif
 
-  // The deferred refresh a footer tap scheduled: taken only once the
-  // fingers have stopped, so five volume presses cost one fetch. (Signed
-  // difference, so the 49.7-day millis() wrap cannot park it.)
-  if (screenRefreshAt && (long)(nowMs - screenRefreshAt) >= 0) {
+  // Timer actions handed over by the last exchange.
+  if (pendingTimerCancel) { pendingTimerCancel = false; if (timerActive || timerDone) stopTimer(); }
+  if (pendingTimerStartS) { const uint32_t s = pendingTimerStartS; pendingTimerStartS = 0; startTimer(s); }
+
+  // A running timer owns the glass: it repaints every second (reclaiming
+  // it from any answer after an 8s grace), swallows the poll and any
+  // deferred refresh, chimes at zero, and self-clears a minute later.
+  if (timerActive) {
+
+    if (millis() - timerLastTick >= 1000) {
+
+      timerLastTick = millis();
+
+      if (!timerDone && (millis() - timerT0) / 1000UL >= timerTotalS) {
+        timerDone = true;
+        timerDoneAt = millis();
+        timerNextChime = millis();
+        timerChimesLeft = 5;
+      }
+
+      if (millis() - lastFlowEnd > 8000UL) drawTimerNow();
+
+      if (timerDone && timerChimesLeft > 0 && (long)(millis() - timerNextChime) >= 0) {
+        timerChime();
+        timerChimesLeft--;
+        timerNextChime = millis() + 10'000UL;
+      }
+
+      if (timerDone && millis() - timerDoneAt > 60'000UL) stopTimer();
+
+    }
+
+  } else if (screenRefreshAt && (long)(nowMs - screenRefreshAt) >= 0) {
+
+    // The deferred refresh a footer tap scheduled: taken only once the
+    // fingers have stopped, so five volume presses cost one fetch. (Signed
+    // difference, so the 49.7-day millis() wrap cannot park it.)
     screenRefreshAt = 0;
     fetchScreen();
+
   }
 
-  if (nowMs - lastPoll > pollIntervalMs || lastPoll == 0) {
+  if (!timerActive && (nowMs - lastPoll > pollIntervalMs || lastPoll == 0)) {
 
     Serial.println("[poll] polling /api/desk...");
     lastPoll = nowMs;
@@ -2696,6 +2903,14 @@ void loop() {
   TouchPoint t = readTouch();
 
   if (t.touched) {
+
+    // A running (or finished, chiming) timer: any tap cancels — exactly
+    // what the face's footer promises.
+    if (timerActive || timerDone) {
+      stopTimer();
+      delay(250);
+      return;
+    }
 
     // On a composed answer, a tap anywhere means "done with this" — not
     // "mute", which is what the resting face's zones would otherwise have

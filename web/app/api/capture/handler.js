@@ -272,6 +272,69 @@ export async function handleDeskCommand(text) {
              result: { success: true, message: "Voice is back on." } };
   }
 
+  // Timers. Parsed here (the fast path — a timer request must not tour the
+  // planning engine), RUN on the device: it owns the clock, the chime, and
+  // the screen the countdown takes over. `said` strips digits for phrase
+  // matching, so timers get their own number-preserving normalization —
+  // "twenty minutes" and "20 minutes" both land.
+  {
+    if (/^(cancel|stop|kill)( the| that| my)? timer$|^timer (off|cancel(led)?)$/.test(said)) {
+      return { success: true, tool: "desk_control", timer: { action: "cancel" },
+               result: { success: true, message: "Timer cancelled." } };
+    }
+
+    const saidNum = text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\b(jarvis|travis|jervis|hey|ok|okay|please|set|start|give|put|on|a|an|the|for|me|us)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const WORDS = {
+      one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
+      nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14,
+      fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+      twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, ninety: 90
+    };
+
+    const toNum = (w) => {
+      if (/^\d+$/.test(w)) return parseInt(w, 10);
+      const parts = w.split(" ");
+      if (parts.length === 1) return WORDS[w] ?? null;
+      if (parts.length === 2 && WORDS[parts[0]] >= 20 && WORDS[parts[1]] <= 9) {
+        return WORDS[parts[0]] + WORDS[parts[1]];
+      }
+      return null;
+    };
+
+    // "timer 20 minutes" · "20 minute timer" · bare "twenty minutes" ·
+    // "half hour timer" · "timer 90 seconds" · "one hour"
+    const m = saidNum.match(
+      /^(?:timer )?(half|\d+|[a-z]+(?: [a-z]+)?) ?(hours?|hr|minutes?|mins?|min|seconds?|secs?)(?: timer)?$/
+    ) || saidNum.match(/^timer (\d+)$/);
+
+    if (m) {
+
+      const unit = m[2] || "minutes";
+      const unitS = /^h/.test(unit) ? 3600 : /^s/.test(unit) ? 1 : 60;
+      const n = m[1] === "half" ? 0.5 : toNum(m[1]);
+      const seconds = n === null ? null : Math.round(n * unitS);
+
+      if (seconds !== null && seconds >= 5 && seconds <= 12 * 3600) {
+
+        const label = seconds % 3600 === 0 ? `${seconds / 3600} hour${seconds > 3600 ? "s" : ""}`
+          : seconds % 60 === 0 ? `${seconds / 60} minutes`
+          : `${seconds} seconds`;
+
+        return { success: true, tool: "desk_control",
+                 timer: { action: "start", seconds },
+                 result: { success: true, message: `${label}. Starting now.` } };
+
+      }
+
+    }
+  }
+
   // Laptop control's spoken switch. Explicit "laptop" required in the
   // phrase — a bare "pause" is far too collidable with everything else this
   // matcher and MultiNet already own.

@@ -308,7 +308,8 @@ export function deskConverse({ audio, mime, device, signal = null, followup = fa
             heard: text,
             message: command.result?.message || "",
             ...(command.speech ? { speech: command.speech } : {}),
-            ...(command.volume ? { volume: command.volume } : {})
+            ...(command.volume ? { volume: command.volume } : {}),
+            ...(command.timer ? { timer: command.timer } : {})
           });
 
           // "You can talk" must be able to say so: the mute it lifts was

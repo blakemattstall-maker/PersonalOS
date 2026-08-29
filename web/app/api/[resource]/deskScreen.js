@@ -690,6 +690,73 @@ async function buffered(image, headers) {
 // it deliberately put behind waitUntil.
 export async function renderDeskScreen({ preview = null, spec = null, mic = "on", asks = 0, tts = "on", vol = 85, batt = -1, chg = false, fresh = false } = {}) {
 
+  // The timer face: fetched ONCE when a timer starts, then the device draws
+  // the countdown digits and progress arc over it every second, locally —
+  // a once-a-second server render would be absurd and a fully local face
+  // would be the bitmap font again. The center is deliberately empty; the
+  // ring track here and the arc the firmware sweeps share the same
+  // geometry (centre 184,216 · radii 150-162), so the two must move
+  // together. The timer owns the whole screen by design.
+  if (preview === "timer") {
+
+    const fonts = await loadFonts();
+
+    const image = new ImageResponse(
+      (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            background: C.ground,
+            padding: "26px 24px 20px",
+            fontFamily: "Body"
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", fontFamily: "Body", fontSize: 12, letterSpacing: 2, color: C.moss }}>
+              TIMER
+            </div>
+            {batt >= 0 && (
+              <div style={{ display: "flex", fontFamily: "Mono", fontSize: 12,
+                            color: chg ? C.moss : batt < 20 ? C.ember : C.inkSoft }}>
+                {batt}%
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "flex", flexGrow: 1, alignItems: "center", justifyContent: "center" }}>
+            {/* The ring track. The device sweeps the moss arc over it. */}
+            <div
+              style={{
+                display: "flex",
+                width: 312,
+                height: 312,
+                borderRadius: 312,
+                border: `4px solid ${C.line}`
+              }}
+            />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 11,
+                        borderTop: `1px solid ${C.line}` }}>
+            <div style={{ display: "flex", fontFamily: "Mono", fontSize: 12, color: C.inkSoft }}>
+              tap to cancel
+            </div>
+            <div style={{ display: "flex", fontFamily: "Mono", fontSize: 12, color: C.moss }}>
+              almanac
+            </div>
+          </div>
+        </div>
+      ),
+      { ...SCREEN, fonts }
+    );
+
+    return buffered(image, { "x-almanac-view": "timer", "x-almanac-next": "600" });
+
+  }
+
   // Phase frames need no state and no stash: they are the same four pictures
   // every day, fetched once per boot.
   if (preview && preview.startsWith("phase-")) {
