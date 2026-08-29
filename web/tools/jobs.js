@@ -836,6 +836,12 @@ async function fetchSource(source) {
 // Returns the postings that are BOTH new and worth telling him about; the
 // caller decides how to deliver. Everything seen is stored either way, so the
 // Jobs page can show the full picture while notifications stay scarce.
+// Vercel kills a function at 60 seconds. This leaves room for the alert path,
+// the opportunistic enrichment and the activity log that run after the poll —
+// all of which are worth more than the last few boards.
+const POLL_BUDGET_MS = 38_000;
+
+
 export async function pollJobBoards({ concurrency = 8 } = {}) {
 
   const { data: sources, error } = await supabase
@@ -863,8 +869,35 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
   const fresh = [];
   let checked = 0;
   let failed = 0;
+  let skipped = 0;
+
+  // A deadline, because the platform has one and does not negotiate.
+  //
+  // This poll normally finishes 182 boards in about 25 seconds. Twice on the
+  // night of 29 August it did not: the GitHub step ran from 02:45:46 to
+  // 02:46:46 — exactly sixty seconds — and Vercel killed the function. A killed
+  // function returns a 500, so the workflow went red, AND it never reached its
+  // logActivity call, so nothing recorded that a poll had even been attempted.
+  // The worst possible shape: loud where it does not matter and silent where it
+  // does.
+  //
+  // One slow board is enough to do it. Each fetch may take 15 seconds, and at a
+  // concurrency of 8 a bad patch of boards multiplies straight into wall clock.
+  //
+  // So the poll now stops on its own terms with time to spare, reports what it
+  // did not get to, and always logs. "Checked 140 of 182" is a fact worth
+  // having; a 500 is not.
+  const deadline = Date.now() + POLL_BUDGET_MS;
 
   await mapWithConcurrency(sources, async (source) => {
+
+    // Checked per source rather than per batch: the queue is already running
+    // when the clock runs out, and everything still waiting should cost nothing.
+    if (Date.now() > deadline) {
+      skipped += 1;
+      return;
+    }
+
 
     let postings;
 
@@ -992,7 +1025,11 @@ export async function pollJobBoards({ concurrency = 8 } = {}) {
 
   }, concurrency);
 
-  return { success: true, checked, failed, fresh };
+  if (skipped > 0) {
+    console.warn(`JOB POLL ran out of time: ${skipped} of ${sources.length} boards not checked this pass.`);
+  }
+
+  return { success: true, checked, failed, skipped, fresh };
 
 }
 
@@ -1007,7 +1044,10 @@ export async function checkForNewJobs() {
   // `enriched` figure in the log was always null and the opportunistic pass
   // never happened. The hourly job covered the backlog regardless, which is
   // exactly why it went unnoticed.
-  const opportunistic = await enrichJobDetails({ limit: 40 })
+  // A smaller slice when the poll already spent the budget: the hourly
+  // enrichment job drains the backlog anyway, and nothing here is worth
+  // spending the last seconds before the platform kills the function.
+  const opportunistic = await enrichJobDetails({ limit: result.skipped ? 5 : 40 })
     .catch(error => {
       console.error("ENRICH FAILED:", error.message);
       return { enriched: 0 };
@@ -1021,6 +1061,9 @@ export async function checkForNewJobs() {
       output: {
         checked: result.checked || 0,
         failed: result.failed || 0,
+        // A poll that ran out of time is not the same as a quiet market, and
+        // without this on the record the two are indistinguishable.
+        ...(result.skipped ? { skipped: result.skipped } : {}),
         new: 0,
         enriched: opportunistic.enriched || 0
       },

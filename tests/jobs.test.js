@@ -418,3 +418,67 @@ test("force still bypasses every guard, so the digest can be tested on any day",
   }
 
 });
+
+
+// ---------------------------------------------------------------------------
+// The platform's sixty seconds
+// ---------------------------------------------------------------------------
+
+// Twice on the night of 29 August the GitHub step ran from 02:45:46 to
+// 02:46:46 — exactly sixty seconds — and Vercel killed the function. Two things
+// went wrong at once, and the second is the worse one: the workflow went red,
+// AND the poll never reached its logActivity call, so nothing recorded that a
+// poll had been attempted at all. Loud where it did not matter, silent where it
+// did. The poll normally finishes 182 boards in 25 seconds; one slow patch of
+// boards at 15 seconds a fetch is enough to double that.
+
+test("the poll stops on its own terms before the platform stops it", () => {
+
+  const jobs = read("web/tools/jobs.js");
+
+  assert.match(jobs, /const POLL_BUDGET_MS = [\d_]+/);
+
+  const budget = Number(jobs.match(/const POLL_BUDGET_MS = ([\d_]+)/)[1].replace(/_/g, ""));
+
+  // Room left for the alert path, the enrichment and the log that all run
+  // after the poll — every one of which is worth more than the last few boards.
+  assert.ok(budget >= 20_000, `a ${budget}ms budget gives up too easily`);
+  assert.ok(budget <= 45_000, `a ${budget}ms budget leaves nothing for the work after the poll`);
+
+});
+
+
+test("running out of time is recorded, not silently indistinguishable from a quiet market", () => {
+
+  const jobs = read("web/tools/jobs.js");
+
+  const poll = jobs.slice(jobs.indexOf("export async function pollJobBoards"));
+
+  // Checked per source, not per batch: the queue is already running when the
+  // clock runs out, and everything still waiting should cost nothing.
+  assert.match(poll.slice(0, 4000), /if \(Date\.now\(\) > deadline\) \{\s*\n\s*skipped \+= 1;/);
+
+  // Bounded at the next declaration rather than a guessed character count —
+  // the return sits 7,000 characters in, and a slice(0, 6000) silently missed
+  // it while looking like a real assertion.
+  const body = poll.slice(0, poll.search(/\nexport (async )?function /) === -1
+    ? poll.length
+    : poll.search(/\nexport (async )?function /));
+
+  assert.match(body, /return \{ success: true, checked, failed, skipped, fresh \}/,
+    "the caller has to be able to see it");
+
+  assert.match(jobs, /\.\.\.\(result\.skipped \? \{ skipped: result\.skipped \} : \{\}\)/,
+    "and it has to reach the activity log, or the diagnostics panel cannot tell");
+
+});
+
+
+test("a late poll does not then spend its remaining seconds enriching", () => {
+
+  const jobs = read("web/tools/jobs.js");
+
+  assert.match(jobs, /enrichJobDetails\(\{ limit: result\.skipped \? \d+ : \d+ \}\)/,
+    "the hourly enrichment job drains the backlog anyway");
+
+});
