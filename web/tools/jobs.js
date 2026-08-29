@@ -836,10 +836,20 @@ async function fetchSource(source) {
 // Returns the postings that are BOTH new and worth telling him about; the
 // caller decides how to deliver. Everything seen is stored either way, so the
 // Jobs page can show the full picture while notifications stay scarce.
-// Vercel kills a function at 60 seconds. This leaves room for the alert path,
-// the opportunistic enrichment and the activity log that run after the poll —
-// all of which are worth more than the last few boards.
-const POLL_BUDGET_MS = 38_000;
+// Vercel kills a function at 60 seconds, and the budget has to account for what
+// happens AFTER it is spent, not just up to it.
+//
+// The deadline stops boards being STARTED. It cannot stop the ones already in
+// flight, and mapWithConcurrency keeps eight of those, each allowed 15 seconds.
+// So the real worst case is budget + 15s of tail + the alert path, enrichment
+// and log that follow. At 38 seconds that arithmetic came to 53 and change,
+// which is not a margin.
+//
+// Measured live during a genuinely slow patch — five or six boards failing —
+// a full pass took 40 to 44 seconds; on a good day it is 25. Twenty-five
+// leaves a normal pass untouched and truncates only the runs that were going
+// to be dangerous:  25 + 15 + ~8  =  48s, against a 60s ceiling.
+const POLL_BUDGET_MS = 25_000;
 
 
 export async function pollJobBoards({ concurrency = 8 } = {}) {
