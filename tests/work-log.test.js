@@ -226,3 +226,84 @@ test("a pronoun is never counted as a unit of work", () => {
   assert.deepEqual(parseNumbers("exported about 15 GIFs with custom overlays"), { gifs: 15 });
 
 });
+
+
+// ---------------------------------------------------------------------------
+// A question always gets an answer
+// ---------------------------------------------------------------------------
+
+test("asking is recognised without a model in the loop", async () => {
+
+  const { looksLikeAQuestion } = await import("../web/app/api/capture/handler.js");
+
+  // His actual words, which came back as "Logged. That's 4 entries for Redbird
+  // Creative." and nothing else — twice, after both the tool description and
+  // the router's rules had been rewritten to prevent exactly that.
+  assert.equal(
+    looksLikeAQuestion("Im going to be working the football game today for Redbird Creative. Ive never done this before, what do I need to know?"),
+    true
+  );
+
+  assert.equal(looksLikeAQuestion("what should I focus on"), true);
+  assert.equal(looksLikeAQuestion("any advice for my first game"), true);
+  assert.equal(looksLikeAQuestion("Tell me how to frame a sideline shot"), true);
+
+  // And a plain report is not a question.
+  assert.equal(looksLikeAQuestion("Just finished my shift, cut four sideline clips."), false);
+  assert.equal(looksLikeAQuestion("Remember I prefer the 70-200 for sideline work."), false);
+  assert.equal(looksLikeAQuestion(""), false);
+  assert.equal(looksLikeAQuestion(null), false);
+
+});
+
+
+test("a turn made only of filing tools gains an answering one", async () => {
+
+  const { ensureSomethingAnswers } = await import("../web/app/api/capture/handler.js");
+
+  const filingOnly = {
+    tool_calls: [{ id: "1", type: "function", function: { name: "log_work", arguments: "{}" } }]
+  };
+
+  ensureSomethingAnswers(filingOnly, "Working the game today, what do I need to know?");
+
+  const names = filingOnly.tool_calls.map(c => c.function.name);
+
+  assert.deepEqual(names, ["log_work", "general_question"],
+    "the log still happens — the answer is added, not substituted");
+
+  // The verbatim words, because the router already proved it was not reading
+  // this turn as a question and a paraphrase would inherit that.
+  const added = filingOnly.tool_calls[1];
+  assert.match(JSON.parse(added.function.arguments).question, /what do I need to know/);
+
+});
+
+
+test("nothing is added when something already answers, or nothing was asked", async () => {
+
+  const { ensureSomethingAnswers } = await import("../web/app/api/capture/handler.js");
+
+  // A query tool already talks back.
+  const answering = {
+    tool_calls: [
+      { id: "1", type: "function", function: { name: "log_work", arguments: "{}" } },
+      { id: "2", type: "function", function: { name: "query_work", arguments: "{}" } }
+    ]
+  };
+  ensureSomethingAnswers(answering, "logged it, and what have I done so far?");
+  assert.equal(answering.tool_calls.length, 2, "one answer is enough");
+
+  // A statement is not a question.
+  const statement = {
+    tool_calls: [{ id: "1", type: "function", function: { name: "log_work", arguments: "{}" } }]
+  };
+  ensureSomethingAnswers(statement, "Finished my shift, cut four clips.");
+  assert.equal(statement.tool_calls.length, 1);
+
+  // And a turn the model answered conversationally has no calls to add to.
+  const none = { tool_calls: [] };
+  ensureSomethingAnswers(none, "what should I know?");
+  assert.equal(none.tool_calls.length, 0);
+
+});

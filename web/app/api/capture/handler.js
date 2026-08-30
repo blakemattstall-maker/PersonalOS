@@ -147,6 +147,66 @@ import { MODELS } from "../../../lib/models.js";
 import { transcribeAudio } from "../../../tools/pitch.js";
 import { notifyCapture } from "../../../lib/captureNotify.js";
 
+// Tools that only put something away. None of them says anything back beyond a
+// confirmation, so a turn made entirely of these is a turn that answered nothing.
+const FILING_TOOLS = new Set([
+  "log_work", "save_memory", "save_note", "save_intention", "save_person",
+  "log_contact", "log_bodyweight", "log_meal", "set_food_preference"
+]);
+
+
+// Did he actually ask something?
+//
+// Deliberately in code and deliberately blunt. A question mark, or an
+// interrogative opener, or one of the phrasings people use when they want to be
+// told something. False positives cost one extra model call on a turn that was
+// probably a question anyway; a false negative is the silence this exists to
+// end.
+export function looksLikeAQuestion(text) {
+
+  const said = String(text || "").trim().toLowerCase();
+
+  if (!said) return false;
+
+  if (said.includes("?")) return true;
+
+  return /\b(what|how|why|when|where|which|who|should i|do i|can i|is it|are there|any advice|any tips|tell me|explain|help me understand)\b/.test(said);
+
+}
+
+
+// If he asked and nothing chosen can answer, add the tool that can.
+export function ensureSomethingAnswers(message, text) {
+
+  const calls = message?.tool_calls || [];
+
+  if (calls.length === 0) return message;
+
+  if (!looksLikeAQuestion(text)) return message;
+
+  const names = calls.map(c => c.function?.name).filter(Boolean);
+
+  // Something here already talks back — a query tool, a research call, an
+  // answer. Leave it alone.
+  if (!names.every(n => FILING_TOOLS.has(n))) return message;
+
+  calls.push({
+    id: `answer_${Date.now()}`,
+    type: "function",
+    function: {
+      name: "general_question",
+      // The verbatim words, not a paraphrase: the question is the whole input
+      // to answering it, and the router already proved it was not reading this
+      // turn as one.
+      arguments: JSON.stringify({ question: text })
+    }
+  });
+
+  return message;
+
+}
+
+
 // Everything durable in what he just said, folded into the reply.
 //
 // Three exit paths return from this handler, not one — the resumed
@@ -748,6 +808,21 @@ export default async function handler(req, res) {
     // does not restate their work — and that is known from the model's chosen
     // tool names, before any of them run. So it runs alongside them and costs
     // max(tools, extraction) instead of the sum.
+    // ── a question always gets an answer, whatever the router picked ──────
+    //
+    // "I'm working the football game today for Redbird Creative, I've never
+    // done this before, what do I need to know?" came back as "Logged. That's
+    // 4 entries for Redbird Creative." — and nothing else. Twice, after the
+    // tool description was tightened and the router was told in words that
+    // saving is not answering. The instruction did not hold, because a
+    // description that matches is more persuasive than a rule that scolds.
+    //
+    // So it is decided in code. If he asked something and every tool the model
+    // chose is one that only files things away, general_question is added. It
+    // costs one extra call on exactly the turns that were coming back mute, and
+    // it cannot be argued out of by a model that liked another tool better.
+    ensureSomethingAnswers(message, text);
+
     const plannedTools = (message.tool_calls || []).map(c => c.function?.name).filter(Boolean);
 
     const extraction = extractInBackground(text, plannedTools);
