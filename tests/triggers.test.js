@@ -407,11 +407,36 @@ test("extraction runs on every exit from the capture handler", () => {
   // conversational answer, and the tool loop. The utterance that exposed the
   // whole gap took the middle one, so a pass bolted onto the end of the tool
   // loop would have missed exactly the case it was written for.
-  assert.equal(
-    (handler.match(/withExtraction\(/g) || []).length,
-    4,
-    "one helper definition and three call sites"
-  );
+  // Counted across BOTH helpers, because the tool-loop path no longer uses the
+  // serial one. Extraction is its own 5.3-second model call, and awaiting it
+  // after the tools simply added that to every capture — a 4-second capture
+  // became 9, and the phone's Shortcut gave up long before Vercel did. On that
+  // path it is now started alongside the tools and collected afterwards.
+  //
+  // What must stay true is the thing this test was written for: all three exit
+  // paths extract. The clarification resume and the conversational answer still
+  // use the serial helper, which is correct — neither runs a tool to overlap
+  // with.
+  // Call SITES only. withExtraction now delegates to extractInBackground, so a
+  // bare count of the latter also picks up its definition and that delegation.
+  const serial = (handler.match(/await withExtraction\(/g) || []).length;
+  const parallel = (handler.match(/const extraction = extractInBackground\(/g) || []).length;
+
+  assert.equal(serial + parallel, 3, "all three exit paths must extract");
+
+  assert.match(handler, /const extraction = extractInBackground\(/,
+    "the tool path must START extraction before the tools, not after them");
+
+  const startedAt = handler.indexOf("const extraction = extractInBackground(");
+  const toolLoopAt = handler.indexOf("for (const call of message.tool_calls");
+  const awaitedAt = handler.indexOf("const extracted = await extraction;");
+
+  assert.ok(startedAt > 0 && awaitedAt > 0, "both halves must exist");
+
+  if (toolLoopAt > 0) {
+    assert.ok(startedAt < toolLoopAt, "started before the tools run");
+    assert.ok(awaitedAt > toolLoopAt, "collected after they finish");
+  }
 
 });
 

@@ -485,7 +485,7 @@ export const TOOLS = [
     function: {
 
       name: "log_work",
-      description: "Record what he did during a shift, day or session at a JOB or internship, so it accumulates into a record he can use later for LinkedIn posts, resume bullets and performance reviews. Use for 'today at work I...', 'just finished my shift, I edited...', 'first day at X, I did...'. This is the tool for WORK HE PERFORMED — it appends to a permanent, ordered log and is not the same as save_memory, which stores a standing fact. If he describes what he did at a job, use this, even if he also says something worth remembering.",
+      description: "Record work he has ALREADY DONE during a shift, day or session at a job or internship, so it accumulates into a record he can use later for LinkedIn posts, resume bullets and performance reviews. Use for 'today at work I edited...', 'just finished my shift, I cut three reels', 'first day at X, I did...'. PAST TENSE, work performed.\n\nDo NOT use it for: something he is ABOUT to do ('I'm working the game today', 'tomorrow I'm shooting'), or a QUESTION about the job ('what should I know before...', 'what have I done so far'). Mentioning an employer is not enough — the test is whether he is telling you what he already did.\n\nIf he is asking anything at all, answer the question. Log the work as well if he also reported some, but a capture that contains a question must never come back as only a confirmation that something was filed.",
 
       parameters: {
         type: "object",

@@ -167,13 +167,29 @@ import { notifyCapture } from "../../../lib/captureNotify.js";
 // three.
 async function withExtraction(text, results, message) {
 
-  const { extractDurableFacts } = await import("../../../tools/extract.js");
-
-  const extracted = await extractDurableFacts(text, results);
+  const extracted = await extractInBackground(text, (results || []).map(r => r.tool));
 
   if (!extracted?.summary) return message;
 
   return message ? `${message} ${extracted.summary}` : extracted.summary;
+
+}
+
+
+// Kicked off without awaiting, so the caller decides when to collect it.
+//
+// Never rejects: tools/extract.js swallows its own failures, and the catch here
+// covers the import itself. An unhandled rejection on a promise held across an
+// await boundary would take down the reply the phone is waiting on, which is
+// the opposite of what any of this is for.
+function extractInBackground(text, toolNames = []) {
+
+  return import("../../../tools/extract.js")
+    .then(m => m.extractDurableFacts(text, (toolNames || []).filter(Boolean).map(tool => ({ tool }))))
+    .catch(error => {
+      console.error("CAPTURE EXTRACT FAILED TO START:", error.message);
+      return null;
+    });
 
 }
 
@@ -438,6 +454,15 @@ FIRST decide which of these the user is doing:
 Call every tool needed to satisfy the request — if one message asks for two
 INDEPENDENT things, make two calls; if anything feeds anything, that is
 rule 4.
+
+A MESSAGE THAT ASKS SOMETHING MUST BE ANSWERED. Saving is never a substitute
+for answering. "I'm working the football game today for Redbird Creative,
+I've never done this before, what do I need to know?" is a QUESTION with some
+context attached — it needs the answering tool, and it may ALSO save what is
+worth keeping, but coming back with only "logged under Redbird Creative" is
+a failure. Anything ending in a question mark, or containing "what/how/should
+I/do I/any advice", is asking. Storing the context and staying silent is the
+one outcome that is always wrong.
 ${isDesk ? `
 THIS REQUEST CAME FROM THE DESK DEVICE. It was spoken out loud, and the user
 is standing in front of a small screen and a speaker expecting to be answered
@@ -711,6 +736,22 @@ export default async function handler(req, res) {
     const results = [];
     let anyFailure = false;
 
+    // Started HERE, not after the tools finish.
+    //
+    // Extraction is its own model call and measures 5.3 seconds. Awaited after
+    // the tool loop it simply added that to every capture — a 4-second capture
+    // became 9 — and the phone's Shortcut gives up long before Vercel does. The
+    // server was never hanging; it was answering too late to be heard.
+    //
+    // It needs the verbatim text and nothing else. The only thing it wanted
+    // from `results` was which tools had already persisted something, so it
+    // does not restate their work — and that is known from the model's chosen
+    // tool names, before any of them run. So it runs alongside them and costs
+    // max(tools, extraction) instead of the sum.
+    const plannedTools = (message.tool_calls || []).map(c => c.function?.name).filter(Boolean);
+
+    const extraction = extractInBackground(text, plannedTools);
+
     // Query tools are handed the user's exact words so nothing is lost in
     // paraphrase — right for one tool, wrong for several. Asking "what's on
     // my schedule today and am I behind on anything" sent the whole sentence
@@ -776,7 +817,11 @@ export default async function handler(req, res) {
       .join(" ");
 
 
-    const spokenWithExtras = await withExtraction(text, results, spokenMessage);
+    const extracted = await extraction;
+
+    const spokenWithExtras = extracted?.summary
+      ? `${spokenMessage} ${extracted.summary}`.trim()
+      : spokenMessage;
 
     // The extraction line rides on the LAST result rather than becoming its own
     // entry, so describeCapture speaks it without "2 things done" turning into
