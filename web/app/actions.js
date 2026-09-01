@@ -347,6 +347,18 @@ export async function logWeightAction(weight, unit = "lbs") {
 }
 
 
+export async function addManualPostingAction(posting) {
+
+  const result = await backendPost("/api/jobs", { action: "addManual", ...posting });
+
+  revalidatePath("/career/jobs");
+  revalidatePath("/career/pipeline");
+
+  return result;
+
+}
+
+
 export async function setJobStatusAction(id, status) {
 
   const result = await backendPost("/api/jobs", { action: "setStatus", id, status });

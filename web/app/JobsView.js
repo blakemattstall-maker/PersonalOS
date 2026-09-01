@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DateTime } from "luxon";
 import { setJobStatusAction, saveSettingsAction, recordStageAction } from "./actions.js";
-import { Card, SectionTitle, Empty, Meta, btn } from "./ui.js";
+import { Card, SectionTitle, Empty, Meta, btn, field } from "./ui.js";
 
 
 // The feed. Ordered by when WE first saw it rather than by the company's own
@@ -168,13 +168,16 @@ function Posting({ posting, onStatus, busy }) {
 }
 
 
-export default function JobsView({ postings, watching, broken, lastCheckedAt, locationPriority = true }) {
+export default function JobsView({ postings, watching, broken, lastCheckedAt, stale = false, locationPriority = true }) {
 
   const router = useRouter();
 
   const [filter, setFilter] = useState("new");
   const [sort, setSort] = useState("recent");
   const [nearby, setNearby] = useState(locationPriority);
+  const [query, setQuery] = useState("");
+  const [grouped, setGrouped] = useState(true);
+  const [open, setOpen] = useState(() => new Set());
   const [isPending, startTransition] = useTransition();
 
   // Chicago-first is right for this summer and wrong the moment he wants
@@ -200,13 +203,25 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt, lo
   };
 
   // Two hours is four missed polls: past that, something is wrong with the
-  // clock rather than with the market.
-  const stale = !lastCheckedAt ||
-    (Date.now() - new Date(lastCheckedAt).getTime()) > 2 * 60 * 60 * 1000;
+  // clock rather than with the market. Computed on the server — see
+  // career/jobs/page.js — because reading the clock during a render is impure.
+
+  // Search runs over company, title and location together, because he thinks in
+  // all three — "tiktok", "chicago" and "social" are each a reasonable way to
+  // find the same posting. Every term has to match somewhere, so "product
+  // chicago" narrows rather than widens.
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+
+  const searched = terms.length === 0
+    ? postings
+    : postings.filter(p => {
+        const hay = `${p.company} ${p.title} ${p.location || ""}`.toLowerCase();
+        return terms.every(t => hay.includes(t));
+      });
 
   const chosen = filter === "all"
-    ? postings
-    : postings.filter(p => p.status === filter);
+    ? searched
+    : searched.filter(p => p.status === filter);
 
   // Sorted in the client because the whole list is already here — 120 rows at
   // most — and a re-sort should not cost a round trip.
@@ -241,8 +256,57 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt, lo
 
   });
 
+  // ── grouped by employer ───────────────────────────────────────────────
+  //
+  // TikTok posted five product internships in a day and caps applicants at TWO
+  // company-wide, so a flat list of five TikTok rows is actively misleading —
+  // it looks like five opportunities and it is a choice between them. Grouping
+  // makes the shape of the day visible: which employers are hiring in volume,
+  // and where picking matters.
+  //
+  // Order is inherited from the sort, not recomputed: a group takes the rank of
+  // its best posting, so "closing soonest" still puts the urgent employer first.
+  const groups = [];
+  const byCompany = new Map();
+
+  for (const p of shown) {
+    if (!byCompany.has(p.company)) {
+      const g = { company: p.company, postings: [] };
+      byCompany.set(p.company, g);
+      groups.push(g);
+    }
+    byCompany.get(p.company).postings.push(p);
+  }
+
+  const toggleGroup = (company) => {
+    setOpen(prev => {
+      const next = new Set(prev);
+      if (next.has(company)) next.delete(company); else next.add(company);
+      return next;
+    });
+  };
+
   return (
     <>
+
+      {/* Search first, because with hundreds of boards the list is no longer
+          something you scroll. */}
+      <div className="mb-3">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search company, title or city"
+          aria-label="Search internships"
+          className={field()}
+        />
+        {terms.length > 0 && (
+          <p className="pos-data mt-1.5 text-[0.72rem] text-ink-soft">
+            {searched.length} of {postings.length} match
+            {searched.length === 0 && " — try fewer words"}
+          </p>
+        )}
+      </div>
 
       <div className="mb-4 flex gap-1 self-start rounded-[var(--r-pill)] border border-[var(--line)] p-1">
         {FILTERS.map(f => (
@@ -288,14 +352,89 @@ export default function JobsView({ postings, watching, broken, lastCheckedAt, lo
       ) : (
 
         <Card>
-          <SectionTitle count={shown.length}>
+          <SectionTitle
+            count={shown.length}
+            action={
+              groups.length < shown.length ? (
+                <button
+                  type="button"
+                  onClick={() => setGrouped(g => !g)}
+                  className="text-[0.72rem] text-ink-soft underline decoration-[var(--line)] underline-offset-[3px] hover:text-ink"
+                >
+                  {grouped ? "Show flat" : `Group by company (${groups.length})`}
+                </button>
+              ) : null
+            }
+          >
             {FILTERS.find(f => f.key === filter)?.label}
           </SectionTitle>
-          <ul>
-            {shown.map(p => (
-              <Posting key={p.id} posting={p} onStatus={onStatus} busy={isPending} />
-            ))}
-          </ul>
+
+          {!grouped || groups.length === shown.length ? (
+
+            <ul>
+              {shown.map(p => (
+                <Posting key={p.id} posting={p} onStatus={onStatus} busy={isPending} />
+              ))}
+            </ul>
+
+          ) : (
+
+            <ul className="divide-y divide-[var(--line)]">
+              {groups.map(g => {
+
+                // One role is not a group. Rendering it as a collapsed header
+                // would hide a posting behind a tap for no reason.
+                if (g.postings.length === 1) {
+                  return (
+                    <li key={g.company} className="py-1">
+                      <Posting posting={g.postings[0]} onStatus={onStatus} busy={isPending} />
+                    </li>
+                  );
+                }
+
+                const expanded = open.has(g.company);
+                const applied = g.postings.filter(p => p.status === "applied").length;
+
+                return (
+                  <li key={g.company} className="py-1">
+
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(g.company)}
+                      aria-expanded={expanded}
+                      className="flex w-full items-baseline justify-between gap-3 py-2.5 text-left"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-[0.95rem] font-medium text-ink">
+                          {g.company}
+                        </span>
+                        <span className="pos-data mt-0.5 block text-[0.72rem] text-ink-soft">
+                          {g.postings.length} roles
+                          {applied > 0 && <span className="text-moss"> · {applied} applied</span>}
+                          {" · best match "}
+                          {Math.max(...g.postings.map(p => p.match_score || 0))}
+                        </span>
+                      </span>
+                      <span aria-hidden="true" className="shrink-0 text-[0.75rem] text-ink-soft">
+                        {expanded ? "−" : "+"}
+                      </span>
+                    </button>
+
+                    {expanded && (
+                      <ul className="mb-2 border-l border-[var(--line)] pl-3">
+                        {g.postings.map(p => (
+                          <Posting key={p.id} posting={p} onStatus={onStatus} busy={isPending} />
+                        ))}
+                      </ul>
+                    )}
+
+                  </li>
+                );
+
+              })}
+            </ul>
+
+          )}
         </Card>
 
       )}

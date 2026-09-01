@@ -3,16 +3,37 @@ import Reveal from "../../Reveal.js";
 import CareerNav from "../../CareerNav.js";
 import JobsView from "../../JobsView.js";
 import ManualTargets from "../../ManualTargets.js";
+import AddPosting from "../../AddPosting.js";
 import { Page, PageHeader, Empty } from "../../ui.js";
 
 
 export const dynamic = "force-dynamic";
 
 
+// Two hours is four missed polls: past that, something is wrong with the clock
+// rather than with the market.
+//
+// Read here rather than in a component. A Server Component renders once per
+// request so the value would be correct either way, but reading the clock
+// during ANY render is impure, and doing it in the data layer keeps the
+// component a pure function of what it was handed.
+async function getFeed() {
+
+  const feed = await backendGet("/api/jobs")
+    .catch(() => ({ success: false, configured: true, postings: [] }));
+
+  const stale = !feed.lastCheckedAt ||
+    (Date.now() - new Date(feed.lastCheckedAt).getTime()) > 2 * 60 * 60 * 1000;
+
+  return { ...feed, stale };
+
+}
+
+
 export default async function CareerJobs() {
 
   const [feed, settings] = await Promise.all([
-    backendGet("/api/jobs").catch(() => ({ success: false, configured: true, postings: [] })),
+    getFeed(),
     backendGet("/api/settings").catch(() => ({ settings: {} }))
   ]);
 
@@ -47,8 +68,10 @@ export default async function CareerJobs() {
               watching={feed.watching || 0}
               broken={feed.broken || []}
               lastCheckedAt={feed.lastCheckedAt || null}
+              stale={feed.stale}
               locationPriority={feed.locationPriority !== false}
             />
+            <AddPosting />
           </div>
 
         )}

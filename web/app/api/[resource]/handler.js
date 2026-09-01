@@ -736,6 +736,13 @@ async function jobs(req, res) {
       return res.status(200).json(await recordJobEvent({ posting_id, stage }));
     }
 
+    // A role the crawler will never see: forwarded by a friend, posted only on
+    // LinkedIn, or a boutique agency with a careers page and no ATS.
+    if (action === "addManual") {
+      const { addManualPosting } = await import("../../../tools/jobs.js");
+      return res.status(200).json(await addManualPosting(req.body || {}));
+    }
+
     if (action === "setStatus") {
       if (!id || !status) return res.status(400).json({ error: "Missing id or status" });
       return res.status(200).json(await setJobStatus({ id, status }));

@@ -1936,6 +1936,102 @@ export async function weeklyJobDigest({ force = false, tz = "America/Chicago" } 
 }
 
 
+// A posting he found himself.
+//
+// The crawler watches a few hundred boards and will never watch every one. A
+// friend forwards a link, a company posts only on LinkedIn, a boutique agency
+// has a careers page and no ATS — and until now those simply could not be
+// tracked, so the pipeline chart was a picture of the applications the app
+// happened to find rather than of the search.
+//
+// Stored in the same table as everything else, deliberately: the feed, the
+// stage buttons, the Sankey and the weekly digest all read job_postings, and a
+// separate table for hand-added roles would mean six surfaces that each have to
+// remember to look in two places.
+export async function addManualPosting({ company, title, url = null, location = null, deadline = null, applied = false }) {
+
+  const name = String(company || "").trim();
+  const role = String(title || "").trim();
+
+  if (!name || !role) {
+    return { success: false, error: "A posting needs a company and a title." };
+  }
+
+  // Its own source row, created once, so the boards page can say how many of
+  // these there are and the poller never tries to crawl them.
+  let sourceId = null;
+
+  const { data: existing } = await supabase
+    .from("job_sources").select("id").eq("ats", "manual").maybeSingle();
+
+  if (existing) {
+    sourceId = existing.id;
+  } else {
+    const { data: made, error: makeError } = await supabase
+      .from("job_sources")
+      .insert([{ company: "Added by hand", ats: "manual", token: "manual", category: "manual", active: false }])
+      .select("id").single();
+    if (makeError) return { success: false, error: makeError.message };
+    sourceId = made.id;
+  }
+
+  const now = new Date().toISOString();
+
+  const row = {
+    source_id: sourceId,
+    // Stable and unique per role, so adding the same one twice updates rather
+    // than duplicates.
+    external_id: `manual:${name.toLowerCase()}:${role.toLowerCase()}`.replace(/\s+/g, "-").slice(0, 200),
+    company: name,
+    title: role,
+    url: url ? String(url).trim() : null,
+    location: location ? String(location).trim() : null,
+    posted_at: now,
+    first_seen_at: now,
+    is_internship: true,
+    // Above the notify bar so it is never hidden by the feed's own filters. He
+    // put it here on purpose; the scorer has no opinion worth more than that.
+    match_score: 10,
+    matched_terms: ["added by hand"],
+    field: "product",
+    term: "summer_2027",
+    grad_fit: "unknown",
+    // Never notified: he is looking at it right now.
+    notified_at: now,
+    status: applied ? "applied" : "saved",
+    ...(deadline ? { deadline } : {}),
+    ...(applied ? { applied_at: now } : {})
+  };
+
+  const { data, error } = await supabase
+    .from("job_postings")
+    .upsert([row], { onConflict: "source_id,external_id", ignoreDuplicates: false })
+    .select()
+    .single();
+
+  if (error) {
+    if (/schema cache|does not exist/i.test(error.message)) {
+      return { success: false, error: "Run docs/schema-jobs.sql in Supabase first." };
+    }
+    return { success: false, error: error.message };
+  }
+
+  // Applying opens a pipeline entry, exactly as the Applied button does — or the
+  // flow chart would silently omit every application he added by hand.
+  if (applied) {
+    await recordJobEvent({ posting_id: data.id, stage: "applied" })
+      .catch(error => console.error("MANUAL POSTING STAGE FAILED:", error.message));
+  }
+
+  return {
+    success: true,
+    message: `Added ${role} at ${name}${applied ? " and marked it applied" : ""}.`,
+    data
+  };
+
+}
+
+
 export async function setJobStatus({ id, status }) {
 
   if (!["new", "saved", "applied", "dismissed"].includes(status)) {

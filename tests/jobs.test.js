@@ -332,10 +332,21 @@ test("a scheduler that stops firing is visible, not silent", () => {
   // reported it active, and then never ran it for over an hour. Nothing in the
   // app would have said so — a dead clock and a quiet hiring market look
   // identical from the feed.
+  // The threshold moved to the server when the client version was found to be
+  // reading the clock during a render — impure, because React may re-render at
+  // any moment and get a different answer. The warning still renders in the
+  // view; only the decision moved.
+  const page = read("web/app/career/jobs/page.js");
   const view = read("web/app/JobsView.js");
 
-  assert.match(view, /2 \* 60 \* 60 \* 1000/, "two hours is four missed polls");
+  assert.match(page, /2 \* 60 \* 60 \* 1000/, "two hours is four missed polls");
+  assert.match(page, /stale=\{feed\.stale\}/, "and it has to reach the view");
   assert.match(view, /No poll has completed in over two hours/);
+
+  // Read outside the component, not merely outside the JSX: a Server Component
+  // renders once per request so either would be correct, but the rule is that a
+  // component is a pure function of what it was handed.
+  assert.match(page, /async function getFeed\(\)/);
 
   // And there is a scheduler that actually keeps time, alongside the flaky one.
   const cron = read("docs/cron-jobs.sql");
@@ -560,5 +571,85 @@ test("a board that answered with nothing is still a successful poll", () => {
 
   assert.match(empty, /last_ok_at: now/, "an empty poll must still record that the board answered");
   assert.match(empty, /consecutive_failures: 0/, "and must not accumulate failures");
+
+});
+
+
+// ---------------------------------------------------------------------------
+// Searching, grouping, and roles the crawler will never see
+// ---------------------------------------------------------------------------
+
+test("search matches across company, title and city, and narrows on every term", () => {
+
+  const view = read("web/app/JobsView.js");
+
+  // He thinks in all three — "tiktok", "chicago" and "social" are each a
+  // reasonable way to reach the same posting.
+  assert.match(view, /\$\{p\.company\} \$\{p\.title\} \$\{p\.location \|\| ""\}/);
+
+  // every, not some: "product chicago" must narrow rather than widen.
+  assert.match(view, /terms\.every\(t => hay\.includes\(t\)\)/);
+
+});
+
+
+test("many roles at one employer collapse into one row", () => {
+
+  // TikTok posted five product internships in a day and caps applicants at TWO
+  // company-wide. A flat list of five reads as five opportunities when it is a
+  // choice between them.
+  const view = read("web/app/JobsView.js");
+
+  assert.match(view, /const byCompany = new Map\(\)/);
+
+  // A single role is not a group — collapsing it would hide a posting behind a
+  // tap for nothing.
+  assert.match(view, /if \(g\.postings\.length === 1\)/);
+
+  // The group takes the rank of its best posting rather than recomputing, so
+  // "closing soonest" still puts the urgent employer first.
+  assert.match(view, /Math\.max\(\.\.\.g\.postings\.map\(p => p\.match_score \|\| 0\)\)/);
+
+  // And it has to show what he has already spent on that employer.
+  assert.match(view, /applied > 0 &&/);
+
+});
+
+
+test("a hand-added posting lands in the same table as every other", () => {
+
+  // The feed, the stage buttons, the Sankey and the weekly digest all read
+  // job_postings. A separate table for hand-added roles would be six surfaces
+  // that each have to remember to look in two places.
+  const jobs = read("web/tools/jobs.js");
+
+  const add = jobs.slice(jobs.indexOf("export async function addManualPosting"), jobs.indexOf("export async function setJobStatus"));
+
+  assert.ok(add.length > 400, "addManualPosting is gone");
+
+  assert.match(add, /from\("job_postings"\)/);
+
+  // Stable key, so adding the same role twice updates instead of duplicating.
+  assert.match(add, /external_id: `manual:/);
+  assert.match(add, /ignoreDuplicates: false/);
+
+  // Never buzzes him about a posting he is looking at right now.
+  assert.match(add, /notified_at: now/);
+
+  // Applying has to open a pipeline entry, or the flow chart silently omits
+  // every application he added by hand.
+  assert.match(add, /recordJobEvent\(\{ posting_id: data\.id, stage: "applied" \}\)/);
+
+});
+
+
+test("the poller never tries to crawl a hand-added row", () => {
+
+  const jobs = read("web/tools/jobs.js");
+
+  const add = jobs.slice(jobs.indexOf("export async function addManualPosting"), jobs.indexOf("export async function setJobStatus"));
+
+  // Its own source row, inactive — pollJobBoards selects on active.
+  assert.match(add, /ats: "manual"[\s\S]{0,80}active: false/);
 
 });
