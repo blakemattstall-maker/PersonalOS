@@ -448,6 +448,41 @@ async function fetchPhenom(source) {
 // GET returns a shell — but both sit on a JSON endpoint that is trivially
 // derivable from the page URL and needs no key. Between them they are the
 // majority of any Summer-2027 feed.
+// A Lever posting is four fields, and only one of them is the pitch.
+//
+// `descriptionPlain` is the opening paragraph — what the job sounds like. Every
+// REQUIREMENT lives somewhere else: in `lists`, which holds the bulleted
+// sections a posting is really made of, and in `additionalPlain`. Reading only
+// the first one meant reading only the marketing copy.
+//
+// Measured on Palantir's "Product Designer, Internship": descriptionPlain is
+// 942 characters and the whole posting is 4,604. The sentence that decides
+// whether he can apply at all — "What We Require: Must be planning on
+// graduating in 2028" — is in a list, and so is the pay. Three separate
+// complaints (foreign roles, roles for 2028 grads, and missing pay and
+// requirements) were all this one omission, on all 40 Lever boards.
+function leverText(job) {
+
+  if (!job) return "";
+
+  const lists = (job.lists || [])
+    .map(l => `${l.text || ""}: ${l.content || ""}`)
+    .join("\n");
+
+  return [
+    job.text,
+    job.descriptionPlain || job.description,
+    lists,
+    job.additionalPlain || job.additional,
+    // The location the posting itself states, which is not always the one the
+    // list endpoint reported.
+    job.categories?.location,
+    job.country
+  ].filter(Boolean).join("\n\n");
+
+}
+
+
 async function fetchByUrl(url) {
 
   let parsed;
@@ -606,7 +641,7 @@ async function fetchViaSource(source, posting) {
       });
       if (!res.ok) return null;
       const body = await res.json();
-      return stripHtml(body.descriptionPlain || body.description || "");
+      return stripHtml(leverText(body));
     }
 
     if (source.ats === "ashby") {
@@ -721,7 +756,7 @@ const US_ABBREV = /,\s*(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME
 // would hide real roles.
 const VAGUE_LOCATION = /^(\s*)(in.?office|remote|hybrid|virtual|flexible|multiple|various|\d+\s+locations?|united states|usa|us|n\/a|tbd)(\s|,|$)/i;
 
-const FOREIGN = /\b(singapore|hong kong|budapest|hungary|amsterdam|netherlands|malaysia|kuala lumpur|london|united kingdom|\buk\b|england|ireland|dublin|germany|munich|berlin|hamburg|france|paris|spain|madrid|barcelona|italy|milan|rome|canada|toronto|vancouver|montreal|ottawa|australia|sydney|melbourne|india|bangalore|bengaluru|hyderabad|mumbai|japan|tokyo|china|shanghai|beijing|shenzhen|brazil|mexico|guadalajara|poland|warsaw|sweden|stockholm|denmark|copenhagen|israel|tel aviv|dubai|\buae\b|korea|seoul|taiwan|taipei|philippines|manila|thailand|bangkok|vietnam|indonesia|jakarta|costa rica|argentina|colombia|chile|peru|south africa|egypt|turkey|istanbul|switzerland|zurich|geneva|austria|vienna|belgium|brussels|norway|oslo|finland|helsinki|portugal|lisbon|czech|prague|romania|bucharest|greece|athens|new zealand|auckland|scotland|edinburgh|glasgow|wales|cardiff)\b/i;
+export const FOREIGN = /\b(singapore|hong kong|budapest|hungary|amsterdam|netherlands|malaysia|kuala lumpur|london|united kingdom|\buk\b|england|ireland|dublin|germany|munich|berlin|hamburg|france|paris|spain|madrid|barcelona|italy|milan|rome|canada|toronto|vancouver|montreal|ottawa|australia|sydney|melbourne|india|bangalore|bengaluru|hyderabad|mumbai|japan|tokyo|china|shanghai|beijing|shenzhen|brazil|mexico|guadalajara|poland|warsaw|sweden|stockholm|denmark|copenhagen|israel|tel aviv|dubai|\buae\b|korea|seoul|taiwan|taipei|philippines|manila|thailand|bangkok|vietnam|indonesia|jakarta|costa rica|argentina|colombia|chile|peru|south africa|egypt|turkey|istanbul|switzerland|zurich|geneva|austria|vienna|belgium|brussels|norway|oslo|finland|helsinki|portugal|lisbon|czech|prague|romania|bucharest|greece|athens|new zealand|auckland|scotland|edinburgh|glasgow|wales|cardiff)\b/i;
 const HOME = /\b(chicago|illinois|\bil\b|evanston|bloomington|normal|naperville|schaumburg|milwaukee|indianapolis|st\.? louis)\b/i;
 
 
@@ -1334,6 +1369,24 @@ export async function enrichJobDetails({ limit = 60 } = {}) {
 
     const attempts = (posting.detail_attempts || 0) + 1;
 
+    // Where the posting SAYS it is, which is not always the location field.
+    //
+    // scorePosting runs at poll time on the title and the location string, and
+    // that string is frequently a head office or a bare "Remote" while the
+    // description names Tokyo. So the same rule is re-run here, against the
+    // words, now that there are words.
+    //
+    // Deliberately narrow: only the first stretch of the description, where a
+    // posting states where the job is. Run over the whole body it would match
+    // "our London office" in a paragraph about the company and throw away a
+    // Chicago role.
+    const head = usable.slice(0, 600);
+
+    const foreign = readable
+      && FOREIGN.test(head)
+      && !US_STATE.test(head)
+      && !/\bunited states\b|\bu\.?s\.?a?\b/i.test(head);
+
     const term = classifyTerm({ title: posting.title, description: description || "" });
     const gradFit = classifyGradFit(description || "");
     const pay = parsePay(description || "");
@@ -1352,6 +1405,10 @@ export async function enrichJobDetails({ limit = 60 } = {}) {
         // from prose.
         ...(deadline ? { deadline } : {}),
         detail_attempts: attempts,
+        // Same -99 scorePosting uses for a role he cannot physically take. The
+        // feed asks for match_score >= 1, so this drops out of it without
+        // needing a second exclusion mechanism to keep in step with the first.
+        ...(foreign ? { match_score: -99 } : {}),
         // Stamped only when there was something to read — or when it has been
         // tried enough times that retrying is just noise. A page that renders
         // its text in JavaScript will never yield to a plain fetch, and hourly
@@ -1492,7 +1549,7 @@ export async function getJobFeed({ limit = 120, onlyInternships = true, minScore
 
   let query = supabase
     .from("job_postings")
-    .select("id, company, title, location, url, posted_at, first_seen_at, match_score, is_internship, status, notified_at, term, grad_fit, pay_min, pay_max, pay_period, field, deadline, applied_at")
+    .select("id, company, title, location, url, posted_at, first_seen_at, match_score, is_internship, status, notified_at, term, grad_fit, pay_min, pay_max, pay_period, field, deadline, applied_at, detail_fetched_at, detail_attempts, description")
     .neq("status", "dismissed")
     .order("first_seen_at", { ascending: false })
     .limit(limit);
@@ -1578,6 +1635,17 @@ export async function getJobFeed({ limit = 120, onlyInternships = true, minScore
 
   });
 
+  // Whether the posting could be READ, not the posting itself. The client needs
+  // one boolean to say "eligibility unverified"; shipping eight kilobytes of
+  // description per row to render one word would be absurd.
+  //
+  // Under 200 characters is a page shell rather than a posting — the same
+  // threshold enrichment uses to decide whether it read anything at all.
+  const summarised = deduped.map(({ description, detail_attempts, detail_fetched_at, ...rest }) => ({
+    ...rest,
+    detailRead: String(description || "").replace(/<[^>]+>/g, " ").trim().length >= 200
+  }));
+
   const broken = (sources || []).filter(s => s.active && s.consecutive_failures >= 3);
 
   const lastOk = (sources || [])
@@ -1589,7 +1657,7 @@ export async function getJobFeed({ limit = 120, onlyInternships = true, minScore
   return {
     success: true,
     configured: true,
-    postings: deduped,
+    postings: summarised,
     detailed,
     watching: (sources || []).filter(s => s.active).length,
     locationPriority: settings.jobs_location_priority !== false,

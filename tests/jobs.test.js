@@ -677,3 +677,75 @@ test("a truncated poll rotates rather than starving the same boards forever", ()
   assert.match(poll.slice(0, 1600), /nullsFirst: true/);
 
 });
+
+
+test("a Lever posting is read whole, not just its opening paragraph", () => {
+
+  // Lever splits a posting across four fields and only one is the pitch.
+  // descriptionPlain is the opening paragraph — what the job sounds like — and
+  // every REQUIREMENT lives in `lists` and `additionalPlain`. Measured on
+  // Palantir's "Product Designer, Internship": descriptionPlain is 942
+  // characters and the whole posting is 4,604, with "Must be planning on
+  // graduating in 2028" inside a list.
+  //
+  // Three separate complaints — foreign roles, roles for 2028 graduates, and
+  // missing pay and requirements — were all this one omission, across 36 Lever
+  // boards.
+  const jobs = read("web/tools/jobs.js");
+
+  assert.match(jobs, /function leverText\(job\)/);
+
+  const lever = jobs.slice(jobs.indexOf("function leverText(job)"), jobs.indexOf("function leverText(job)") + 900);
+
+  for (const field of ["descriptionPlain", "additionalPlain", "lists"]) {
+    assert.ok(lever.includes(field), `leverText must read ${field}`);
+  }
+
+  // And the adapter must actually use it.
+  assert.match(jobs, /return stripHtml\(leverText\(body\)\)/);
+
+});
+
+
+test("where a posting says it is beats where the board filed it", () => {
+
+  // scorePosting runs at poll time on the location string, which is frequently
+  // a head office or a bare "Remote" while the description names Tokyo. The
+  // same rule is re-run at enrichment, against the words.
+  const jobs = read("web/tools/jobs.js");
+
+  assert.match(jobs, /export const FOREIGN/, "the rule has to be shared, not duplicated");
+
+  const enrich = jobs.slice(jobs.indexOf("export async function enrichJobDetails"));
+
+  assert.match(enrich.slice(0, 4000), /const foreign = readable/);
+
+  // Only the head of the description: run over the whole body it would match
+  // "our London office" in a paragraph about the company and discard a Chicago
+  // role.
+  assert.match(enrich.slice(0, 4000), /usable\.slice\(0, 600\)/);
+
+  // Demoted the same way scorePosting demotes, so there is one exclusion
+  // mechanism rather than two that must be kept in step. Sliced generously —
+  // the write sits ~4,500 characters into the function, and a slice(0, 4000)
+  // would silently miss it while looking like a real assertion.
+  assert.match(enrich.slice(0, 8000), /match_score: -99/);
+
+});
+
+
+test("the card says when it could not read the requirements", () => {
+
+  // Some pages render their text in JavaScript and yield nothing to a plain
+  // fetch, so the app genuinely does not know. An empty space reads as "fine".
+  const view = read("web/app/JobsView.js");
+
+  assert.match(view, /Couldn&rsquo;t read the requirements/);
+  assert.match(view, /posting\.grad_fit === "ok"/);
+
+  // And the feed has to carry the flag without shipping the whole description.
+  const jobs = read("web/tools/jobs.js");
+  assert.match(jobs, /detailRead: String\(description \|\| ""\)/);
+  assert.doesNotMatch(jobs, /postings: deduped,/);
+
+});

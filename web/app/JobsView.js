@@ -118,6 +118,23 @@ function Posting({ posting, onStatus, busy }) {
             {payLabel(posting) ? ` · ${payLabel(posting)}` : ""}
             {posting.term === "summer_2027" ? " · Summer 2027" : ""}
           </span>
+
+          {/* What the posting itself says about whether he can apply.
+              //
+              With hundreds of boards this is the line that decides whether a
+              role is worth opening at all. Three states, and the third is the
+              honest one: some pages render their text in JavaScript and yield
+              nothing to a plain fetch, so the app genuinely does not know — and
+              saying so is better than an empty space that reads as "fine". */}
+          {posting.grad_fit === "ok" ? (
+            <span className="mt-1 block text-[0.7rem] text-moss">
+              Open to your year
+            </span>
+          ) : !posting.detailRead ? (
+            <span className="mt-1 block text-[0.7rem] text-ink-soft">
+              Couldn&rsquo;t read the requirements — check before applying
+            </span>
+          ) : null}
         </span>
         <span className="shrink-0 text-right">
           {seen && (
