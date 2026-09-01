@@ -885,12 +885,25 @@ async function fetchSource(source) {
 const POLL_BUDGET_MS = 25_000;
 
 
-export async function pollJobBoards({ concurrency = 8 } = {}) {
+export async function pollJobBoards({ concurrency = 20 } = {}) {
 
   const { data: sources, error } = await supabase
     .from("job_sources")
     .select("*")
-    .eq("active", true);
+    .eq("active", true)
+    // LEAST RECENTLY CHECKED FIRST, and this is not a nicety.
+    //
+    // The watchlist went from 182 boards to 509, and a pass that runs out of
+    // time stops starting new ones. With no ordering the same rows came back in
+    // the same order every poll, so the first ~200 were checked every fifteen
+    // minutes and the last ~300 were NEVER checked at all — silently, because
+    // an unpolled board looks exactly like a board with no new postings.
+    //
+    // Ordering by last_checked_at turns a truncated pass into a rotation:
+    // whatever gets skipped is first in the queue next time, and every board
+    // comes round. nullsFirst so a board added today and never polled goes to
+    // the front rather than the back.
+    .order("last_checked_at", { ascending: true, nullsFirst: true });
 
   if (error) {
     if (/schema cache|does not exist/i.test(error.message)) {

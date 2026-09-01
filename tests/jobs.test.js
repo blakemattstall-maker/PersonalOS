@@ -653,3 +653,27 @@ test("the poller never tries to crawl a hand-added row", () => {
   assert.match(add, /ats: "manual"[\s\S]{0,80}active: false/);
 
 });
+
+
+test("a truncated poll rotates rather than starving the same boards forever", () => {
+
+  // The watchlist went from 182 to 509. A pass that hits its time budget stops
+  // starting new boards — and with no ordering the same rows came back in the
+  // same order every time, so the first ~200 were polled every fifteen minutes
+  // and the last ~300 were never polled at all. Silently, because an unpolled
+  // board looks exactly like one with no new postings.
+  const jobs = read("web/tools/jobs.js");
+
+  const poll = jobs.slice(jobs.indexOf("export async function pollJobBoards"));
+
+  assert.match(
+    poll.slice(0, 1600),
+    /\.order\("last_checked_at", \{ ascending: true, nullsFirst: true \}\)/,
+    "least recently checked first, or a truncated pass starves the tail"
+  );
+
+  // A board added today has never been checked, so it must sort to the front
+  // rather than the back.
+  assert.match(poll.slice(0, 1600), /nullsFirst: true/);
+
+});
