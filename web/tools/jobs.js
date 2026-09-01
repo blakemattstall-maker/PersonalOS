@@ -920,6 +920,21 @@ async function fetchSource(source) {
 const POLL_BUDGET_MS = 25_000;
 
 
+// How many boards one pass may touch.
+//
+// The watchlist went from 182 to 509, and polling all of them every fifteen
+// minutes is 48,768 board fetches a day — each one a JSON parse and a scoring
+// run, which is real active CPU rather than the network wait that Fluid does
+// not bill. That expansion is what put the account through its monthly CPU
+// allowance in two days.
+//
+// A slice per pass instead. Combined with the least-recently-checked ordering
+// below it becomes a rotation: every board still comes round, just not every
+// board every quarter hour. 13,056 fetches a day instead of 48,768, while
+// watching 2.8x more boards than before the expansion.
+const BOARDS_PER_PASS = 120;
+
+
 export async function pollJobBoards({ concurrency = 20 } = {}) {
 
   const { data: sources, error } = await supabase
@@ -955,6 +970,35 @@ export async function pollJobBoards({ concurrency = 20 } = {}) {
   const { getSettings } = await import("../lib/settings.js");
   const locationPriority = (await getSettings().catch(() => ({}))).jobs_location_priority !== false;
 
+  // ── which boards this pass ────────────────────────────────────────────
+  //
+  // Two tiers, because they are not worth the same. A board that has actually
+  // produced a matching internship is where the next one is most likely to
+  // appear, and latency is the whole point of the feature — those keep the
+  // fifteen-minute cadence. Everything else rotates.
+  //
+  // "Proven" is measured, not guessed: a source that has ever yielded a posting
+  // scoring at or above the notify bar. Sixteen boards out of five hundred, and
+  // they are the sixteen that have ever buzzed his phone.
+  const { data: provenRows } = await supabase
+    .from("job_postings")
+    .select("source_id")
+    .gte("match_score", NOTIFY_SCORE)
+    .eq("is_internship", true)
+    .limit(1000);
+
+  const proven = new Set((provenRows || []).map(r => r.source_id));
+
+  const priority = sources.filter(s => proven.has(s.id));
+
+  // The rest arrive already sorted least-recently-checked first, so taking from
+  // the front is the rotation.
+  const rotating = sources
+    .filter(s => !proven.has(s.id))
+    .slice(0, Math.max(0, BOARDS_PER_PASS - priority.length));
+
+  const thisPass = [...priority, ...rotating];
+
   const now = new Date().toISOString();
 
   const fresh = [];
@@ -980,7 +1024,7 @@ export async function pollJobBoards({ concurrency = 20 } = {}) {
   // having; a 500 is not.
   const deadline = Date.now() + POLL_BUDGET_MS;
 
-  await mapWithConcurrency(sources, async (source) => {
+  await mapWithConcurrency(thisPass, async (source) => {
 
     // Checked per source rather than per batch: the queue is already running
     // when the clock runs out, and everything still waiting should cost nothing.
@@ -1141,10 +1185,21 @@ export async function pollJobBoards({ concurrency = 20 } = {}) {
   }, concurrency);
 
   if (skipped > 0) {
-    console.warn(`JOB POLL ran out of time: ${skipped} of ${sources.length} boards not checked this pass.`);
+    console.warn(`JOB POLL ran out of time: ${skipped} of ${thisPass.length} boards not checked this pass.`);
   }
 
-  return { success: true, checked, failed, skipped, fresh };
+  // `waiting` is the tail of the rotation, not a failure — it is the number of
+  // boards whose turn is later. Reported so a rotation that has stalled is
+  // distinguishable from one that is simply turning.
+  return {
+    success: true,
+    checked,
+    failed,
+    skipped,
+    priority: priority.length,
+    waiting: sources.length - thisPass.length,
+    fresh
+  };
 
 }
 
@@ -1179,6 +1234,7 @@ export async function checkForNewJobs() {
         // A poll that ran out of time is not the same as a quiet market, and
         // without this on the record the two are indistinguishable.
         ...(result.skipped ? { skipped: result.skipped } : {}),
+        ...(result.waiting ? { waiting: result.waiting, priority: result.priority } : {}),
         new: 0,
         enriched: opportunistic.enriched || 0
       },

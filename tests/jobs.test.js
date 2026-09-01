@@ -495,7 +495,10 @@ test("running out of time is recorded, not silently indistinguishable from a qui
 
   // Checked per source, not per batch: the queue is already running when the
   // clock runs out, and everything still waiting should cost nothing.
-  assert.match(poll.slice(0, 4000), /if \(Date\.now\(\) > deadline\) \{\s*\n\s*skipped \+= 1;/);
+  // Sliced generously rather than to a guessed count — the tiering block pushed
+  // this further into the function once already, and a slice that falls short
+  // passes while asserting nothing.
+  assert.match(poll.slice(0, 9000), /if \(Date\.now\(\) > deadline\) \{\s*\n\s*skipped \+= 1;/);
 
   // Bounded at the next declaration rather than a guessed character count —
   // the return sits 7,000 characters in, and a slice(0, 6000) silently missed
@@ -504,8 +507,10 @@ test("running out of time is recorded, not silently indistinguishable from a qui
     ? poll.length
     : poll.search(/\nexport (async )?function /));
 
-  assert.match(body, /return \{ success: true, checked, failed, skipped, fresh \}/,
-    "the caller has to be able to see it");
+  // The return grew when the rotation was added — checked, failed, skipped,
+  // priority, waiting — so assert on the field rather than the whole literal.
+  assert.match(body, /\n\s*skipped,/, "the caller has to be able to see it");
+  assert.match(body, /\n\s*waiting: sources\.length - thisPass\.length/);
 
   assert.match(jobs, /\.\.\.\(result\.skipped \? \{ skipped: result\.skipped \} : \{\}\)/,
     "and it has to reach the activity log, or the diagnostics panel cannot tell");
@@ -747,5 +752,59 @@ test("the card says when it could not read the requirements", () => {
   const jobs = read("web/tools/jobs.js");
   assert.match(jobs, /detailRead: String\(description \|\| ""\)/);
   assert.doesNotMatch(jobs, /postings: deduped,/);
+
+});
+
+
+test("a 509-board watchlist is polled in slices, not all at once", () => {
+
+  // Polling every board every fifteen minutes is 48,768 fetches a day, each one
+  // a JSON parse and a scoring run — real active CPU, not the network wait Fluid
+  // does not bill. Expanding the watchlist from 182 to 509 boards is what put
+  // the account through its whole monthly CPU allowance in two days.
+  const jobs = read("web/tools/jobs.js");
+
+  assert.match(jobs, /const BOARDS_PER_PASS = \d+/);
+
+  const perPass = Number(jobs.match(/const BOARDS_PER_PASS = (\d+)/)[1]);
+
+  assert.ok(perPass >= 60 && perPass <= 200, `${perPass} boards a pass is not a slice`);
+
+  const poll = jobs.slice(jobs.indexOf("export async function pollJobBoards"));
+
+  // Polls the slice, never the whole list.
+  assert.match(poll.slice(0, 6000), /mapWithConcurrency\(thisPass,/);
+  assert.doesNotMatch(poll.slice(0, 6000), /mapWithConcurrency\(sources,/);
+
+});
+
+
+test("boards that have actually produced a match keep the fast cadence", () => {
+
+  // Latency is the whole feature, so the tier that has ever buzzed his phone
+  // must not be put on a rotation. Measured rather than guessed: a source that
+  // has yielded a posting at or above the notify bar.
+  const jobs = read("web/tools/jobs.js");
+
+  const poll = jobs.slice(jobs.indexOf("export async function pollJobBoards"));
+
+  assert.match(poll.slice(0, 6000), /\.gte\("match_score", NOTIFY_SCORE\)/);
+  assert.match(poll.slice(0, 6000), /const priority = sources\.filter\(s => proven\.has\(s\.id\)\)/);
+
+  // Priority boards are never displaced by the rotation — the slice budget is
+  // spent on the rotating tier only.
+  assert.match(poll.slice(0, 6000), /BOARDS_PER_PASS - priority\.length/);
+
+});
+
+
+test("a rotation that has stalled is distinguishable from one that is turning", () => {
+
+  const jobs = read("web/tools/jobs.js");
+
+  // waiting is the tail whose turn is later, not a failure — but it has to be
+  // on the record, or a rotation that stopped looks like a quiet market.
+  assert.match(jobs, /waiting: sources\.length - thisPass\.length/);
+  assert.match(jobs, /waiting: result\.waiting, priority: result\.priority/);
 
 });
