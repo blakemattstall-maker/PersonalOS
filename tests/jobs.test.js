@@ -136,11 +136,10 @@ test("a board that starts failing is visible, not silently empty", () => {
 });
 
 
-test("Career holds two pages, not one scroll", () => {
+test("paused internship surfaces are hidden from Career", () => {
 
   const nav = read("web/app/CareerNav.js");
-  assert.match(nav, /\/career\/money/);
-  assert.match(nav, /\/career\/jobs/);
+  assert.match(nav, /return null/);
 
   // Distinct routes, each with its own loading state.
   for (const file of [
@@ -163,7 +162,7 @@ test("Career holds two pages, not one scroll", () => {
 });
 
 
-test("the poller has a clock that is not a daily cron", () => {
+test("the internship schedules are explicitly unscheduled", () => {
 
   // The clock moved. Vercel's free crons fire once a day, which is useless for
   // "apply the day it posts", so this lived on GitHub Actions — and then
@@ -176,13 +175,14 @@ test("the poller has a clock that is not a daily cron", () => {
   // point of the test — not against the file that used to.
   const schedule = read("docs/cron-jobs.sql");
 
-  assert.match(schedule, /'\*\/15 \* \* \* \*'/, "the 15-minute poll is the whole feature");
-  assert.match(schedule, /api\/cron\/checkJobs/);
+  assert.match(schedule, /cron\.unschedule\('almanac-poll-jobs'\)/);
+  assert.match(schedule, /cron\.unschedule\('almanac-enrich-jobs'\)/);
+  assert.doesNotMatch(schedule, /cron\.schedule\(/);
 
 });
 
 
-test("the external liveness alarm on the poller still exists", () => {
+test("the external poller is manual-only while paused", () => {
 
   // Demoting the workflow to a canary must not become deleting it. This is the
   // only alarm anywhere that fires from OUTSIDE the app when the poller stops
@@ -197,13 +197,8 @@ test("the external liveness alarm on the poller still exists", () => {
   // hiring market for weeks.
   assert.match(workflow, /test "\$code" = "200"/);
 
-  // Still on a clock of its own, just not a duplicate of the real one.
-  const cron = workflow.match(/- cron: "([^"]+)"/);
-
-  assert.ok(cron, "the canary needs a schedule or it never fires");
-
-  assert.notEqual(cron[1], "*/15 * * * *",
-    "a canary on the same cadence as pg_cron is not a canary, it is a second poller");
+  assert.match(workflow, /workflow_dispatch/);
+  assert.doesNotMatch(workflow, /- cron:/);
 
 });
 
@@ -326,7 +321,7 @@ test("the feed hides the same requisition posted per-location", () => {
 });
 
 
-test("a scheduler that stops firing is visible, not silent", () => {
+test("the paused jobs page performs no feed work", () => {
 
   // The failure that motivated this: GitHub Actions registered the schedule,
   // reported it active, and then never ran it for over an hour. Nothing in the
@@ -339,23 +334,11 @@ test("a scheduler that stops firing is visible, not silent", () => {
   const page = read("web/app/career/jobs/page.js");
   const view = read("web/app/JobsView.js");
 
-  assert.match(page, /2 \* 60 \* 60 \* 1000/, "two hours is four missed polls");
-  assert.match(page, /stale=\{feed\.stale\}/, "and it has to reach the view");
-  assert.match(view, /No poll has completed in over two hours/);
+  assert.match(page, /Internship monitoring is paused/);
+  assert.doesNotMatch(page, /backendGet|JobsView/);
 
-  // Read outside the component, not merely outside the JSX: a Server Component
-  // renders once per request so either would be correct, but the rule is that a
-  // component is a pure function of what it was handed.
-  assert.match(page, /async function getFeed\(\)/);
-
-  // And there is a scheduler that actually keeps time, alongside the flaky one.
   const cron = read("docs/cron-jobs.sql");
-  assert.match(cron, /pg_cron/);
-  assert.match(cron, /\*\/15 \* \* \* \*/);
-  assert.match(cron, /api\/cron\/checkJobs/);
-
-  // The secret must never be committed — the file ships a placeholder.
-  assert.match(cron, /PUT_YOUR_CRON_SECRET_HERE/);
+  assert.match(cron, /cron\.unschedule/);
 
 });
 

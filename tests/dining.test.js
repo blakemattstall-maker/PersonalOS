@@ -173,13 +173,12 @@ test("every sync run leaves a durable record, success or not", () => {
 });
 
 
-test("the dining sync rides the Canvas cron slot without endangering it", () => {
+test("the retired dining sync no longer rides the Canvas cron slot", () => {
 
-  // Promise.allSettled, not Promise.all: a dining-site outage must never cost
-  // the morning's Canvas assignments, nor the reverse.
   const job = cron.slice(cron.indexOf("async function syncCanvas"));
 
-  assert.match(job, /Promise\.allSettled\(\[\s*syncCanvasAssignments\(\),\s*syncDiningMenus/);
+  assert.match(job, /syncCanvasAssignments\(\)/);
+  assert.doesNotMatch(job, /syncDiningMenus/);
 
 });
 

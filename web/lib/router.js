@@ -19,7 +19,7 @@ import { researchQuery } from "../tools/research.js";
 import { savePerson, queryPeople, recordContact } from "../tools/people.js";
 import { draftEmail, reviewInbox } from "../tools/gmail.js";
 import { exportToDoc } from "../tools/googleDocs.js";
-import { answerDiningQuestion, planMeals, logMeal, updateDiningPrefs } from "../tools/mealPlan.js";
+import { FOOD_ENABLED, FOOD_RETIRED_MESSAGE } from "./featureFlags.js";
 
 
 // Logging must never mask a real error.
@@ -497,8 +497,11 @@ export async function executeTool(data, originalText = null) {
 
 
       case "query_dining":
-
-        result = await answerDiningQuestion({
+        if (!FOOD_ENABLED) {
+          result = { success: false, retired: true, message: FOOD_RETIRED_MESSAGE };
+          break;
+        }
+        result = await (await import("../tools/mealPlan.js")).answerDiningQuestion({
           question: data.question || originalText,
           date: data.date ?? null
         });
@@ -508,8 +511,11 @@ export async function executeTool(data, originalText = null) {
 
 
       case "plan_meals":
-
-        result = await planMeals({
+        if (!FOOD_ENABLED) {
+          result = { success: false, retired: true, message: FOOD_RETIRED_MESSAGE };
+          break;
+        }
+        result = await (await import("../tools/mealPlan.js")).planMeals({
           date: data.date ?? null,
           meals: data.meals ?? null,
           note: data.note ?? null
@@ -520,8 +526,11 @@ export async function executeTool(data, originalText = null) {
 
 
       case "log_meal":
-
-        result = await logMeal({
+        if (!FOOD_ENABLED) {
+          result = { success: false, retired: true, message: FOOD_RETIRED_MESSAGE };
+          break;
+        }
+        result = await (await import("../tools/mealPlan.js")).logMeal({
           description: data.description || originalText,
           meal: data.meal ?? null,
           date: data.date ?? null
@@ -532,8 +541,11 @@ export async function executeTool(data, originalText = null) {
 
 
       case "set_food_preference":
-
-        result = await updateDiningPrefs({
+        if (!FOOD_ENABLED) {
+          result = { success: false, retired: true, message: FOOD_RETIRED_MESSAGE };
+          break;
+        }
+        result = await (await import("../tools/mealPlan.js")).updateDiningPrefs({
           dislike: data.dislike ?? null,
           like: data.like ?? null,
           remove: data.remove ?? null,

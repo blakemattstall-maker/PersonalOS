@@ -90,11 +90,6 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
   const [autoColor, setAutoColor] = useState(initialSettings?.auto_color_events !== false);
   const [savingAutoColor, setSavingAutoColor] = useState(false);
 
-  const [jobPush, setJobPush] = useState(initialSettings?.jobs_push_enabled === true);
-  const [jobFeed, setJobFeed] = useState(initialSettings?.jobs_feed_enabled === true);
-  const [savingJobSetting, setSavingJobSetting] = useState(null);
-  const [jobNote, setJobNote] = useState(null);
-
   // Only the kinds actually overridden are held here, so anything untouched
   // keeps following KIND_COLOR rather than being frozen at today's default.
   const [eventColors, setEventColors] = useState(initialSettings?.event_colors || {});
@@ -181,28 +176,6 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
     await saveSettingsAction({ auto_color_events: next });
 
     setSavingAutoColor(false);
-
-  };
-
-
-  const toggleJobSetting = async (key, value, setValue) => {
-
-    const next = !value;
-
-    setValue(next);
-    setSavingJobSetting(key);
-    setJobNote(null);
-
-    const result = await saveSettingsAction({ [key]: next });
-
-    if (!result?.success) {
-      setValue(value);
-      setJobNote(result?.error || "Couldn't save.");
-    } else {
-      setJobNote("Saved.");
-    }
-
-    setSavingJobSetting(null);
 
   };
 
@@ -514,49 +487,9 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
       <Section title="Internship monitor">
 
         <p className="mt-3 text-xs leading-relaxed text-ink-soft">
-          Almanac keeps collecting roles for the Jobs page. These switches only
-          control whether the monitor reaches out to you.
+          Paused. Almanac is not polling job boards, enriching listings, adding
+          feed messages, or sending job notifications. Existing data is kept.
         </p>
-
-        <div className="mt-4 divide-y divide-[var(--line)]">
-          <button
-            onClick={() => toggleJobSetting("jobs_push_enabled", jobPush, setJobPush)}
-            disabled={savingJobSetting !== null}
-            className="flex w-full items-start justify-between gap-3 py-3 text-left first:pt-0"
-          >
-            <span>
-              <span className="block text-sm text-ink">Phone notifications</span>
-              <span className="mt-0.5 block text-xs leading-relaxed text-ink-soft">
-                Buzz for new internships, closing dates, and follow-ups.
-              </span>
-            </span>
-            <span className={`mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-xs ${
-              jobPush ? "border-moss text-moss" : "border-[var(--line)] text-ink-soft"
-            }`}>
-              {savingJobSetting === "jobs_push_enabled" ? "…" : jobPush ? "On" : "Off"}
-            </span>
-          </button>
-
-          <button
-            onClick={() => toggleJobSetting("jobs_feed_enabled", jobFeed, setJobFeed)}
-            disabled={savingJobSetting !== null}
-            className="flex w-full items-start justify-between gap-3 py-3 text-left"
-          >
-            <span>
-              <span className="block text-sm text-ink">Today feed messages</span>
-              <span className="mt-0.5 block text-xs leading-relaxed text-ink-soft">
-                Show internship alerts and the jobs headline on the main page.
-              </span>
-            </span>
-            <span className={`mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-xs ${
-              jobFeed ? "border-moss text-moss" : "border-[var(--line)] text-ink-soft"
-            }`}>
-              {savingJobSetting === "jobs_feed_enabled" ? "…" : jobFeed ? "On" : "Off"}
-            </span>
-          </button>
-        </div>
-
-        {jobNote && <p className="mt-2 text-xs text-ink-soft">{jobNote}</p>}
 
       </Section>
 

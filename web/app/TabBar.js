@@ -29,11 +29,9 @@ const TABS = [
     )
   },
   {
-    // Health owns the body: weigh-ins, food, and training when it exists.
-    // /food redirects here, so old shortcuts and links still land right.
+    // Health owns body measurements and training when it exists.
     href: "/health",
     label: "Health",
-    also: ["/food"],
     icon: (
       <>
         <path d="M12 20.5s-7-4.4-7-9.4a3.9 3.9 0 0 1 7-2.4 3.9 3.9 0 0 1 7 2.4c0 5-7 9.4-7 9.4z" />
@@ -42,7 +40,7 @@ const TABS = [
     )
   },
   {
-    // Career holds Money and Jobs as two distinct pages behind one slot.
+    // Career currently holds Money; the internship surfaces are paused.
     // /money still resolves, so nothing that already points there breaks.
     href: "/career",
     label: "Career",

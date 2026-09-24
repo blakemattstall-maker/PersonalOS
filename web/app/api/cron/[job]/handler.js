@@ -1,6 +1,4 @@
 import { syncCanvasAssignments } from "../../../../tools/canvas.js";
-import { checkForNewJobs, enrichJobDetails, reviewJobDeadlines, weeklyJobDigest } from "../../../../tools/jobs.js";
-import { syncDiningMenus } from "../../../../tools/dining.js";
 import { createBrief, getLatestUnreadBrief, getMostRecentBrief } from "../../../../tools/database.js";
 import { composeBrief } from "../../../../tools/brief.js";
 import { reviewIntentionsForNudges, deliverScheduledNudges } from "../../../../tools/nudges.js";
@@ -19,6 +17,7 @@ import { getUserTimezone } from "../../../../lib/profile.js";
 import { sendPush } from "../../../../lib/push.js";
 import { pushAllowed } from "../../../../lib/settings.js";
 import { DateTime } from "luxon";
+import { JOBS_ENABLED, JOBS_PAUSED_MESSAGE } from "../../../../lib/featureFlags.js";
 
 
 // All scheduled jobs behind one dynamic route.
@@ -141,27 +140,7 @@ async function briefPush() {
 
 
 async function syncCanvas() {
-
-  // The dining sync rides Canvas's 8:00 UTC slot rather than getting its own
-  // cron entry — same reasoning as the debate deck riding syncNews: every
-  // added schedule is another thing that can drift, and neither of these is
-  // time-critical beyond "once a night". They run concurrently because they
-  // talk to different servers entirely (Canvas's ICS feed, the dining site),
-  // and each is best-effort so a bad night for one never costs the other.
-  //
-  // Dining's 40s budget is the pace-setter under the route's 60s ceiling: the
-  // sync stops itself at the budget and reports what's left, and the next
-  // night (or a Sync tap on /food) continues from the diff. On a normal night
-  // the new day's menus fit with room to spare.
-  const [canvas, dining] = await Promise.allSettled([
-    syncCanvasAssignments(),
-    syncDiningMenus({ budgetMs: 40_000 })
-  ]);
-
-  return {
-    canvas: canvas.status === "fulfilled" ? canvas.value : { success: false, error: canvas.reason?.message },
-    dining: dining.status === "fulfilled" ? dining.value : { success: false, error: dining.reason?.message }
-  };
+  return { canvas: await syncCanvasAssignments() };
 
 }
 
@@ -379,7 +358,8 @@ async function connectIslands() {
 // feature is applying the DAY a posting drops, and Vercel's free crons are
 // daily. Cheap by construction: ~59 unauthenticated GETs and a set difference.
 async function checkJobs() {
-
+  if (!JOBS_ENABLED) return { success: true, paused: true, message: JOBS_PAUSED_MESSAGE };
+  const { checkForNewJobs } = await import("../../../../tools/jobs.js");
   return checkForNewJobs();
 
 }
@@ -389,6 +369,9 @@ async function checkJobs() {
 // gets its own path the poller can call without holding up an alert. Runs a
 // larger slice than the poll's own opportunistic pass.
 async function enrichJobs() {
+  if (!JOBS_ENABLED) return { success: true, paused: true, message: JOBS_PAUSED_MESSAGE };
+
+  const { enrichJobDetails, reviewJobDeadlines, weeklyJobDigest } = await import("../../../../tools/jobs.js");
 
   const enriched = await enrichJobDetails({ limit: 120 });
 

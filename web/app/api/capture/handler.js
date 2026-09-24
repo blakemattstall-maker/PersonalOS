@@ -153,7 +153,7 @@ import { notifyCapture } from "../../../lib/captureNotify.js";
 // confirmation, so a turn made entirely of these is a turn that answered nothing.
 const FILING_TOOLS = new Set([
   "log_work", "save_memory", "save_note", "save_intention", "save_person",
-  "log_contact", "log_bodyweight", "log_meal", "set_food_preference"
+  "log_contact", "log_bodyweight"
 ]);
 
 

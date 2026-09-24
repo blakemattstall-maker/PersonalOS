@@ -1,4 +1,5 @@
 import { DESK_ENABLED } from "./deskRetirement.js";
+import { FOOD_ENABLED } from "./featureFlags.js";
 export const TOOLS = [
 
   {
@@ -854,4 +855,9 @@ export const TOOLS = [
     }
   }
 
-].filter(tool => DESK_ENABLED || !["open_on_laptop", "laptop_action"].includes(tool.function.name));
+].filter(tool => {
+  const name = tool.function.name;
+  if (!DESK_ENABLED && ["open_on_laptop", "laptop_action"].includes(name)) return false;
+  if (!FOOD_ENABLED && ["query_dining", "plan_meals", "log_meal", "set_food_preference"].includes(name)) return false;
+  return true;
+});

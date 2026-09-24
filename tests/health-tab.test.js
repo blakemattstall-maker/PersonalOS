@@ -25,7 +25,7 @@ test("the nav reads Today, Health, Career, People, News, Settings", () => {
   // /food must keep working — a home-screen shortcut or an old push payload
   // still points at it.
   assert.match(read("web/app/food/page.js"), /redirect\(`\/health/);
-  assert.match(source, /also: \["\/food"\]/, "the Health tab must stay lit on the legacy route");
+  assert.doesNotMatch(source, /also: \["\/food"\]/, "retired food is no longer a Health surface");
 
 });
 

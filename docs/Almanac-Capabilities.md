@@ -13,7 +13,7 @@ Current as of 2026-09-23. This lists what the running system can do today.
 - Extract durable memories, projects, and reminders from a capture without replacing the requested answer.
 - Return an answer to the Shortcut and send a web push when the interruption settings allow it.
 
-## The 32 active voice tools
+## The 28 active voice tools
 
 | Tool | What it does |
 |---|---|
@@ -44,28 +44,23 @@ Current as of 2026-09-23. This lists what the running system can do today.
 | `draft_email` | Creates a Gmail draft for review. It never sends it. |
 | `export_to_doc` | Writes a structured Google Doc, optionally using live web research first. |
 | `log_contact` | Records a call, message, visit, or other interaction and resets the person's check-in clock. |
-| `query_dining` | Answers questions about the live campus dining menu and nutrition. |
-| `plan_meals` | Chooses menu items, works around your schedule, and creates meal events on Calendar. |
-| `log_meal` | Matches food you ate to dining data and records calories and protein. |
-| `set_food_preference` | Saves foods you like or refuse, calorie and protein targets, and meal-time windows. |
 | `run_chain` | Runs up to six dependent steps, such as research, then a document, then email drafts or tasks. |
 
-The retired Jarvis desk and laptop-control tools are excluded. Their code remains for reference, but they cannot be routed or run.
+The retired Jarvis desk, laptop-control, and food tools are excluded. Their code and stored data remain for reference, but they cannot be routed or run.
 
 ## Dashboard and app surfaces
 
 - **Today:** morning brief, prompts, insights, nudges, deep analyses, active projects, search, and bulk clear.
 - **History:** resolved prompts, insights, nudges, notes, and past activity.
 - **Projects:** active and archived projects with tasks, events, materials, conversations, plan building, and status.
-- **Career:** internship feed, manual target list, application pipeline, job status history, deadlines, follow-ups, and career-related spending.
+- **Career:** money and career-related spending. The internship feed and application pipeline are paused and hidden.
 - **Money:** balances, account breakdown, categorized spending, merchants, recurring charges, transfers, and 7/30/90-day views.
 - **Health:** weight history, current pace, target progress, and nutrition signals.
-- **Food:** live dining menus, meal planning, preferences, nutrition targets, and meal logs.
 - **People:** relationships, contact history, birthdays and important dates, and check-in schedules.
 - **Graph:** a searchable 2D or optional 3D map connecting people, projects, tasks, events, places, notes, spending, and other stored entities.
 - **News:** real stories from published RSS feeds, ranked by relevance to your life and interests.
 - **Practice:** adversarial debate sessions plus recorded pitch or teach-back exercises with transcription and feedback.
-- **Settings and diagnostics:** notification level, internship delivery switches, Calendar coloring, food settings, Google connection, schema checks, and automation health.
+- **Settings and diagnostics:** notification level, Calendar coloring, Google connection, schema checks, and automation health. Settings show that internship monitoring is paused.
 - **Demo mode:** a read-only version backed by fixtures instead of personal data.
 
 ## Automatic work
@@ -79,9 +74,8 @@ The retired Jarvis desk and laptop-control tools are excluded. Their code remain
 - Rolls up daily metrics and looks for trends in money, health, projects, food, work, and follow-through.
 - Ingests GPS points, groups them into visits, labels places, and fires place-based reminders.
 - Fires time-based and Calendar-event-based reminders.
-- Syncs Canvas assignments and campus dining menus daily.
+- Syncs Canvas assignments daily.
 - Pulls and ranks current news each morning.
-- Watches company job boards in slices, enriches promising postings, tracks deadlines and application stages, and can send weekly summaries.
 - Regenerates the personal profile from current evidence on its scheduled review cycle.
 - Uses activity heartbeats and diagnostics so a stopped integration can be distinguished from a quiet day.
 
@@ -96,21 +90,24 @@ The retired Jarvis desk and laptop-control tools are excluded. Their code remain
 | Canvas | Read an ICS assignment feed and mirror assignments into Tasks. |
 | SimpleFIN | Read account balances and transactions. No money movement or trading. |
 | Overland | Receive phone GPS points for visits, place context, and location reminders. |
-| Campus NetNutrition/CBORD | Read menus, serving data, calories, and protein. |
 | OpenAI | Audio transcription, routing, reasoning, embeddings, web search, writing, and speech-related processing. |
 | Supabase | Main database for personal data, projects, graph edges, activity, settings, and cached external data. |
 | Vercel | Hosts the web app, API functions, and daily scheduled jobs. |
-| GitHub Actions and Supabase cron | Ring the higher-frequency job and reminder endpoints that Vercel's plan cannot schedule often enough. |
-| Greenhouse, Lever, Ashby, SmartRecruiters, and Workday | Read public company job boards. |
+| GitHub Actions and Supabase cron | Ring reminder endpoints that Vercel's plan cannot schedule often enough. The internship schedules are paused. |
 | NPR, BBC, WSJ Markets, and Ars Technica RSS | Supply the news feed. |
 | Web Push | Delivers briefs, capture replies, reminders, insights, and optional job alerts to the phone. |
 
+## Paused and retired features
+
+- **Internships are paused:** no board polling, listing enrichment, deadline reviews, weekly digest, phone alerts, Today feed messages, or scheduled liveness checks run. Existing postings and pipeline history are preserved.
+- **Food is retired:** no menu fetches, dining sync, meal planning, food logging, or food routing runs. Existing food records are preserved.
+
 ## Current size
 
-- 363 version-controlled project files.
-- 66,509 physical lines of code across JavaScript, SQL, CSS, Python, C/C++, and shell files.
-- 49,848 nonblank code lines.
-- 51,213 lines in the web application.
-- 10,747 lines of automated tests.
-- 3,331 lines of project documentation.
-- 7.43 MiB of version-controlled files, excluding dependencies, build output, and Git history.
+- 364 version-controlled project files.
+- 65,977 physical lines of code across JavaScript, SQL, CSS, Python, C/C++, and shell files.
+- 49,458 nonblank code lines.
+- 50,771 lines in the web application.
+- 10,737 lines of automated tests.
+- 3,342 lines of project documentation.
+- 7.42 MiB of version-controlled files, excluding dependencies, build output, and Git history.

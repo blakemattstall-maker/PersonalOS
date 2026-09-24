@@ -320,7 +320,8 @@ test("the places no feed can reach are listed where he will see them", async () 
 
   // The check-off state rides in settings rather than a new table.
   assert.match(read("web/lib/settings.js"), /manual_checks/);
-  assert.match(read("web/app/career/jobs/page.js"), /ManualTargets/);
+  assert.doesNotMatch(read("web/app/career/jobs/page.js"), /ManualTargets/,
+    "the paused page must not load or render the old manual-target workflow");
 
 });
 

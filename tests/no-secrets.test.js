@@ -137,7 +137,7 @@ test("no tracked file carries a long high-entropy hex string", () => {
 });
 
 
-test("the cron templates still say where the secret goes", () => {
+test("active cron templates still say where the secret goes", () => {
 
   // If a template stops naming its placeholder, the test above stops having
   // anything to compare against and the next paste goes through unnoticed.
@@ -149,11 +149,13 @@ test("the cron templates still say where the secret goes", () => {
 
     const source = fs.readFileSync(path.join(ROOT, file), "utf8");
 
-    assert.match(
-      source,
-      /PUT_YOUR_CRON_SECRET_HERE/,
-      `${file} no longer carries its placeholder — either it was filled in, or the convention changed`
-    );
+    if (/net\.http_(get|post)/.test(source)) {
+      assert.match(source, /PUT_YOUR_CRON_SECRET_HERE/,
+        `${file} calls an authenticated endpoint without the documented placeholder`);
+    } else {
+      assert.doesNotMatch(source, /Bearer\s+[A-Za-z0-9_-]{20,}/,
+        `${file} contains what looks like a committed bearer secret`);
+    }
 
   }
 

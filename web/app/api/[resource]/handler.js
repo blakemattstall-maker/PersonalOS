@@ -1,4 +1,5 @@
 import { DESK_ENABLED, DESK_RETIRED_MESSAGE } from "../../../lib/deskRetirement.js";
+import { FOOD_ENABLED, FOOD_RETIRED_MESSAGE, JOBS_ENABLED, JOBS_PAUSED_MESSAGE } from "../../../lib/featureFlags.js";
 import supabase from "../../../lib/supabase.js";
 import { requireAuth } from "../../../lib/auth.js";
 import { getMemories, deleteMemory } from "../../../tools/memory.js";
@@ -26,8 +27,6 @@ import { summarise, findRecurring, FINANCE_RANGES } from "../../../lib/categoriz
 import { queryFinances } from "../../../tools/finances.js";
 import { pendingInsights, resolveInsight } from "../../../tools/islands.js";
 import { fullGraph } from "../../../lib/links.js";
-import { getDiningDay, syncDiningMenus } from "../../../tools/dining.js";
-import { getDiningLog, logMealItems, removeLogEntry, answerDiningQuestion, planMeals } from "../../../tools/mealPlan.js";
 import { enforceLimit } from "../../../lib/ratelimit.js";
 import { buildDeskState } from "../../../lib/deskState.js";
 import { getEvents } from "../../../tools/googleCalendar.js";
@@ -826,6 +825,9 @@ async function health(req, res) {
 
 async function dining(req, res) {
 
+  const { getDiningDay, syncDiningMenus } = await import("../../../tools/dining.js");
+  const { getDiningLog, logMealItems, removeLogEntry, answerDiningQuestion, planMeals } = await import("../../../tools/mealPlan.js");
+
   if (req.method === "GET") {
 
     // The Plan tab's read: the day's log (planned + eaten + totals + targets).
@@ -1051,6 +1053,14 @@ export default async function handler(req, res) {
 
   if (!DESK_ENABLED && ["desk", "laptop"].includes(req.query.resource)) {
     return res.status(410).json({ disabled: true, error: DESK_RETIRED_MESSAGE });
+  }
+
+  if (!FOOD_ENABLED && req.query.resource === "dining") {
+    return res.status(410).json({ disabled: true, retired: true, error: FOOD_RETIRED_MESSAGE });
+  }
+
+  if (!JOBS_ENABLED && req.query.resource === "jobs") {
+    return res.status(200).json({ success: true, paused: true, error: JOBS_PAUSED_MESSAGE });
   }
 
   if (!requireAuth(req, res)) return;

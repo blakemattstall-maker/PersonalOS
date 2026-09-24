@@ -190,12 +190,14 @@ test("nutrition rides the signal layer, and only once there is data to stand on"
 });
 
 
-test("capture can query, plan, log and set preferences", () => {
+test("retired food capture routes remain restorable but are not offered", () => {
 
   for (const name of ["query_dining", "plan_meals", "log_meal", "set_food_preference"]) {
-    assert.match(tools, new RegExp(`name: "${name}"`), `${name} must be declared to the router model`);
+    assert.match(tools, new RegExp(`name: "${name}"`), `${name} remains available behind the feature flag`);
     assert.match(router, new RegExp(`case "${name}"`), `${name} must be executable`);
   }
+
+  assert.match(tools, /!FOOD_ENABLED/);
 
   // Food preferences must land in the structured store the planner reads,
   // not drift into free-text memories the planner never sees.
