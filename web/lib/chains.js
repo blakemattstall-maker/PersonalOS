@@ -1,6 +1,7 @@
 import openai from "./openai.js";
 import { MODELS } from "./models.js";
 import { waitUntil } from "@vercel/functions";
+import { DESK_ENABLED } from "./deskRetirement.js";
 
 // Dependent chains: "research the options, THEN put the findings in a doc,
 // THEN draft an email to each person it names." Every tool in this system
@@ -176,7 +177,7 @@ async function executeChain(request) {
   // instruction, carried out when its results finally exist. The pause
   // switch, the expiry, and the machine-side kill file all still apply at
   // the moment of opening.
-  if (/\b(on|to) (my |the )?(laptop|computer|mac)\b/i.test(request)) {
+  if (DESK_ENABLED && /\b(on|to) (my |the )?(laptop|computer|mac)\b/i.test(request)) {
 
     try {
 
@@ -210,6 +211,8 @@ async function executeChain(request) {
   } catch (error) {
     console.error("CHAIN notify failed:", error.message);
   }
+
+  if (!DESK_ENABLED) return;
 
   try {
 

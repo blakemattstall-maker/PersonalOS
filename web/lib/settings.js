@@ -57,6 +57,12 @@ export const DEFAULTS = {
   // collected: a role is stored either way.
   jobs_location_priority: true,
 
+  // Keep collecting and ranking internships, but delivery is opt-in. The job
+  // monitor can still be useful as a page without owning the phone or Today
+  // feed — especially now that Intern Insider is the primary source.
+  jobs_push_enabled: false,
+  jobs_feed_enabled: false,
+
   // When each manual target on the Jobs page was last looked at, keyed by
   // slug. Lives in settings rather than its own table because it is a handful
   // of timestamps and deserves no migration.

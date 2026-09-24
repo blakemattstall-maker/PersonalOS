@@ -1,3 +1,4 @@
+import { DESK_ENABLED, DESK_RETIRED_MESSAGE } from "../../../lib/deskRetirement.js";
 import { nodeRoute } from "../_node.js";
 import handler from "./handler.js";
 
@@ -20,6 +21,10 @@ const run = nodeRoute(handler);
 export async function GET(request, context) {
 
   const { resource } = await (context?.params ?? Promise.resolve({}));
+
+  if (!DESK_ENABLED && ["desk", "laptop"].includes(resource)) {
+    return Response.json({ disabled: true, error: DESK_RETIRED_MESSAGE }, { status: 410 });
+  }
 
   if (resource === "desk" && new URL(request.url).searchParams.has("screen")) {
 

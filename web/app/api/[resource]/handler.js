@@ -1,3 +1,4 @@
+import { DESK_ENABLED, DESK_RETIRED_MESSAGE } from "../../../lib/deskRetirement.js";
 import supabase from "../../../lib/supabase.js";
 import { requireAuth } from "../../../lib/auth.js";
 import { getMemories, deleteMemory } from "../../../tools/memory.js";
@@ -64,14 +65,15 @@ async function data(req, res) {
       // raised on its own that is waiting for them — and until now an insight
       // had no surface at all: it existed only as a push, so a swiped
       // notification meant the finding was gone for good.
-      const [{ data, error }, insights] = await Promise.all([
+      const [{ data, error, count }, insightResult] = await Promise.all([
         supabase
           .from("prompts")
-          .select("*")
+          .select("*", { count: "exact" })
           .eq("status", "pending")
           .order("created_at", { ascending: false })
           .limit(20),
-        pendingInsights({ limit: 10 }).catch(() => [])
+        pendingInsights({ limit: 10, withCount: true })
+          .catch(() => ({ insights: [], count: 0 }))
       ]);
 
       if (error) throw new Error(error.message);
@@ -79,10 +81,12 @@ async function data(req, res) {
       return res.status(200).json({
         success: true,
         prompts: data || [],
+        promptCount: count ?? data?.length ?? 0,
+        insightCount: insightResult.count,
         // Shaped like a prompt so the dashboard renders them with the same
         // card, but kept under their own key so the two can never be confused
         // when one is answered.
-        insights: insights.map(i => ({
+        insights: insightResult.insights.map(i => ({
           id: i.id,
           kind: "insight",
           title: i.title,
@@ -107,7 +111,13 @@ async function data(req, res) {
 
   if (req.method === "POST") {
 
-    const { type, id, answer } = req.body || {};
+    const { action, type, id, answer } = req.body || {};
+
+    if (action === "clearQueue") {
+      const { clearDashboardQueue } = await import("../../../tools/database.js");
+      const result = await clearDashboardQueue();
+      return res.status(result.success ? 200 : 500).json(result);
+    }
 
     if (!type || !id) {
       return res.status(400).json({ error: "Missing type or id" });
@@ -199,7 +209,8 @@ async function history(req, res) {
 async function nudges(req, res) {
 
   if (req.method === "GET") {
-    return res.status(200).json({ success: true, nudges: await getPendingNudges() });
+    const result = await getPendingNudges({ withCount: true });
+    return res.status(200).json({ success: true, ...result });
   }
 
   if (req.method === "POST") {
@@ -356,9 +367,11 @@ async function deepThoughts(req, res) {
 
     // The toggle list is served rather than duplicated in the frontend, so
     // adding a capability doesn't need a matching edit in the dashboard.
+    const result = await getPendingDeepThoughts({ withCount: true });
+
     return res.status(200).json({
       success: true,
-      thoughts: await getPendingDeepThoughts(),
+      ...result,
       planTools: PLAN_TOOLS
     });
 
@@ -706,6 +719,11 @@ async function jobs(req, res) {
 
       const { briefJobFacts } = await import("../../../tools/jobs.js");
 
+      const settings = await getSettings();
+      if (!settings.jobs_feed_enabled) {
+        return res.status(200).json({ success: true, headline: null });
+      }
+
       const facts = await briefJobFacts({ hours: 24 }).catch(() => null);
 
       return res.status(200).json({
@@ -1030,6 +1048,10 @@ const RESOURCES = { data, history, nudges, desk, laptop, projects, deepThoughts,
 
 
 export default async function handler(req, res) {
+
+  if (!DESK_ENABLED && ["desk", "laptop"].includes(req.query.resource)) {
+    return res.status(410).json({ disabled: true, error: DESK_RETIRED_MESSAGE });
+  }
 
   if (!requireAuth(req, res)) return;
 

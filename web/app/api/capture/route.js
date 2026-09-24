@@ -1,3 +1,4 @@
+import { DESK_ENABLED, DESK_RETIRED_MESSAGE } from "../../../lib/deskRetirement.js";
 import { nodeRoute } from "../_node.js";
 import handler from "./handler.js";
 
@@ -28,6 +29,10 @@ export async function POST(request, context) {
   const contentType = request.headers.get("content-type") || "";
 
   if (contentType.startsWith("audio/")) {
+
+    if (!DESK_ENABLED) {
+      return Response.json({ disabled: true, error: DESK_RETIRED_MESSAGE }, { status: 410 });
+    }
 
     // Same dormant-until-set secret as every other device call.
     const configured = process.env.API_SECRET;

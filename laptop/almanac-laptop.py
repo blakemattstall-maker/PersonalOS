@@ -363,6 +363,10 @@ def execute(command, cfg):
 
 
 def main():
+    # Retired 2026-09-15. Exit before loading credentials or making requests.
+    print("Jarvis desk device retired; laptop helper disabled.")
+    return
+
     cfg = load_config()
     log(f"helper up, polling {cfg['base']} every {POLL_SECONDS}s")
 

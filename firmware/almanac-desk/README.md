@@ -1,3 +1,8 @@
+> **Retired 2026-09-15.** The ESP32/Jarvis device and its laptop helper are disabled.
+> Firmware is retained for reference. Almanac serves static disabled responses for
+> device polling and rejects desk audio captures; do not flash or restart this
+> integration without deliberately restoring the server and helper first.
+
 # Almanac desk companion
 
 Firmware for the Waveshare **ESP32-S3-Touch-AMOLED-1.8** (V1: SH8601 + FT3168).

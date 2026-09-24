@@ -24,6 +24,18 @@ export async function resolveNudge(id) {
 }
 
 
+export async function clearDashboardQueueAction() {
+
+  const result = await backendPost("/api/data", { action: "clearQueue" });
+
+  revalidatePath("/");
+  revalidatePath("/history");
+
+  return result;
+
+}
+
+
 export async function deleteDataItem(type, id) {
 
   await backendPost("/api/data", { type, id });

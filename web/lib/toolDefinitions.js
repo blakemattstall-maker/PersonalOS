@@ -1,3 +1,4 @@
+import { DESK_ENABLED } from "./deskRetirement.js";
 export const TOOLS = [
 
   {
@@ -853,4 +854,4 @@ export const TOOLS = [
     }
   }
 
-];
+].filter(tool => DESK_ENABLED || !["open_on_laptop", "laptop_action"].includes(tool.function.name));

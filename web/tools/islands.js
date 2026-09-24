@@ -844,21 +844,23 @@ export async function recentInsights({ limit = 5 } = {}) {
 // The same posture the observer already takes with prompts: the row is written
 // regardless of whether the phone is allowed to buzz, because muting should
 // mean "stop interrupting me", not "stop telling me".
-export async function pendingInsights({ limit = 10 } = {}) {
+export async function pendingInsights({ limit = 10, withCount = false } = {}) {
 
-  const { data, error } = await supabase
+  const { data, error, count } = await supabase
     .from("insights")
-    .select("id, kind, title, body, strength, created_at, pushed_at")
+    .select("id, kind, title, body, strength, created_at, pushed_at", { count: "exact" })
     .eq("status", "new")
     .order("strength", { ascending: false })
     .limit(limit);
 
   if (error) {
     console.error("pendingInsights QUERY FAILED — the dashboard's insight queue silently shows nothing until fixed:", error.message);
-    return [];
+    return withCount ? { insights: [], count: 0 } : [];
   }
 
-  return data || [];
+  const insights = data || [];
+
+  return withCount ? { insights, count: count ?? insights.length } : insights;
 
 }
 

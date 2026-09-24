@@ -1,3 +1,4 @@
+import { DESK_ENABLED } from "./deskRetirement.js";
 import supabase from "./supabase.js";
 
 // The bridge between a spoken sentence and a browser tab on the laptop.
@@ -66,6 +67,7 @@ async function store(value) {
 // and the laptop's own pause file remains the absolute override on top,
 // because the person AT the machine outranks the person at the desk.
 export async function setLaptopPaused(paused) {
+  if (!DESK_ENABLED) return;
 
   await supabase
     .from("app_settings")
@@ -89,6 +91,7 @@ async function isPaused() {
 
 
 export async function pushLaptopCommand({ kind = "url", url = null, app = null, query = null, label = "" }) {
+  if (!DESK_ENABLED) return { pushed: false, paused: true, retired: true };
 
   // Validation by kind, so nothing malformed ever reaches the helper: URLs
   // must be http(s); app names and file queries are plain short text (the

@@ -10,6 +10,7 @@ import { backendGet } from "./backend.js";
 import Reveal from "./Reveal.js";
 import { Page, Card, SectionTitle, ItemCard, Body, Meta, Empty, btn } from "./ui.js";
 import { speakable } from "../lib/linkify.js";
+import ClearQueueButton from "./ClearQueueButton.js";
 
 
 // Every page here reads live state, so none of them may be prerendered.
@@ -54,11 +55,11 @@ async function getPendingDeepThoughts() {
     // query. See getPendingDeepThoughts in tools/database.js.
     const data = await backendGet("/api/deepThoughts");
 
-    return data.thoughts || [];
+    return { items: data.thoughts || [], count: data.count ?? data.thoughts?.length ?? 0 };
 
   } catch (error) {
 
-    return [];
+    return { items: [], count: 0 };
 
   }
 
@@ -75,11 +76,16 @@ async function getPendingPrompts() {
 
     const data = await backendGet("/api/data?prompts=1");
 
-    return { prompts: data.prompts || [], insights: data.insights || [] };
+    return {
+      prompts: data.prompts || [],
+      insights: data.insights || [],
+      promptCount: data.promptCount ?? data.prompts?.length ?? 0,
+      insightCount: data.insightCount ?? data.insights?.length ?? 0
+    };
 
   } catch (error) {
 
-    return { prompts: [], insights: [] };
+    return { prompts: [], insights: [], promptCount: 0, insightCount: 0 };
 
   }
 
@@ -112,11 +118,11 @@ async function getPendingNudges() {
 
     const data = await backendGet("/api/nudges");
 
-    return data.nudges || [];
+    return { items: data.nudges || [], count: data.count ?? data.nudges?.length ?? 0 };
 
   } catch (error) {
 
-    return [];
+    return { items: [], count: 0 };
 
   }
 
@@ -185,6 +191,8 @@ function Headline({ waiting, projectCount }) {
           : "No projects running"}
       </Meta>
 
+      <ClearQueueButton count={waiting} />
+
     </header>
   );
 
@@ -227,8 +235,8 @@ export default async function Home() {
   ]);
 
   const needsYou = [
-    ...pendingThoughts.map(t => ({ ...t, kind: "thought" })),
-    ...pendingNudges.map(n => ({ ...n, kind: "nudge" })),
+    ...pendingThoughts.items.map(t => ({ ...t, kind: "thought" })),
+    ...pendingNudges.items.map(n => ({ ...n, kind: "nudge" })),
     // kind is overwritten for card dispatch, so the row's OWN kind must ride
     // along under another name — PromptCard branches on it. Before this,
     // HEADINGS[item.kind] silently never resolved and label_place survived
@@ -240,6 +248,8 @@ export default async function Home() {
     ...raised.insights.map(i => ({ ...i, kind: "insight" }))
   ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
+  const waitingCount = pendingThoughts.count + pendingNudges.count + raised.promptCount + raised.insightCount;
+
   return (
     <Page>
 
@@ -249,7 +259,7 @@ export default async function Home() {
       <Reveal gap={70}>
 
       <div className="pos-reveal" data-reveal>
-        <Headline waiting={needsYou.length} projectCount={projects.length} />
+        <Headline waiting={waitingCount} projectCount={projects.length} />
       </div>
 
       {/* The search sits above the brief when it has something to say. An

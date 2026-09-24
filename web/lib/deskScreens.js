@@ -1,3 +1,4 @@
+import { DESK_ENABLED } from "./deskRetirement.js";
 import supabase from "./supabase.js";
 import openai from "./openai.js";
 import { MODELS } from "./models.js";
@@ -186,6 +187,7 @@ export function sanitiseSpec(raw, { waiting = false } = {}) {
 // asking it to also art-direct in the same breath is how you get an answer
 // that quietly bends to fit a layout.
 export async function designDeskScreen({ question, answer, facts = "", waiting = false }) {
+  if (!DESK_ENABLED) return { empty: true };
 
   const request = {
 
@@ -308,6 +310,7 @@ export async function designDeskScreen({ question, answer, facts = "", waiting =
 // keep a countdown, and a timestamp means the screen reverts correctly even
 // if nothing runs in between.
 export async function stashDeskScreen(spec, exchange = null) {
+  if (!DESK_ENABLED) return undefined;
 
   if (!spec && !exchange) return { stored: false };
 
@@ -340,6 +343,7 @@ export async function stashDeskScreen(spec, exchange = null) {
 
 
 export async function loadDeskScreen() {
+  if (!DESK_ENABLED) return null;
 
   const { data, error } = await supabase
     .from("app_settings")
@@ -360,6 +364,7 @@ export async function loadDeskScreen() {
 
 // What was last asked and answered here, for a follow-up to hang off.
 export async function loadDeskContext() {
+  if (!DESK_ENABLED) return null;
 
   const { data, error } = await supabase
     .from("app_settings")
@@ -381,6 +386,7 @@ export async function loadDeskContext() {
 
 
 export async function clearDeskScreen() {
+  if (!DESK_ENABLED) return undefined;
 
   // Marks the screen down rather than deleting the row, so the exchange
   // behind it survives to be asked about.

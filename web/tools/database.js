@@ -450,13 +450,14 @@ export async function updateDeepThoughtResult({
 // how small the actual query is. With normally 1-3 pending threads that was
 // 2-4 chained network hops for what is now one.
 export async function getPendingDeepThoughts({
-  limit = 10
+  limit = 10,
+  withCount = false
 } = {}) {
 
 
-  const { data, error } = await supabase
+  const { data, error, count } = await supabase
     .from("deep_thoughts")
-    .select("*, thread_turns(*)")
+    .select("*, thread_turns(*)", { count: "exact" })
     .in("status", ["thinking", "pending_review"])
     .order("created_at", { ascending: false })
     .order("created_at", { ascending: true, foreignTable: "thread_turns" })
@@ -470,10 +471,12 @@ export async function getPendingDeepThoughts({
 
   // Renamed to `turns` to match what every caller already expects — the web
   // page used to build this shape itself out of two separate responses.
-  return (data || []).map(({ thread_turns, ...thought }) => ({
+  const thoughts = (data || []).map(({ thread_turns, ...thought }) => ({
     ...thought,
     turns: thread_turns || []
   }));
+
+  return withCount ? { thoughts, count: count ?? thoughts.length } : thoughts;
 
 }
 
@@ -854,12 +857,12 @@ export async function createNudge({
 
 
 
-export async function getPendingNudges() {
+export async function getPendingNudges({ withCount = false } = {}) {
 
 
-  const { data, error } = await supabase
+  const { data, error, count } = await supabase
     .from("nudges")
-    .select("*, intentions(content)")
+    .select("*, intentions(content)", { count: "exact" })
     .eq("status", "pending_review")
     .order("created_at", { ascending: false });
 
@@ -869,7 +872,9 @@ export async function getPendingNudges() {
   }
 
 
-  return data || [];
+  const nudges = data || [];
+
+  return withCount ? { nudges, count: count ?? nudges.length } : nudges;
 
 }
 
@@ -904,6 +909,54 @@ export async function resolveDeepThought(id) {
   if (error) {
     throw new Error(error.message);
   }
+
+}
+
+
+// Clears the complete Today queue in four bounded updates. The home page only
+// renders a slice of large queues, so clearing cards one by one can never be a
+// reliable way to reach everything behind that slice.
+export async function clearDashboardQueue() {
+
+  const now = new Date().toISOString();
+
+  const results = await Promise.all([
+    supabase.from("deep_thoughts")
+      .update({ status: "resolved" })
+      .in("status", ["thinking", "pending_review"])
+      .select("id"),
+    supabase.from("nudges")
+      .update({ status: "resolved" })
+      .eq("status", "pending_review")
+      .select("id"),
+    supabase.from("prompts")
+      .update({ status: "answered", answer: "dismissed", answered_at: now })
+      .eq("status", "pending")
+      .select("id"),
+    supabase.from("insights")
+      .update({ status: "dismissed", acted_on: false })
+      .eq("status", "new")
+      .select("id")
+  ]);
+
+  const failed = results.find(result => result.error);
+
+  if (failed) {
+    return { success: false, error: failed.error.message };
+  }
+
+  const byType = {
+    thoughts: results[0].data?.length || 0,
+    nudges: results[1].data?.length || 0,
+    prompts: results[2].data?.length || 0,
+    insights: results[3].data?.length || 0
+  };
+
+  return {
+    success: true,
+    cleared: Object.values(byType).reduce((sum, count) => sum + count, 0),
+    byType
+  };
 
 }
 

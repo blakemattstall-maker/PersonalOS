@@ -1,5 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async rewrites() {
+    // Resolve retired hardware traffic at the CDN, before the API function.
+    return { beforeFiles: [
+      { source: "/api/desk", destination: "/api/desk-retired.json" },
+      { source: "/api/laptop", destination: "/api/desk-retired.json" }
+    ] };
+  },
   turbopack: {
     root: import.meta.dirname,
   },

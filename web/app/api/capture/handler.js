@@ -1,3 +1,4 @@
+import { DESK_ENABLED, DESK_RETIRED_MESSAGE } from "../../../lib/deskRetirement.js";
 import openai from "../../../lib/openai.js";
 import { executeTool } from "../../../lib/router.js";
 import { requireAuth } from "../../../lib/auth.js";
@@ -598,6 +599,9 @@ export default async function handler(req, res) {
     // Where this capture came from decides which tools are usable and
     // whether the answer has to be speakable.
     const isDesk = req.body?.surface === "desk";
+    if (isDesk && !DESK_ENABLED) {
+      return res.status(410).json({ disabled: true, error: DESK_RETIRED_MESSAGE });
+    }
 
     // What the desk is showing right now, so "tell me more about that role"
     // has something to point at. Absent for every other surface, and absent

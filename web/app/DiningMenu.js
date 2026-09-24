@@ -338,7 +338,7 @@ export default function DiningMenu({ meals, suggestedMeal, onTrack = null }) {
     return (
       <Empty>
         No menu is published for this day yet. The dining hall usually posts
-        about two weeks ahead — check back after tonight's sync.
+        about two weeks ahead — check back after tonight&apos;s sync.
       </Empty>
     );
   }

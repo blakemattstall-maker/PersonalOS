@@ -1246,7 +1246,16 @@ export async function checkForNewJobs() {
 
   }
 
-  const burst = await recentAlerts();
+  const { getSettings } = await import("../lib/settings.js");
+  const settings = await getSettings();
+
+  const pushEnabled = settings.jobs_push_enabled === true;
+  const feedEnabled = settings.jobs_feed_enabled === true;
+
+  // Collection stays live while both delivery surfaces are muted. Claim new
+  // rows anyway so re-enabling alerts never dumps the entire quiet-period
+  // backlog onto the phone or dashboard.
+  const burst = pushEnabled ? await recentAlerts() : { alerts: 0, postings: 0 };
 
   // Claim the notification BEFORE sending it: the same claim-then-send order
   // the Google auth alert uses, so a push failure costs one missed buzz
@@ -1264,8 +1273,6 @@ export async function checkForNewJobs() {
 
   if (toTell.length > 0) {
 
-    const { sendPush } = await import("../lib/push.js");
-
     // Best first — if only one line survives the notification, it should be
     // the one he most wants to open.
     const ranked = [...toTell].sort((a, b) => b.match_score - a.match_score);
@@ -1276,8 +1283,8 @@ export async function checkForNewJobs() {
       ? `${lead.company} — ${lead.title}${lead.location ? ` (${lead.location})` : ""}`
       : `${lead.company} — ${lead.title}, and ${ranked.length - 1} more just posted.`;
 
-    // Deliberately NOT behind pushAllowed(): this is the one alert whose whole
-    // value is arriving within the hour, and he asked for it explicitly.
+    // Deliberately independent of the global interruption dial: the dedicated
+    // internship switch is the authority for this explicitly requested feed.
     // On a quiet day every alert is its own notification. Once this is the
     // fourth in an hour, they start replacing each other instead — same
     // speed, same buzz, one entry on the lock screen — and the body carries
@@ -1286,40 +1293,48 @@ export async function checkForNewJobs() {
 
     const runningTotal = burst.postings + toTell.length;
 
-    await sendPush({
-      title: bursting
-        ? `${runningTotal} new internships in the last hour`
-        : (ranked.length === 1 ? "New internship posted" : `${ranked.length} new internships`),
-      body: bursting
-        ? `Latest: ${lead.company} — ${lead.title}. Tap for all ${runningTotal}.`
-        : body,
-      url: "/career/jobs",
-      tag: bursting ? "jobs-burst" : `jobs-${Date.now()}`
-    }).catch(error => console.error("JOB PUSH FAILED:", error.message));
+    if (pushEnabled) {
 
-    // What the rate limiter counts. Logged after the send so a failed push
-    // does not spend the budget.
-    await logActivity({
-      action: "job_alert",
-      input: null,
-      output: { postings: ranked.length, companies: [...new Set(ranked.map(j => j.company))] },
-      success: true,
-      source: "cron"
-    }).catch(() => {});
+      const { sendPush } = await import("../lib/push.js");
+
+      await sendPush({
+        title: bursting
+          ? `${runningTotal} new internships in the last hour`
+          : (ranked.length === 1 ? "New internship posted" : `${ranked.length} new internships`),
+        body: bursting
+          ? `Latest: ${lead.company} — ${lead.title}. Tap for all ${runningTotal}.`
+          : body,
+        url: "/career/jobs",
+        tag: bursting ? "jobs-burst" : `jobs-${Date.now()}`
+      }).catch(error => console.error("JOB PUSH FAILED:", error.message));
+
+      // What the rate limiter counts. Logged after the send so a muted job
+      // monitor does not spend the burst budget.
+      await logActivity({
+        action: "job_alert",
+        input: null,
+        output: { postings: ranked.length, companies: [...new Set(ranked.map(j => j.company))] },
+        success: true,
+        source: "cron"
+      }).catch(() => {});
+
+    }
 
     // And a prompt, so a swiped notification does not lose the listing. The
     // full set is written out because a push body holds one line.
-    await supabase.from("prompts").insert([{
-      kind: "digest",
-      title: ranked.length === 1 ? "New internship posted" : `${ranked.length} new internships posted`,
-      body: ranked
-        .map(j => `${j.company} — ${j.title}${j.location ? ` (${j.location})` : ""}\n${j.url}`)
-        .join("\n\n"),
-      status: "pending",
-      pushed_at: new Date().toISOString()
-    }]).then(({ error }) => {
-      if (error) console.error("JOB PROMPT FAILED:", error.message);
-    });
+    if (feedEnabled) {
+      await supabase.from("prompts").insert([{
+        kind: "digest",
+        title: ranked.length === 1 ? "New internship posted" : `${ranked.length} new internships posted`,
+        body: ranked
+          .map(j => `${j.company} — ${j.title}${j.location ? ` (${j.location})` : ""}\n${j.url}`)
+          .join("\n\n"),
+        status: "pending",
+        pushed_at: pushEnabled ? new Date().toISOString() : null
+      }]).then(({ error }) => {
+        if (error) console.error("JOB PROMPT FAILED:", error.message);
+      });
+    }
 
   }
 
@@ -1500,6 +1515,15 @@ export async function reviewJobDeadlines() {
 
   const now = new Date();
 
+  const { getSettings } = await import("../lib/settings.js");
+  const settings = await getSettings();
+  const pushEnabled = settings.jobs_push_enabled === true;
+  const feedEnabled = settings.jobs_feed_enabled === true;
+
+  if (!pushEnabled && !feedEnabled) {
+    return { success: true, closing: 0, followUps: 0, muted: true };
+  }
+
   const cooldownBefore = new Date(now.getTime() - NUDGE_COOLDOWN_DAYS * 86400000).toISOString();
 
   const closingBy = new Date(now.getTime() + CLOSING_WINDOW_DAYS * 86400000)
@@ -1574,26 +1598,29 @@ export async function reviewJobDeadlines() {
     lines.push(`Applied ${days} days ago, no word since: ${row.company} — ${row.title}. Worth a follow-up.\n${row.url}`);
   }
 
-  const { sendPush } = await import("../lib/push.js");
-
   const title = closingRows.length > 0
     ? (closingRows.length === 1 ? "An application closes soon" : `${closingRows.length} applications close soon`)
     : "Time to follow up";
 
-  await sendPush({
-    title,
-    body: lines[0].split("\n")[0],
-    url: "/career/jobs",
-    tag: `jobs-followup-${Date.now()}`
-  }).catch(error => console.error("JOB FOLLOWUP PUSH FAILED:", error.message));
+  if (pushEnabled) {
+    const { sendPush } = await import("../lib/push.js");
+    await sendPush({
+      title,
+      body: lines[0].split("\n")[0],
+      url: "/career/jobs",
+      tag: `jobs-followup-${Date.now()}`
+    }).catch(error => console.error("JOB FOLLOWUP PUSH FAILED:", error.message));
+  }
 
-  await supabase.from("prompts").insert([{
-    kind: "digest",
-    title,
-    body: lines.join("\n\n"),
-    status: "pending",
-    pushed_at: now.toISOString()
-  }]);
+  if (feedEnabled) {
+    await supabase.from("prompts").insert([{
+      kind: "digest",
+      title,
+      body: lines.join("\n\n"),
+      status: "pending",
+      pushed_at: pushEnabled ? now.toISOString() : null
+    }]);
+  }
 
   return { success: true, closing: closingRows.length, followUps: quietRows.length };
 

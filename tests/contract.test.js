@@ -47,11 +47,12 @@ test("every tool the model can call has a router case", () => {
 });
 
 
-test("every router case is a tool the model actually knows about", () => {
+test("every router case is an active tool or an explicitly retired hardware tool", () => {
 
   const defined = new Set(definedToolNames());
 
-  const unreachable = routedToolNames().filter(name => !defined.has(name));
+  const retired = new Set(["open_on_laptop", "laptop_action"]);
+  const unreachable = routedToolNames().filter(name => !defined.has(name) && !retired.has(name));
 
   assert.deepEqual(
     unreachable,

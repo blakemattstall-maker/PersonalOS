@@ -1,4 +1,12 @@
-# The laptop helper
+# The laptop helper — retired
+
+Disabled on 2026-09-15 after the Jarvis/ESP32 desk device was retired. The
+launchd service is disabled and unloaded on this Mac. The script exits without
+reading credentials or polling. These historical instructions are retained
+for reference; restoring the device requires deliberately reversing retirement
+guards and the static API rewrites before enabling the service.
+
+## Historical setup
 
 Lets the desk device open things on this machine by voice: "Jarvis, google
 espresso machines on my laptop", "draft an email to Sarah and open it on my
