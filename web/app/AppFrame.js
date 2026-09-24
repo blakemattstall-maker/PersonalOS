@@ -53,7 +53,7 @@ export default function AppFrame({ showFixtureBar, children }) {
       {/* The app column: full width on a phone, held to the frame width and
           centred on the desk on a wide screen. The demo bar lives inside it so
           it reads as part of the screen rather than a banner across the desk. */}
-      <div className="flex flex-1 flex-col lg:mx-auto lg:w-[26rem]">
+      <div className="flex min-h-[100svh] flex-1 flex-col lg:mx-auto lg:w-[26rem]">
         {bar}
         {children}
       </div>

@@ -1,4 +1,4 @@
-import { splitLinks } from "../lib/linkify.js";
+import FormattedText from "./FormattedText.js";
 
 // Shared shape vocabulary.
 //
@@ -258,31 +258,7 @@ export function ItemCard({ kind, title, meta, waiting = true, children }) {
 //
 // Which pieces are prose and which are links is decided in lib/linkify.js.
 export function Body({ text, className = "" }) {
-
-  const parts = splitLinks(text);
-
-  if (parts.length === 0) return null;
-
-  return (
-    <p className={`min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed text-ink ${className}`}>
-      {parts.map((part, i) =>
-        typeof part === "string" ? part : (
-          <a
-            key={i}
-            href={part.url}
-            target="_blank"
-            rel="noreferrer"
-            title={part.url}
-            className="font-medium text-ink underline decoration-[var(--line)] decoration-1 underline-offset-[3px] transition-colors hover:decoration-[var(--ink)]"
-          >
-            {part.label}
-            <span aria-hidden="true"> ↗</span>
-          </a>
-        )
-      )}
-    </p>
-  );
-
+  return <FormattedText text={text} className={className} />;
 }
 
 

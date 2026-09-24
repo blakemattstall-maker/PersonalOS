@@ -11,6 +11,9 @@ import Reveal from "./Reveal.js";
 import { Page, Card, SectionTitle, ItemCard, Body, Meta, Empty, btn } from "./ui.js";
 import { speakable } from "../lib/linkify.js";
 import ClearQueueButton from "./ClearQueueButton.js";
+import RefreshButton from "./RefreshButton.js";
+import Collapsible from "./Collapsible.js";
+import FormattedText from "./FormattedText.js";
 
 
 // Every page here reads live state, so none of them may be prerendered.
@@ -150,20 +153,21 @@ function Headline({ waiting, projectCount }) {
   return (
     <header className="mb-7">
 
-      <h1 className="pos-display text-[2.6rem] leading-[1.05] text-ink">
-        {clear ? (
-          <>
+      <div className="flex items-start justify-between gap-4">
+        <h1 className="pos-display text-[2.6rem] leading-[1.05] text-ink">
+          {clear ? (
             <span className="text-moss">You&apos;re clear.</span>
-          </>
-        ) : (
-          <>
-            <span className="text-ember">{countWord(waiting)}</span>{" "}
-            {waiting === 1 ? "thing" : "things"}
-            <br />
-            {waiting === 1 ? "needs" : "need"} you.
-          </>
-        )}
-      </h1>
+          ) : (
+            <>
+              <span className="text-ember">{countWord(waiting)}</span>{" "}
+              {waiting === 1 ? "thing" : "things"}
+              <br />
+              {waiting === 1 ? "needs" : "need"} you.
+            </>
+          )}
+        </h1>
+        <RefreshButton />
+      </div>
 
       <Meta className="mt-3 block">
         {projectCount > 0
@@ -278,9 +282,9 @@ export default async function Home() {
         {brief.created_at && <Meta className="-mt-1 block">{formatDate(brief.created_at)}</Meta>}
 
         {brief.hasBrief ? (
-          <div className="mt-3 whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed text-ink">
-            {brief.content}
-          </div>
+          <Collapsible collapsed={String(brief.content || "").length > 900} label="brief">
+            <FormattedText text={brief.content} className="mt-3" />
+          </Collapsible>
         ) : (
           <Empty>
             No brief yet today. It&apos;s written and pushed each morning —

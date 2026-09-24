@@ -6,6 +6,7 @@ import { answerPromptAction } from "./actions.js";
 import ReadAloud from "./ReadAloud.js";
 import { ItemCard, Body, btn, field as fieldClass } from "./ui.js";
 import { speakable } from "../lib/linkify.js";
+import Collapsible from "./Collapsible.js";
 
 
 // Things the app raised on its own: a place it wants named, a daily
@@ -105,7 +106,11 @@ export default function PromptCard({ item }) {
     <ItemCard kind="prompt" title={item.title || HEADINGS[promptKind]}>
 
       <div className="mt-2 flex items-start justify-between gap-3">
-        <Body text={item.body} />
+        <div className="min-w-0 flex-1">
+          <Collapsible collapsed={String(item.body || "").length > 700} label="answer">
+            <Body text={item.body} />
+          </Collapsible>
+        </div>
         <ReadAloud text={speakable(item.body)} title={item.title || HEADINGS[promptKind]} />
       </div>
 

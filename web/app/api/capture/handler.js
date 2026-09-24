@@ -14,7 +14,7 @@ import { referencedClipboardText, withClipboardContext } from "../../../lib/clip
 // starting a deep analysis by voice, and having it show up on the dashboard
 // like anything else, is a thing worth being able to do. So they stay
 // available everywhere, and the desk earns an immediate answer alongside.
-export const DEFERRED_TOOLS = ["start_deep_thinking"];
+export const DEFERRED_TOOLS = ["start_deep_thinking", "research_query"];
 
 
 // Does this sentence reach back at something already on screen?
@@ -890,7 +890,7 @@ export default async function handler(req, res) {
           : isMultiAction && !wantsVerbatim ? null : verbatimWithClipboard;
 
         const result = await executeTool(
-          { tool: toolName, ...args },
+          { tool: toolName, ...args, ...(toolName === "research_query" ? { defer: true } : {}) },
           originalForTool
         );
 

@@ -194,7 +194,7 @@ export default async function RootLayout({ children }) {
           <style>{`.pos-reveal,.pos-scene-hidden{opacity:1!important;transform:none!important}#pos-boot{display:none!important}`}</style>
         </noscript>
       </head>
-      <body className="min-h-full flex flex-col bg-paper text-ink">
+      <body className="min-h-[100svh] flex flex-col bg-paper text-ink">
         {/* No wordmark, no name — deliberately. This fires on every cold open
             of every route, including /welcome, which has its own full-screen
             opening sequence right after; a second thing introducing itself

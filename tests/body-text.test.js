@@ -178,15 +178,13 @@ test("speech is unchanged for a body that had no links", () => {
 // what stood between a readable card and a page twice the width of the phone,
 // and none of them is the kind of thing anyone notices going missing in a
 // refactor.
-test("the body paragraph can be narrower than its longest word", () => {
+test("formatted body text can be narrower than its longest word", () => {
 
-  const ui = read("web/app/ui.js");
+  const formatted = read("web/app/FormattedText.js");
 
-  const body = ui.slice(ui.indexOf("export function Body("));
+  const className = formatted.match(/<div className=\{`([^`]+)`\}>/);
 
-  const className = body.match(/<p className=\{`([^`]+)`\}/);
-
-  assert.ok(className, "could not find the Body paragraph's classes");
+  assert.ok(className, "could not find the formatted body's classes");
 
   // min-w-0: a flex child's default min-width is auto — "no narrower than my
   // longest word" — which is precisely how an 86-character URL got to set the
@@ -197,8 +195,9 @@ test("the body paragraph can be narrower than its longest word", () => {
   // width fall below it. break-word alone does only the first.
   assert.match(className[1], /overflow-wrap:anywhere/);
 
-  // The digest's entries are separated by newlines and nothing else.
-  assert.match(className[1], /whitespace-pre-wrap/);
+  // Newlines are now parsed into real paragraphs and lists rather than being
+  // collapsed into one run-on paragraph or preserved as raw Markdown.
+  assert.match(formatted, /String\(text \|\| ""\).*split\("\\n"\)/s);
 
 });
 

@@ -266,7 +266,8 @@ export async function executeTool(data, originalText = null) {
       case "research_query":
 
         result = await researchQuery({
-          query: originalText || data.query
+          query: originalText || data.query,
+          defer: data.defer === true
         });
 
         break;

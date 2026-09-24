@@ -9,6 +9,8 @@ import { DeepThoughtBody } from "./shared.js";
 import ReadAloud from "./ReadAloud.js";
 import { readPrefs, subscribeToPrefs } from "./prefs.js";
 import { ItemCard, btn, field } from "./ui.js";
+import Collapsible from "./Collapsible.js";
+import FormattedText from "./FormattedText.js";
 
 
 // subscribeToPrefs now lives in prefs.js, shared with SettingsPanel — it is the
@@ -221,7 +223,9 @@ export default function DeepThoughtThread({ thought, turns }) {
       ) : (
 
         <>
-          <DeepThoughtBody content={thought.content} />
+          <Collapsible collapsed={String(thought.content || "").length > 700} label="analysis">
+            <DeepThoughtBody content={thought.content} />
+          </Collapsible>
 
           {turns.length > 0 && (
 
@@ -243,7 +247,9 @@ export default function DeepThoughtThread({ thought, turns }) {
                       <ReadAloud text={turn.message} title={thought.topic} />
                     )}
                   </div>
-                  <p>{turn.message}</p>
+                  <Collapsible collapsed={String(turn.message || "").length > 700} label="reply">
+                    <FormattedText text={turn.message} />
+                  </Collapsible>
                 </div>
               ))}
             </div>

@@ -308,6 +308,16 @@ export async function notifyCapture(results, heard = null) {
 
   try {
 
+    // A deferred research capture already returned this acknowledgement to the
+    // Shortcut. Pushing and filing it would create a useless "research started"
+    // card immediately before the real answer. The background completion calls
+    // this function again with the full result, which is the one worth keeping.
+    const reportable = results.filter(r => !r.result?.data?.quiet_ack);
+
+    if (reportable.length === 0) return { sent: 0, skipped: "background acknowledgement" };
+
+    results = reportable;
+
     const notification = describeCapture(results, heard);
 
     // Whether the phone will actually show this is what decides if a short
