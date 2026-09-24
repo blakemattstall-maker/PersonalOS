@@ -3,7 +3,7 @@ import assert from "node:assert";
 import { readFileSync } from "node:fs";
 
 import { TOOLS } from "../web/lib/toolDefinitions.js";
-import { buildClassifierPrompt } from "../web/tools/staleness.js";
+import { actionableVerdict, buildClassifierPrompt } from "../web/tools/staleness.js";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -115,13 +115,25 @@ test("the surfaces that speak now hold the figures", () => {
 });
 
 
-test("the bio rewrite reads the scale", () => {
+test("the bio rewrite keeps live measurements out of durable identity", () => {
 
   const source = read("web/tools/profileEvolution.js");
 
   assert.match(source, /computeBodyVitals/, "regenerateBio must fold in measured vitals — memories alone can never correct a stale weight");
-  assert.match(source, /measured figure beats prose/i);
+  assert.match(source, /Remove[\s\S]*volatile current measurements/i);
+  assert.match(source, /never for copying today's value back/i);
   assert.match(source, /updated_at: new Date\(\)\.toISOString\(\)/, "the rewrite must stamp updated_at so bio staleness is answerable");
+
+});
+
+
+test("a classifier cannot flag a weight it admits is effectively current", () => {
+
+  const evidence = "Bodyweight: 209.8 lbs as of Sep 21, 2026";
+
+  assert.equal(actionableVerdict({ stated_claim: "210 lbs", why: "effectively the same and does not contradict" }, evidence), false);
+  assert.equal(actionableVerdict({ stated_claim: "210 lbs", why: "today is 209.8" }, evidence), false);
+  assert.equal(actionableVerdict({ stated_claim: "220 lbs", why: "today is 209.8" }, evidence), true);
 
 });
 

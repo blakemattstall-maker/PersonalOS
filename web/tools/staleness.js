@@ -2,7 +2,6 @@ import openai from "../lib/openai.js";
 import supabase from "../lib/supabase.js";
 import { MODELS } from "../lib/models.js";
 import { computeBodyVitals, vitalsSignalLine } from "../lib/vitals.js";
-import { getProfile } from "../lib/profile.js";
 import { logActivity } from "./activityLog.js";
 
 
@@ -132,6 +131,29 @@ Return ONLY JSON:
 }
 
 
+// A classifier can contradict its own explanation. It once returned a flag
+// whose reason literally said 210 and 209.8 were "effectively the same and do
+// not contradict". Deterministic evidence gets the final say.
+export function actionableVerdict(flag, evidence) {
+
+  const explanation = `${flag?.why || ""} ${flag?.stated_claim || ""}`;
+
+  if (/does not contradict|effectively the same|within (?:the )?tolerance/i.test(explanation)) {
+    return false;
+  }
+
+  const claim = String(flag?.stated_claim || "").match(/(\d{2,3}(?:\.\d+)?)\s*(lbs?|pounds?)\b/i);
+  const measured = String(evidence || "").match(/Bodyweight:\s*(\d{2,3}(?:\.\d+)?)\s*(lbs?|pounds?)\b/i);
+
+  if (claim && measured && Math.abs(Number(claim[1]) - Number(measured[1])) <= 2) {
+    return false;
+  }
+
+  return true;
+
+}
+
+
 export async function sweepStaleFacts() {
 
   const vitals = await computeBodyVitals();
@@ -142,27 +164,19 @@ export async function sweepStaleFacts() {
 
   const evidence = `Bodyweight: ${vitalsSignalLine(vitals)}`;
 
-  const [memories, notes, intentions, profile, reviewed] = await Promise.all([
+  const [memories, notes, intentions, reviewed] = await Promise.all([
     proseCandidates("memories"),
     proseCandidates("notes"),
     proseCandidates("intentions"),
-    getProfile().catch(() => null),
     reviewState()
   ]);
 
   const candidates = [...memories, ...notes, ...intentions];
 
-  // The bio is prose too — and it is where the stale "approximately 220 lbs"
-  // actually lived. It enters the same lineup as one candidate; its remedy on
-  // review is a regeneration rather than an edit.
-  if (profile?.bio && CLAIM_PATTERN.test(profile.bio)) {
-    candidates.push({
-      id: profile.id,
-      table: "profiles",
-      content: profile.bio,
-      created_at: profile.updated_at || profile.created_at || null
-    });
-  }
+  // Profiles deliberately contain durable identity, not live measurements.
+  // Weight and other changing figures have structured stores and reasoning
+  // tools of their own, so a profile can never need a "regenerate your bio"
+  // prompt just because the scale moved.
 
   const fresh = candidates.filter(c => {
 
@@ -204,7 +218,7 @@ export async function sweepStaleFacts() {
 
   const flagged = (verdict.flagged || [])
     .map(f => ({ ...f, row: Number.isInteger(f.index) ? fresh[f.index] : null }))
-    .filter(f => f.row);
+    .filter(f => f.row && actionableVerdict(f, evidence));
 
   let filed = 0;
 

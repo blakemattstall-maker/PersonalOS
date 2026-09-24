@@ -1,6 +1,6 @@
 import { requireAuth } from "../../../../lib/auth.js";
 import { enforceLimit } from "../../../../lib/ratelimit.js";
-import { ingestLocationPoints, parseOverlandPayload } from "../../../../tools/location.js";
+import { LOCATION_ENABLED, LOCATION_RETIRED_MESSAGE } from "../../../../lib/featureFlags.js";
 import { saveSubscription, publicKey } from "../../../../lib/push.js";
 import { logActivity } from "../../../../tools/activityLog.js";
 import { buildDiagnostics } from "../../../../lib/diagnostics.js";
@@ -41,6 +41,7 @@ async function location(req, res) {
 
   // Overland batches points as a GeoJSON FeatureCollection; a plain array is
   // accepted too so the endpoint can be driven from a Shortcut or curl.
+  const { ingestLocationPoints, parseOverlandPayload } = await import("../../../../tools/location.js");
   const raw = req.body;
 
   const points = Array.isArray(raw) ? raw : parseOverlandPayload(raw);
@@ -122,6 +123,10 @@ const HANDLERS = { location, push };
 export default async function handler(req, res) {
 
   const kind = req.query.kind;
+
+  if (!LOCATION_ENABLED && kind === "location") {
+    return res.status(410).json({ disabled: true, retired: true, error: LOCATION_RETIRED_MESSAGE });
+  }
 
   // Overland has no way to send a custom header — it just POSTs to whatever
   // URL you give it. So location ingest also accepts a token in the query

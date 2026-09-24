@@ -4,7 +4,6 @@ import { composeBrief } from "../../../../tools/brief.js";
 import { reviewIntentionsForNudges, deliverScheduledNudges } from "../../../../tools/nudges.js";
 import { reviewShortcomings } from "../../../../tools/accountability.js";
 import { syncTransactions, rebuildLinks, findInsights, deliverInsights } from "../../../../tools/islands.js";
-import { linkVisitsToEvents } from "../../../../tools/location.js";
 import { checkProjectDeadlines } from "../../../../tools/projectCheckup.js";
 import { regenerateBio } from "../../../../tools/profileEvolution.js";
 import { syncTaskCompletions, reconcileDeletedTasks, reconcileDeletedEvents } from "../../../../tools/completions.js";
@@ -334,20 +333,10 @@ async function connectIslands() {
   const links = await rebuildLinks()
     .catch(error => ({ success: false, error: error.message }));
 
-  // Where he was, joined to what was scheduled. Runs after rebuildLinks and
-  // before findInsights for the same reason the transaction sync runs first:
-  // a detector can only walk edges that already exist.
-  //
-  // Best-effort. Location is the one input that depends on a device outside
-  // this codebase still working, so a week with no points must degrade to
-  // "nothing to join" rather than costing the night's insights.
-  const visits = await linkVisitsToEvents({ days: 7 })
-    .catch(error => ({ success: false, error: error.message }));
-
   const insights = await findInsights()
     .catch(error => ({ success: false, error: error.message }));
 
-  return { transactions, links, visits, insights };
+  return { transactions, links, insights };
 
 }
 

@@ -581,19 +581,6 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
             </div>
 
             <div className="border-t border-[var(--line)] pt-3">
-              <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">Location</div>
-              <p className="mt-1 text-ink">{diag.location.verdict}</p>
-              <p className="mt-1 text-xs text-ink-soft">
-                {diag.location.points} point{diag.location.points === 1 ? "" : "s"},
-                {" "}{diag.location.places} place{diag.location.places === 1 ? "" : "s"}
-                {diag.location.lastPointAt
-                  ? ` · last ${diag.location.lastPointAgeHours}h ago`
-                  : " · never received"}
-                {" "}· {diag.location.deliveryAttempts} delivery attempt{diag.location.deliveryAttempts === 1 ? "" : "s"} logged
-              </p>
-            </div>
-
-            <div className="border-t border-[var(--line)] pt-3">
               <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">Notifications</div>
               <p className="mt-1 text-ink">{diag.push.verdict}</p>
               <button
@@ -624,8 +611,8 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
             {/* Standing reminders, and the two ways they die quietly: the
                 clock half stops being called, or every one is checked and none
                 ever matches. Both read as "a quiet week" without a count next
-                to a timestamp — which is how a location sync and a Canvas sync
-                each went dead for weeks on this app. */}
+                to a timestamp — which is how scheduled work can go dead for
+                weeks without an obvious error. */}
             {diag.triggers && (
               <div className="border-t border-[var(--line)] pt-3">
                 <div className="text-[0.68rem] font-medium uppercase tracking-[0.08em] text-ink-soft">

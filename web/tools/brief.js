@@ -8,6 +8,7 @@ import { getTasks, taskDueDate } from "./googleTasks.js";
 import { analyseDay } from "../lib/eventKind.js";
 import { getAllPeople } from "./people.js";
 import { getOpenIntentions, getProjectsWithDetails, getRecentBriefs } from "./database.js";
+import { JOBS_ENABLED } from "../lib/featureFlags.js";
 
 
 // The morning brief.
@@ -140,10 +141,9 @@ export async function gatherBriefFacts({ tz } = {}) {
     settle("projects", getProjectsWithDetails({ status: "active" }), []),
     // The internship monitor. Its own failure must never cost the brief, so it
     // rides the same settle() as every other source.
-    settle("jobs",
-      import("./jobs.js").then(m => m.briefJobFacts({ hours: 24 })),
-      null
-    ),
+    JOBS_ENABLED
+      ? settle("jobs", import("./jobs.js").then(m => m.briefJobFacts({ hours: 24 })), null)
+      : null,
     // Only reachable once the readonly scope is granted; a brief without it is
     // still a brief.
     settle("inbox",

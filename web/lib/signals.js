@@ -298,6 +298,9 @@ async function projectSignal(tz) {
 // description of a coordinate would not be.
 async function presenceSignal(tz) {
 
+  const { LOCATION_ENABLED } = await import("./featureFlags.js");
+  if (!LOCATION_ENABLED) return null;
+
   const { visitsInWindow } = await import("../tools/location.js");
 
   const visits = await visitsInWindow({ days: 7, tz });

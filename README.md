@@ -18,12 +18,11 @@ iPhone Shortcut ──voice──▶ /api/capture ──▶ router (LLM picks a 
    (silent; the app         │                  │
     pushes the reply) ◀─────┘                  │
                                                │
-web dashboard  ──────────▶ /api/[resource]     ├──▶ 23 tools ──▶ Supabase
+web dashboard  ──────────▶ /api/[resource]     ├──▶ 28 tools ──▶ Supabase
    (Next.js, separate                          │                 Google Calendar/Tasks/Docs/Gmail
     Vercel project)                            │                 SimpleFIN (12h cache)
                                                │                 OpenAI
 Vercel Cron    ──────────▶ /api/cron/[job] ────┘
-Overland (GPS) ──────────▶ /api/ingest/[kind]
 ```
 
 One deployment, and one forwarder:
@@ -38,8 +37,8 @@ load made a full HTTP round trip between them — six of them on the home page
 alone. They are one deployment now and the dashboard calls the same handlers
 in-process (`web/app/backend.js`), so that round trip is gone.
 
-The root project still exists purely to keep its hostname alive. The iOS
-Shortcut, Overland and the Google OAuth callback all point at
+The root project still exists purely to keep its hostname alive. Older iOS
+Shortcuts and the Google OAuth callback point at
 `personal-os-…vercel.app`, the Shortcut is hand-edited on a phone and is not in
 version control, so those URLs must not change.
 

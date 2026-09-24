@@ -4,7 +4,7 @@ import { loadMoney } from "../lib/money.js";
 import { getEvents } from "./googleCalendar.js";
 import { getUserTimezone } from "../lib/profile.js";
 import { taskDueDate } from "./googleTasks.js";
-import { visitsInWindow, looksLikeGym } from "./location.js";
+import { LOCATION_ENABLED } from "../lib/featureFlags.js";
 
 
 // One row per day, across every domain.
@@ -76,9 +76,11 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
       .select("weight, logged_at")
       .gte("logged_at", today.minus({ days }).toISO()),
 
-    supabase.from("location_points")
-      .select("recorded_at, place_id")
-      .gte("recorded_at", today.minus({ days }).toISO()),
+    LOCATION_ENABLED
+      ? supabase.from("location_points")
+          .select("recorded_at, place_id")
+          .gte("recorded_at", today.minus({ days }).toISO())
+      : Promise.resolve({ data: [], error: null, retired: true }),
 
     // What was eaten, from the meal log. The table may not exist yet
     // (docs/schema-dining-log.sql is a manual paste) — that reads as a failed
@@ -106,7 +108,7 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
   const completionsFailed = Boolean(completions.error);
   const tasksFailed = Boolean(tasks.error);
   const weightsFailed = Boolean(weights.error);
-  const pointsFailed = Boolean(points.error);
+  const pointsFailed = Boolean(points.error) || !LOCATION_ENABLED;
 
   // Quiet when the table simply isn't there yet — that's a pending migration,
   // not an outage worth a nightly error line. Loud for anything else.
@@ -122,12 +124,6 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
   // nothing behind it. A visit's duration is arithmetic over two timestamps,
   // so this is a computed fact rather than an inference, and it only fires for
   // a place the user themselves labelled as a gym (see looksLikeGym).
-  const visits = await visitsInWindow({ days, tz }).catch(error => {
-    console.error("VISIT ROLLUP FAILED:", error.message);
-    return [];
-  });
-
-
   // Already categorised, so `transfers` can be told apart from spending. Moving
   // money between your own accounts is not a purchase, and the day a $1,385
   // Zelle went out was being recorded as the biggest spending day on file.
@@ -176,11 +172,7 @@ export async function rollupDailyMetrics({ days = DEFAULT_WINDOW_DAYS } = {}) {
 
     const hadLocation = dayPoints.length > 0;
 
-    const dayVisits = visits.filter(v => v.day === key);
-
-    const gymMinutes = dayVisits
-      .filter(v => looksLikeGym(v))
-      .reduce((total, v) => total + v.minutes, 0);
+    const gymMinutes = 0;
 
     // Eaten rows only — a planned dinner is an intention, not intake. A day
     // with no rows stays null: "didn't track" and "ate nothing" are different

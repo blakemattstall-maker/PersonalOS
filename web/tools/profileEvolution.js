@@ -75,13 +75,18 @@ Bodyweight: ${measuredLine}
 Produce an updated profile.
 
 RULES — the first is the most important:
-- Never lose a concrete fact. Every name, number, date, place, institution,
-  relationship and commitment in the current profile must survive verbatim
-  unless a memory directly contradicts it, in which case take the newer-dated
-  statement and keep the change visible.
-- A measured figure beats prose everywhere. If the profile states a weight or
-  other number the live measured data contradicts, replace it with the
-  measured value (goals and targets are not measurements — keep those).
+- The profile stores durable identity, history, goals and preferences. Remove
+  volatile current measurements from it: current weight, current weight-loss
+  pace, days since the last weigh-in, current balances, and open-item counts.
+  Those figures belong to their structured live stores. Keep height, goal
+  weight, historical starting weight/date, and durable health facts.
+- Except for the volatile measurements above, never lose a concrete fact.
+  Every name, number, date, place, institution, relationship and commitment in
+  the current profile must survive verbatim unless a memory directly
+  contradicts it, in which case take the newer-dated statement and keep the
+  change visible.
+- A measured figure is evidence for removing an outdated live measurement
+  from the profile, never for copying today's value back into durable prose.
 - Only add things genuinely supported by the memories above. Invent nothing,
   and do not infer personality from thin evidence.
 - Memories are often coarser than the profile. Where one restates something

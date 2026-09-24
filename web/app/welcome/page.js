@@ -104,7 +104,7 @@ const STACK = [
   ],
   [
     "Passive inputs",
-    "Calendar and task events, mail headers and snippets, transactions from connected accounts, and coarse location. Read scopes only; nothing is sent on your behalf without an explicit action."
+    "Calendar and task events, mail headers and snippets, and transactions from connected accounts. Read scopes only; nothing is sent on your behalf without an explicit action."
   ],
   [
     "Delivery",

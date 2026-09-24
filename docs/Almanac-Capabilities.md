@@ -1,6 +1,6 @@
 # Almanac capability inventory
 
-Current as of 2026-09-23. This lists what the running system can do today.
+Current as of 2026-09-24. This lists what the running system can do today.
 
 ## Capture and routing
 
@@ -70,9 +70,8 @@ The retired Jarvis desk, laptop-control, and food tools are excluded. Their code
 - Reconciles completed or deleted Google Tasks and Calendar events back into Almanac.
 - Checks project deadlines and stale projects.
 - Checks relationship follow-ups and maintains yearly important-date Calendar events.
-- Imports bank transactions, categorizes spending, rebuilds the knowledge graph, joins visits to Calendar events, and finds cross-domain insights.
-- Rolls up daily metrics and looks for trends in money, health, projects, food, work, and follow-through.
-- Ingests GPS points, groups them into visits, labels places, and fires place-based reminders.
+- Imports bank transactions, categorizes spending, rebuilds the knowledge graph, and finds cross-domain insights.
+- Rolls up daily metrics and looks for trends in money, health, projects, work, and follow-through.
 - Fires time-based and Calendar-event-based reminders.
 - Syncs Canvas assignments daily.
 - Pulls and ranks current news each morning.
@@ -89,25 +88,25 @@ The retired Jarvis desk, laptop-control, and food tools are excluded. Their code
 | Google Docs/Drive | Create formatted documents in Almanac's Drive folder. |
 | Canvas | Read an ICS assignment feed and mirror assignments into Tasks. |
 | SimpleFIN | Read account balances and transactions. No money movement or trading. |
-| Overland | Receive phone GPS points for visits, place context, and location reminders. |
 | OpenAI | Audio transcription, routing, reasoning, embeddings, web search, writing, and speech-related processing. |
 | Supabase | Main database for personal data, projects, graph edges, activity, settings, and cached external data. |
 | Vercel | Hosts the web app, API functions, and daily scheduled jobs. |
 | GitHub Actions and Supabase cron | Ring reminder endpoints that Vercel's plan cannot schedule often enough. The internship schedules are paused. |
 | NPR, BBC, WSJ Markets, and Ars Technica RSS | Supply the news feed. |
-| Web Push | Delivers briefs, capture replies, reminders, insights, and optional job alerts to the phone. |
+| Web Push | Delivers briefs, capture replies, reminders, and insights to the phone. |
 
 ## Paused and retired features
 
 - **Internships are paused:** no board polling, listing enrichment, deadline reviews, weekly digest, phone alerts, Today feed messages, or scheduled liveness checks run. Existing postings and pipeline history are preserved.
 - **Food is retired:** no menu fetches, dining sync, meal planning, food logging, or food routing runs. Existing food records are preserved.
+- **Location is retired:** no phone GPS ingest, visit processing, place-based reminders, location metrics, or Calendar/visit linking runs. Existing historical points and places are preserved.
 
 ## Current size
 
-- 364 version-controlled project files.
-- 65,977 physical lines of code across JavaScript, SQL, CSS, Python, C/C++, and shell files.
-- 49,458 nonblank code lines.
-- 50,771 lines in the web application.
-- 10,737 lines of automated tests.
-- 3,342 lines of project documentation.
+- 365 version-controlled project files.
+- 66,005 physical lines of code across JavaScript, SQL, CSS, Python, C/C++, and shell files.
+- 49,473 nonblank code lines.
+- 50,748 lines in the web application.
+- 10,788 lines of automated tests.
+- 3,340 lines of project documentation.
 - 7.42 MiB of version-controlled files, excluding dependencies, build output, and Git history.

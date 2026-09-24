@@ -4,8 +4,6 @@ import supabase from "../lib/supabase.js";
 import { getUserTimezone, getProfileBio } from "../lib/profile.js";
 import { deleteGoogleTask } from "./googleTasks.js";
 import { upsertYearlyAllDayEvent, deleteGoogleEvent } from "./googleCalendar.js";
-import { sendPush } from "../lib/push.js";
-import { pushAllowed } from "../lib/settings.js";
 import { mapWithConcurrency } from "../lib/async.js";
 import { MODELS } from "../lib/models.js";
 
@@ -727,8 +725,9 @@ export async function checkRelationshipCheckins() {
 
   const { data: due, error } = await supabase
     .from("people")
-    .select("id, name, relationship, check_in_days, last_contacted_at")
-    .lte("next_check_in_at", now);
+    .select("id, name, relationship, check_in_days, last_contacted_at, next_check_in_at")
+    .lte("next_check_in_at", now)
+    .order("next_check_in_at", { ascending: true });
 
   if (error) {
     if (missingTable(error)) return { success: true, skipped: "people table not set up yet" };
@@ -739,22 +738,23 @@ export async function checkRelationshipCheckins() {
     return { success: true, checked: 0, prompted: 0 };
   }
 
-  let prompted = 0;
-  let pushed = 0;
+  // A backlog is released one person per day. The old loop created five cards
+  // and five phone pushes in three seconds after a quiet period; a relationship
+  // reminder should feel like one thoughtful suggestion, not an inbox dump.
+  const { data: existingPrompts } = await supabase
+    .from("prompts")
+    .select("payload")
+    .eq("kind", "relationship_checkin")
+    .eq("status", "pending");
 
-  for (const person of due) {
+  const pendingIds = new Set((existingPrompts || []).map(p => p.payload?.person_id).filter(Boolean));
+  const person = due.find(p => !pendingIds.has(p.id));
 
-    const { data: existingPrompt } = await supabase
-      .from("prompts")
-      .select("id")
-      .eq("kind", "relationship_checkin")
-      .eq("status", "pending")
-      .contains("payload", { person_id: person.id })
-      .limit(1);
+  if (!person) {
+    return { success: true, checked: due.length, prompted: 0, pushed: 0, skipped: "all due people already pending" };
+  }
 
-    if (existingPrompt && existingPrompt.length > 0) continue;
-
-    await supabase.from("prompts").insert([{
+  const { error: insertError } = await supabase.from("prompts").insert([{
       kind: "relationship_checkin",
       title: `Check in with ${person.name}?`,
       body: `You said you'd check in with ${person.name}${person.relationship ? ` (${person.relationship})` : ""} every ${person.check_in_days} days. ${
@@ -762,36 +762,15 @@ export async function checkRelationshipCheckins() {
       }`,
       payload: { person_id: person.id },
       status: "pending",
-      pushed_at: new Date().toISOString()
+      pushed_at: null
     }]);
 
-    prompted += 1;
+  if (insertError) throw new Error(insertError.message);
 
-    // These go to the phone rather than the calendar. A check-in isn't an
-    // appointment — putting it on the calendar was clutter, and leaving it
-    // only on the dashboard meant it was never seen unless the dashboard
-    // happened to be opened.
-    //
-    // The prompt row is written either way: muting notifications should mean
-    // "stop buzzing me", not "stop tracking". Staggering upstream is what
-    // keeps this to roughly one person a day rather than a burst.
-    if (await pushAllowed("relationship_checkin")) {
-
-      const result = await sendPush({
-        title: `Check in with ${person.name}?`,
-        body: person.relationship
-          ? `It's been a while — ${person.relationship}.`
-          : "It's been a while.",
-        url: "/",
-        tag: `checkin-${person.id}`
-      }).catch(() => null);
-
-      if (result?.sent) pushed += 1;
-
-    }
-
-  }
-
-  return { success: true, checked: due.length, prompted, pushed };
+  // The daily review runs before dawn. The old implementation pushed every
+  // overdue person immediately, which is how a five-person backlog became five
+  // wake-up notifications. The Today card is the reminder; the morning brief
+  // can summarize what matters without another phone buzz per person.
+  return { success: true, checked: due.length, prompted: 1, pushed: 0, person: person.name };
 
 }
