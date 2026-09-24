@@ -4,7 +4,10 @@ Both Shortcuts may send copied text or a copied URL. Almanac ignores it unless y
 
 Use this endpoint in both Shortcuts:
 
-`POST https://web-liart-two-12.vercel.app/api/capture`
+`POST https://www.getalmanac.xyz/api/capture`
+
+The old `personal-os-…vercel.app` address still works as a compatibility
+forwarder, but this is the direct, stable Almanac address.
 
 Add these headers in **Get Contents of URL**:
 

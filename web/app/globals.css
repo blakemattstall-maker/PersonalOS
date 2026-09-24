@@ -217,8 +217,19 @@ body {
 .pos-safe-top {
   padding-top: calc(env(safe-area-inset-top) + 2rem);
 }
-.pos-safe-bottom {
-  padding-bottom: max(0.6rem, calc(env(safe-area-inset-bottom) - 0.75rem));
+
+:root {
+  --pos-tab-bottom: max(0.35rem, calc(env(safe-area-inset-bottom) - 1.5rem));
+}
+
+.pos-tab-frame {
+  bottom: var(--pos-tab-bottom);
+  transform: translateZ(0);
+}
+
+.pos-graph-frame {
+  bottom: calc(var(--pos-tab-bottom) + 5.5rem);
+  transform: translateZ(0);
 }
 
 /* Numbers, times, counts and dates. This is an operating system; its readings
@@ -420,6 +431,8 @@ body {
      not the window's, or it drifts off alone onto the desk. */
   .pos-graph-frame {
     right: calc((100vw - 26rem) / 2 + 0.75rem);
+    top: 1rem;
+    bottom: auto;
   }
 
   /* Any element that fills the viewport with `fixed inset-0` — the graph canvas

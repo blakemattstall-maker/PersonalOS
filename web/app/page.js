@@ -11,7 +11,6 @@ import Reveal from "./Reveal.js";
 import { Page, Card, SectionTitle, ItemCard, Body, Meta, Empty, btn } from "./ui.js";
 import { speakable } from "../lib/linkify.js";
 import ClearQueueButton from "./ClearQueueButton.js";
-import RefreshButton from "./RefreshButton.js";
 import Collapsible from "./Collapsible.js";
 import FormattedText from "./FormattedText.js";
 
@@ -153,7 +152,7 @@ function Headline({ waiting, projectCount }) {
   return (
     <header className="mb-7">
 
-      <div className="flex items-start justify-between gap-4">
+      <div>
         <h1 className="pos-display text-[2.6rem] leading-[1.05] text-ink">
           {clear ? (
             <span className="text-moss">You&apos;re clear.</span>
@@ -166,7 +165,6 @@ function Headline({ waiting, projectCount }) {
             </>
           )}
         </h1>
-        <RefreshButton />
       </div>
 
       <Meta className="mt-3 block">

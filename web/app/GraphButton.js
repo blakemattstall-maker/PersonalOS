@@ -12,8 +12,8 @@ import { usePathname } from "next/navigation";
 // The feature shipped and was invisible. The card links stay (they arrive
 // pre-centred on the thing being looked at); this is the unconditional door.
 //
-// Top-right, floating, because that corner is empty on every page and the
-// bottom bar is full at six. Same signed-out rule as the TabBar: /welcome
+// Floating just above the bottom bar keeps it clear of modern iPhone camera
+// and browser controls. Same signed-out rule as the TabBar: /welcome
 // must not offer a working app it cannot deliver, and /login must not offer
 // five doors that bounce back.
 //
@@ -25,9 +25,9 @@ export default function GraphButton() {
 
   const pathname = usePathname();
 
-  if (pathname === "/login" || pathname === "/welcome") return null;
-
   const active = pathname.startsWith("/graph");
+
+  if (pathname === "/login" || pathname === "/welcome" || active) return null;
 
   return (
     <Link
@@ -36,10 +36,7 @@ export default function GraphButton() {
       // therefore fullGraph() — on every page view in the app.
       prefetch={false}
       aria-label="Connections"
-      aria-current={active ? "page" : undefined}
-      className={`pos-graph-frame fixed right-4 top-[max(1rem,env(safe-area-inset-top))] z-40 grid h-11 w-11 place-items-center rounded-[var(--r-pill)] border border-[var(--line)] bg-card/85 shadow-lift backdrop-blur-xl transition-colors ${
-        active ? "text-ink" : "text-ink-soft hover:text-ink"
-      }`}
+      className="pos-graph-frame fixed right-4 z-40 grid h-11 w-11 place-items-center rounded-[var(--r-pill)] border border-[var(--line)] bg-card/85 text-ink-soft shadow-lift backdrop-blur-xl transition-colors hover:text-ink"
     >
       <svg
         viewBox="0 0 24 24"
