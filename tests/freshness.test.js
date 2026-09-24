@@ -42,7 +42,7 @@ test("the catch-all reasoner and the health tool always get the user's verbatim 
   // user's exact stats?" on a multi-tool turn — a rephrase must never assert
   // facts about what the system knows.
   assert.match(handler, /wantsVerbatim = toolName === "general_question" \|\| toolName === "query_health"/);
-  assert.match(handler, /isMultiAction && !wantsVerbatim \? null : text/);
+  assert.match(handler, /isMultiAction && !wantsVerbatim \? null : verbatimWithClipboard/);
 
   const router = read("web/lib/router.js");
   assert.match(router, /case "query_health":/);
