@@ -72,7 +72,18 @@ function Inline({ text }) {
 
 
 function isBlockStart(line) {
-  return /^\s*(?:#{1,6}\s*|[-*+]\s+|\d+[.)]\s+|>\s*|```)/.test(line);
+  return /^\s*(?:#{1,6}\s*|[-*+]\s+|\d+[.)]\s+|>\s*|```|\|)/.test(line);
+}
+
+
+function tableCells(line) {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim());
+}
+
+
+function isTableDivider(line) {
+  const cells = tableCells(line);
+  return cells.length > 1 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
 }
 
 
@@ -99,6 +110,30 @@ export default function FormattedText({ text, className = "" }) {
     if (heading) {
       blocks.push(<h4 key={`heading-${i}`} className="pos-display pt-1 text-[1rem] text-ink"><Inline text={heading[1]} /></h4>);
       i += 1;
+      continue;
+    }
+
+    if (line.includes("|") && i + 1 < lines.length && isTableDivider(lines[i + 1])) {
+      const headings = tableCells(line);
+      const rows = [];
+      i += 2;
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) rows.push(tableCells(lines[i++]));
+      blocks.push(
+        <div key={`table-${i}`} className="overflow-x-auto rounded-item border border-[var(--line)]">
+          <table className="w-full min-w-[28rem] border-collapse text-left text-[0.82rem]">
+            <thead className="bg-[var(--sunken)]">
+              <tr>{headings.map((cell, j) => <th key={j} className="border-b border-[var(--line)] px-3 py-2 font-semibold text-ink"><Inline text={cell} /></th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIndex) => (
+                <tr key={rowIndex} className="border-b border-[var(--line)] last:border-b-0">
+                  {headings.map((_, cellIndex) => <td key={cellIndex} className="px-3 py-2 align-top"><Inline text={row[cellIndex] || ""} /></td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
       continue;
     }
 
