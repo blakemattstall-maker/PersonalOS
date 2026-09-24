@@ -3,7 +3,10 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { writePrefs, prefsSnapshot, prefsServerSnapshot, subscribeToPrefs } from "./prefs.js";
 import { NEURAL_VOICES, VOICE_PREVIEW_TEXT, listVoices, speakWith, playPreset, stop } from "./speech.js";
-import { saveSettingsAction, getDiagnosticsAction, sendTestPushAction } from "./actions.js";
+import {
+  saveSettingsAction, getDiagnosticsAction, sendTestPushAction,
+  repairMemoryEmbeddingsAction, disableTriggerAction
+} from "./actions.js";
 import PushSetup from "./PushSetup.js";
 import { field } from "./ui.js";
 import { EVENT_KINDS, KIND_COLOR } from "../lib/eventKind.js";
@@ -115,6 +118,9 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
   const [diag, setDiag] = useState(initialDiagnostics);
   const [refreshing, setRefreshing] = useState(false);
   const [pushResult, setPushResult] = useState(null);
+  const [repairingMemory, setRepairingMemory] = useState(false);
+  const [memoryRepairResult, setMemoryRepairResult] = useState(null);
+  const [disablingTrigger, setDisablingTrigger] = useState(null);
 
   const [previewing, setPreviewing] = useState(null);
 
@@ -251,6 +257,28 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
     setPushResult("sending");
     const result = await sendTestPushAction();
     setPushResult(result?.sent > 0 ? `Sent to ${result.sent} device(s).` : result?.skipped || "Nothing subscribed.");
+  };
+
+
+  const repairMemory = async () => {
+    setRepairingMemory(true);
+    setMemoryRepairResult(null);
+    const result = await repairMemoryEmbeddingsAction();
+    setMemoryRepairResult(
+      result?.errors?.length
+        ? `Repaired ${result.updated || 0}; ${result.errors.length} still failed.`
+        : `Repaired ${result?.updated || 0} memor${result?.updated === 1 ? "y" : "ies"}.`
+    );
+    setDiag(await getDiagnosticsAction());
+    setRepairingMemory(false);
+  };
+
+
+  const disableTrigger = async (id) => {
+    setDisablingTrigger(id);
+    await disableTriggerAction(id);
+    setDiag(await getDiagnosticsAction());
+    setDisablingTrigger(null);
   };
 
 
@@ -698,16 +726,26 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
                         ? `${diag.triggers.lastSweepAgeHours}h ago`
                         : <span className="text-ember">never — the cron is not running</span>}
                     </p>
-                    <ul className="mt-2 space-y-0.5 text-xs text-ink-soft">
+                    <ul className="mt-2 space-y-2 text-xs text-ink-soft">
                       {diag.triggers.list.map(t => (
-                        <li key={t.label}>
-                          <span className="text-ink">{t.label}</span>
-                          {" — "}
-                          {t.kind === "place_arrival" ? "on arriving"
-                            : t.kind === "before_event" ? "before a matching event"
-                            : "at a set time"}
-                          {", "}
-                          {t.fired > 0 ? `fired ${t.fired}×` : "not yet fired"}
+                        <li key={t.id || t.label} className="flex items-start justify-between gap-3">
+                          <span>
+                            <span className="text-ink">{t.label}</span>
+                            {" — "}
+                            {t.kind === "place_arrival" ? "on arriving"
+                              : t.kind === "before_event" ? "before a matching event"
+                              : "at a set time"}
+                            {", "}
+                            {t.fired > 0 ? `fired ${t.fired}×` : "not yet fired"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => disableTrigger(t.id)}
+                            disabled={disablingTrigger === t.id}
+                            className="shrink-0 rounded-md border border-[var(--line)] px-2 py-1 text-[0.68rem] hover:border-ink hover:text-ink disabled:opacity-50"
+                          >
+                            {disablingTrigger === t.id ? "Disabling…" : "Disable"}
+                          </button>
                         </li>
                       ))}
                     </ul>
@@ -728,15 +766,30 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
                   {diag.schema.verdict}
                 </p>
                 {diag.schema.pending?.length > 0 && (
-                  <ul className="mt-2 space-y-2 text-xs text-ink-soft">
-                    {diag.schema.pending.map(m => (
-                      <li key={m.file}>
-                        <span className="text-ink">{m.file.replace("docs/", "")}</span>
-                        {" — "}{m.purpose}
-                        <div className="mt-0.5">{m.breaksWithout}</div>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <ul className="mt-2 space-y-2 text-xs text-ink-soft">
+                      {diag.schema.pending.map(m => (
+                        <li key={m.file}>
+                          <span className="text-ink">{m.file.replace("docs/", "")}</span>
+                          {" — "}{m.purpose}
+                          <div className="mt-0.5">{m.breaksWithout}</div>
+                        </li>
+                      ))}
+                    </ul>
+                    {diag.schema.pending.some(m => m.file === "docs/schema-memory-retrieval.sql") && (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={repairMemory}
+                          disabled={repairingMemory}
+                          className="rounded-md border border-ember px-3 py-1.5 text-xs font-medium text-ember disabled:opacity-50"
+                        >
+                          {repairingMemory ? "Repairing memory search…" : "Repair memory search"}
+                        </button>
+                        {memoryRepairResult && <p className="mt-2 text-xs text-ink-soft">{memoryRepairResult}</p>}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

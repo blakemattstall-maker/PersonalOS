@@ -260,6 +260,7 @@ export async function buildDiagnostics() {
     lastSweepOk: lastSweep ? lastSweep.success !== false : null,
     lastSweepDetail: lastSweep?.output || null,
     list: (activeTriggers || []).slice(0, 8).map(t => ({
+      id: t.id,
       label: t.label,
       kind: t.kind,
       fired: t.fire_count,

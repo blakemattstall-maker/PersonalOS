@@ -540,6 +540,41 @@ async function diag(req, res) {
 
   }
 
+  // Older memories can predate semantic retrieval. Repair only rows that are
+  // still missing an embedding; the helper is idempotent, so retrying after a
+  // transient OpenAI failure is safe and never rewrites healthy rows.
+  if (req.method === "POST" && req.body?.action === "repairMemoryEmbeddings") {
+
+    const { backfillMemoryEmbeddings } = await import("../../../tools/memory.js");
+    const result = await backfillMemoryEmbeddings();
+
+    return res.status(result.errors?.length ? 207 : 200).json(result);
+
+  }
+
+  // A standing reminder is a subscription to future notifications. Keep the
+  // row for history, but stop future matching and firing immediately.
+  if (req.method === "POST" && req.body?.action === "disableTrigger") {
+
+    const id = String(req.body?.id || "").trim();
+
+    if (!id) return res.status(400).json({ error: "Missing trigger id" });
+
+    const { data, error } = await supabase
+      .from("triggers")
+      .update({ active: false })
+      .eq("id", id)
+      .eq("active", true)
+      .select("id")
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ success: false, error: error.message });
+    if (!data) return res.status(404).json({ success: false, error: "Active reminder not found" });
+
+    return res.status(200).json({ success: true, id: data.id });
+
+  }
+
   return res.status(405).json({ error: "Method not allowed" });
 
 }

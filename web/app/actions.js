@@ -184,6 +184,28 @@ export async function sendTestPushAction() {
 }
 
 
+export async function repairMemoryEmbeddingsAction() {
+
+  const result = await backendPost("/api/diag", { action: "repairMemoryEmbeddings" });
+
+  revalidatePath("/settings");
+
+  return result;
+
+}
+
+
+export async function disableTriggerAction(id) {
+
+  const result = await backendPost("/api/diag", { action: "disableTrigger", id });
+
+  revalidatePath("/settings");
+
+  return result;
+
+}
+
+
 // Debate now argues evergreen topics; the news_item path stays for sessions
 // started before the split and for arguing a live story on purpose.
 export async function startDebateAction({ debate_topic_id, news_item_id, user_side }) {
