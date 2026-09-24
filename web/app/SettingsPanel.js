@@ -766,31 +766,29 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
                   {diag.schema.verdict}
                 </p>
                 {diag.schema.pending?.length > 0 && (
-                  <>
-                    <ul className="mt-2 space-y-2 text-xs text-ink-soft">
-                      {diag.schema.pending.map(m => (
-                        <li key={m.file}>
-                          <span className="text-ink">{m.file.replace("docs/", "")}</span>
-                          {" — "}{m.purpose}
-                          <div className="mt-0.5">{m.breaksWithout}</div>
-                        </li>
-                      ))}
-                    </ul>
-                    {(diag.schema.pending.some(m => m.file === "docs/schema-memory-retrieval.sql")
-                      || diag.schema.notReady?.some(m => m.file === "docs/schema-memory-retrieval.sql")) && (
-                      <div className="mt-3">
-                        <button
-                          type="button"
-                          onClick={repairMemory}
-                          disabled={repairingMemory}
-                          className="rounded-md border border-ember px-3 py-1.5 text-xs font-medium text-ember disabled:opacity-50"
-                        >
-                          {repairingMemory ? "Repairing memory search…" : "Repair memory search"}
-                        </button>
-                        {memoryRepairResult && <p className="mt-2 text-xs text-ink-soft">{memoryRepairResult}</p>}
-                      </div>
-                    )}
-                  </>
+                  <ul className="mt-2 space-y-2 text-xs text-ink-soft">
+                    {diag.schema.pending.map(m => (
+                      <li key={m.file}>
+                        <span className="text-ink">{m.file.replace("docs/", "")}</span>
+                        {" — "}{m.purpose}
+                        <div className="mt-0.5">{m.breaksWithout}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {(diag.schema.pending?.some(m => m.file === "docs/schema-memory-retrieval.sql")
+                  || diag.schema.notReady?.some(m => m.file === "docs/schema-memory-retrieval.sql")) && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={repairMemory}
+                      disabled={repairingMemory}
+                      className="rounded-md border border-ember px-3 py-1.5 text-xs font-medium text-ember disabled:opacity-50"
+                    >
+                      {repairingMemory ? "Repairing memory search…" : "Repair memory search"}
+                    </button>
+                    {memoryRepairResult && <p className="mt-2 text-xs text-ink-soft">{memoryRepairResult}</p>}
+                  </div>
                 )}
               </div>
             )}
