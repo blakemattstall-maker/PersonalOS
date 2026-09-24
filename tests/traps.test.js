@@ -12,7 +12,7 @@ import { DateTime } from "luxon";
 import { taskDueDate } from "../web/tools/googleTasks.js";
 import { mapWithConcurrency, coalesce } from "../web/lib/async.js";
 import { requireAuth, authEnabled } from "../web/lib/auth.js";
-import { DEFAULTS, INTERRUPTION_LEVELS } from "../web/lib/settings.js";
+import { DEFAULTS, INTERRUPTION_LEVELS, BACKGROUND_AI_CADENCES } from "../web/lib/settings.js";
 
 
 // ---------------------------------------------------------------------------
@@ -341,6 +341,9 @@ test("the interruption default is the agreed one, and is a valid level", () => {
   assert.equal(DEFAULTS.interruption_level, "digest_plus_urgent");
 
   assert.ok(INTERRUPTION_LEVELS.includes(DEFAULTS.interruption_level));
+
+  assert.equal(DEFAULTS.background_ai_cadence, "economy");
+  assert.ok(BACKGROUND_AI_CADENCES.includes(DEFAULTS.background_ai_cadence));
 
   assert.deepEqual(
     INTERRUPTION_LEVELS,

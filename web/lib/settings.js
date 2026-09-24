@@ -32,6 +32,12 @@ export const DEFAULTS = {
   // everything        — push anything the observer thinks is worth saying
   interruption_level: "digest_plus_urgent",
 
+  // Scheduled model work only. Manual captures, questions, research and every
+  // tool the user explicitly invokes are unaffected.
+  // economy — daily small-model brief; heavier reviews twice weekly
+  // daily   — original cadence, for when speed matters more than idle cost
+  background_ai_cadence: "economy",
+
   // The voice, shared.
   //
   // The app keeps its speech preferences in localStorage, which is right for
@@ -107,6 +113,8 @@ export const INTERRUPTION_LEVELS = [
   "digest_plus_urgent",
   "everything"
 ];
+
+export const BACKGROUND_AI_CADENCES = ["economy", "daily"];
 
 
 // The dial is ordered, so "may I push this?" is a comparison rather than a

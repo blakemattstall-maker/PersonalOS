@@ -307,7 +307,7 @@ test("the trigger sweep does not ride the job poller", () => {
 
   // Daily Vercel crons drift 30-50 minutes on this account, which cannot carry
   // a promise about a moment.
-  assert.match(read("docs/cron-triggers.sql"), /\*\/5 \* \* \* \*/);
+  assert.match(read("docs/cron-triggers.sql"), /\*\/15 \* \* \* \*/);
   assert.match(read("docs/cron-triggers.sql"), /runTriggers/);
 
 });

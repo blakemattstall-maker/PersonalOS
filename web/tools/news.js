@@ -287,7 +287,7 @@ async function insertItem(row) {
 }
 
 
-export async function syncNewsDigest() {
+export async function syncNewsDigest({ limit = KEEP_PER_RUN } = {}) {
 
   const { candidates, failed } = await fetchCandidates();
 
@@ -316,7 +316,7 @@ export async function syncNewsDigest() {
 
   const ranked = await rankAgainstUser(fresh, userContext).catch(() => fresh);
 
-  const shortlist = ranked.slice(0, KEEP_PER_RUN);
+  const shortlist = ranked.slice(0, Math.max(1, Math.min(limit, KEEP_PER_RUN)));
 
   let stored = 0;
   let degraded = false;

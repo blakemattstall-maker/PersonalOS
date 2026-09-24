@@ -14,7 +14,7 @@ import {
 } from "../../../tools/database.js";
 import { deleteProject } from "../../../tools/projects.js";
 import { PLAN_TOOLS } from "../../../lib/planTools.js";
-import { getSettings, saveSettings, INTERRUPTION_LEVELS } from "../../../lib/settings.js";
+import { getSettings, saveSettings, INTERRUPTION_LEVELS, BACKGROUND_AI_CADENCES } from "../../../lib/settings.js";
 import { buildDiagnostics } from "../../../lib/diagnostics.js";
 import { sendPush } from "../../../lib/push.js";
 import { getNewsFeed, syncNewsDigest, deleteNewsItem } from "../../../tools/news.js";
@@ -500,6 +500,10 @@ async function settings(req, res) {
 
     if (patch.interruption_level && !INTERRUPTION_LEVELS.includes(patch.interruption_level)) {
       return res.status(400).json({ error: `Unknown interruption level: ${patch.interruption_level}` });
+    }
+
+    if (patch.background_ai_cadence && !BACKGROUND_AI_CADENCES.includes(patch.background_ai_cadence)) {
+      return res.status(400).json({ error: `Unknown background AI cadence: ${patch.background_ai_cadence}` });
     }
 
     const result = await saveSettings(patch);

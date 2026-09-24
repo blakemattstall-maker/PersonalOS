@@ -35,6 +35,19 @@ const LEVELS = [
   { id: "everything", name: "Everything", blurb: "Anything the observer thinks is worth saying. Expect several a day." }
 ];
 
+const BACKGROUND_CADENCES = [
+  {
+    id: "economy",
+    name: "Economy",
+    blurb: "A small-model brief each morning. News and proactive reviews run twice a week; cross-domain insights run weekly. Manual requests are always immediate."
+  },
+  {
+    id: "daily",
+    name: "Daily",
+    blurb: "Runs news, intention reviews, observations and cross-domain analysis every day. Faster background updates, with materially higher API cost."
+  }
+];
+
 
 function Section({ title, children, aside }) {
   return (
@@ -86,6 +99,10 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
   const [level, setLevel] = useState(initialSettings?.interruption_level || "digest_plus_urgent");
   const [levelNote, setLevelNote] = useState(null);
   const [savingLevel, setSavingLevel] = useState(false);
+
+  const [backgroundCadence, setBackgroundCadence] = useState(initialSettings?.background_ai_cadence || "economy");
+  const [backgroundNote, setBackgroundNote] = useState(null);
+  const [savingBackground, setSavingBackground] = useState(false);
 
   const [autoColor, setAutoColor] = useState(initialSettings?.auto_color_events !== false);
   const [savingAutoColor, setSavingAutoColor] = useState(false);
@@ -162,6 +179,20 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
 
     setSavingLevel(false);
     setLevelNote(result?.success ? "Saved." : result?.error || "Couldn't save.");
+
+  };
+
+
+  const chooseBackgroundCadence = async (next) => {
+
+    setBackgroundCadence(next);
+    setSavingBackground(true);
+    setBackgroundNote(null);
+
+    const result = await saveSettingsAction({ background_ai_cadence: next });
+
+    setSavingBackground(false);
+    setBackgroundNote(result?.success ? "Saved." : result?.error || "Couldn't save.");
 
   };
 
@@ -392,6 +423,32 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
 
 
       <PushSetup />
+
+
+      <Section title="Background AI cost">
+
+        <p className="mt-3 text-xs leading-relaxed text-ink-soft">
+          This controls work Almanac starts on its own. Captures, questions,
+          research, calendar actions and every other direct request are
+          unaffected.
+        </p>
+
+        <div className="mt-4 space-y-2">
+          {BACKGROUND_CADENCES.map(option => (
+            <Choice
+              key={option.id}
+              selected={backgroundCadence === option.id}
+              onClick={() => chooseBackgroundCadence(option.id)}
+              name={option.name}
+              blurb={option.blurb}
+            />
+          ))}
+        </div>
+
+        {savingBackground && <p className="mt-3 text-xs text-ink-soft">Saving…</p>}
+        {backgroundNote && !savingBackground && <p className="mt-3 text-xs text-ink-soft">{backgroundNote}</p>}
+
+      </Section>
 
 
       <Section title="Calendar">

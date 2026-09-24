@@ -13,19 +13,16 @@
 -- meeting cannot be scheduled by something that is itself half an hour late.
 -- pg_cron runs inside the database and keeps time.
 --
--- Every five minutes rather than fifteen. The finest thing already running is
--- the fifteen-minute job poll, and that is fine for a job board — but a lead
--- time is a promise about a moment, and the firing window has to be narrower
--- than the error a person would notice. Five minutes costs one HTTP call that
--- returns "checked 2, fired 0" and nothing else.
+-- Every fifteen minutes. The trigger engine uses a twenty-minute firing window
+-- plus a unique fire key, so this cadence cannot miss a reminder or send it
+-- twice. It cuts idle Vercel invocations from 288 to 96 per day.
 --
--- Place-arrival triggers are NOT here. Those fire from the location ingest, at
--- the moment the arrival is detected — waiting up to five minutes to mention
--- that he is standing in the gym would defeat the point.
+-- Place-arrival triggers are retired with location tracking. This clock only
+-- handles calendar and time-of-day reminders.
 
 select cron.schedule(
   'almanac-run-triggers',
-  '*/5 * * * *',
+  '*/15 * * * *',
   $$
     select net.http_get(
       url := 'https://www.getalmanac.xyz/api/cron/runTriggers',

@@ -349,7 +349,10 @@ export async function composeBrief({ tz } = {}) {
 
   const response = await openai.chat.completions.create({
 
-    model: MODELS.JUDGMENT,
+    // Everything below has already been fetched, classified and reduced to
+    // facts. This call orders and phrases those facts, so the smaller tier is
+    // enough and keeps the one intentionally daily AI feature inexpensive.
+    model: MODELS.EXTRACT,
 
     messages: [
 

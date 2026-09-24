@@ -14,9 +14,24 @@ import { ensureTopicsFramed } from "../../../../tools/debateTopics.js";
 import { checkRelationshipCheckins, syncAllImportantDateEvents } from "../../../../tools/people.js";
 import { getUserTimezone } from "../../../../lib/profile.js";
 import { sendPush } from "../../../../lib/push.js";
-import { pushAllowed } from "../../../../lib/settings.js";
+import { getSettings, pushAllowed } from "../../../../lib/settings.js";
 import { DateTime } from "luxon";
 import { JOBS_ENABLED, JOBS_PAUSED_MESSAGE } from "../../../../lib/featureFlags.js";
+
+
+// Economy mode changes only work Almanac starts by itself. Anything the user
+// asks for still runs immediately. Weekdays use Luxon's ISO numbering:
+// Monday=1, Thursday=4, Sunday=7.
+async function backgroundPolicy(economyWeekdays) {
+  const [settings, tz] = await Promise.all([getSettings(), getUserTimezone()]);
+  const cadence = settings.background_ai_cadence || "economy";
+  const weekday = DateTime.now().setZone(tz).weekday;
+  return {
+    cadence,
+    tz,
+    due: cadence === "daily" || economyWeekdays.includes(weekday)
+  };
+}
 
 
 // All scheduled jobs behind one dynamic route.
@@ -146,6 +161,12 @@ async function syncCanvas() {
 
 async function syncNews() {
 
+  const policy = await backgroundPolicy([1, 4]);
+
+  if (!policy.due) {
+    return { success: true, skipped: "economy mode refreshes news Monday and Thursday" };
+  }
+
   // Two jobs on one schedule, deliberately. The evergreen debate deck needs
   // topping up occasionally as seed topics get framed, but it does NOT deserve
   // its own cron entry: Vercel Hobby's timing is loose enough that every added
@@ -155,7 +176,7 @@ async function syncNews() {
   // Topic framing is best-effort — a failure here must not cost the news sync,
   // which is the part with a real daily deadline.
   const [digest, topics] = await Promise.allSettled([
-    syncNewsDigest(),
+    syncNewsDigest({ limit: policy.cadence === "daily" ? 7 : 3 }),
     ensureTopicsFramed({ limit: 6 })
   ]);
 
@@ -194,9 +215,16 @@ async function reviewIntentions() {
     })
   ]);
 
+  const policy = await backgroundPolicy([1, 4]);
+
+  const deferred = {
+    success: true,
+    skipped: "economy mode runs autonomous AI reviews Monday and Thursday"
+  };
+
 
   const [nudgeResult, projectResult, relationshipResult, dateReminderResult] = await Promise.all([
-    reviewIntentionsForNudges(),
+    policy.due ? reviewIntentionsForNudges() : Promise.resolve(deferred),
     checkProjectDeadlines(),
     checkRelationshipCheckins().catch(error => {
       console.error("RELATIONSHIP CHECK-IN REVIEW FAILED:", error.message);
@@ -221,7 +249,9 @@ async function reviewIntentions() {
   // which lib/context.js coalesces on the second call anyway.
   let accountabilityResult = null;
 
-  try {
+  if (!policy.due) {
+    accountabilityResult = deferred;
+  } else try {
 
     const intentionNudges = Array.isArray(nudgeResult?.data?.sent)
       ? nudgeResult.data.sent.length
@@ -237,7 +267,7 @@ async function reviewIntentions() {
 
   // Weekly, not daily: the bio changes slowly and rewriting it is the one
   // destructive operation in this system.
-  const tz = await getUserTimezone();
+  const tz = policy.tz;
 
   const isSunday = DateTime.now().setZone(tz).weekday === 7;
 
@@ -265,11 +295,15 @@ async function reviewIntentions() {
     metricsResult = { success: false, error: error.message };
   }
 
-  try {
-    observationResult = await runDailyObservation();
-  } catch (error) {
-    console.error("DAILY OBSERVATION FAILED:", error.message);
-    observationResult = { success: false, error: error.message };
+  if (!policy.due) {
+    observationResult = deferred;
+  } else {
+    try {
+      observationResult = await runDailyObservation();
+    } catch (error) {
+      console.error("DAILY OBSERVATION FAILED:", error.message);
+      observationResult = { success: false, error: error.message };
+    }
   }
 
   // After the observer, same nightly slot: compare stored prose claims
@@ -278,12 +312,16 @@ async function reviewIntentions() {
   // staleness detection, never the observation.
   let stalenessResult = null;
 
-  try {
-    const { sweepStaleFacts } = await import("../../../../tools/staleness.js");
-    stalenessResult = await sweepStaleFacts();
-  } catch (error) {
-    console.error("STALENESS SWEEP FAILED:", error.message);
-    stalenessResult = { success: false, error: error.message };
+  if (!policy.due) {
+    stalenessResult = deferred;
+  } else {
+    try {
+      const { sweepStaleFacts } = await import("../../../../tools/staleness.js");
+      stalenessResult = await sweepStaleFacts();
+    } catch (error) {
+      console.error("STALENESS SWEEP FAILED:", error.message);
+      stalenessResult = { success: false, error: error.message };
+    }
   }
 
 
@@ -326,6 +364,12 @@ async function deliverNudges() {
 // Rebuild the graph, then look at it. Sync first: a charge cannot be linked to
 // a project before the charge exists as a row.
 async function connectIslands() {
+
+  const policy = await backgroundPolicy([7]);
+
+  if (!policy.due) {
+    return { success: true, skipped: "economy mode refreshes cross-domain insights Sunday" };
+  }
 
   const transactions = await syncTransactions({ days: 90 })
     .catch(error => ({ success: false, error: error.message }));
