@@ -776,7 +776,8 @@ export default function SettingsPanel({ initialSettings, initialDiagnostics }) {
                         </li>
                       ))}
                     </ul>
-                    {diag.schema.pending.some(m => m.file === "docs/schema-memory-retrieval.sql") && (
+                    {(diag.schema.pending.some(m => m.file === "docs/schema-memory-retrieval.sql")
+                      || diag.schema.notReady?.some(m => m.file === "docs/schema-memory-retrieval.sql")) && (
                       <div className="mt-3">
                         <button
                           type="button"

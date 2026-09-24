@@ -15,6 +15,7 @@ test("settings can repair the semantic index without exposing production secrets
   assert.match(handler, /backfillMemoryEmbeddings/);
   assert.match(actions, /repairMemoryEmbeddingsAction/);
   assert.match(panel, /Repair memory search/);
+  assert.match(panel, /schema\.notReady/);
 });
 
 
