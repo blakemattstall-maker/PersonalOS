@@ -234,15 +234,13 @@ body {
 
    Top: the page's own 2rem of breathing PLUS whatever the status bar occupies,
    so content clears the clock/battery instead of colliding with it.
-   Bottom: the tab bar is a floating pill, so it only has to clear the home
-   indicator, not reserve the entire inset — reserving all of it left a visible
-   empty strip beneath the pill. */
+   The tab bar itself is pinned directly to the visual viewport below. */
 .pos-safe-top {
   padding-top: calc(env(safe-area-inset-top) + 2rem);
 }
 
 :root {
-  --pos-tab-bottom: max(0.35rem, calc(env(safe-area-inset-bottom) - 1.5rem));
+  --pos-tab-bottom: 0px;
 }
 
 .pos-tab-frame {
@@ -254,6 +252,38 @@ body {
   bottom: calc(var(--pos-tab-bottom) + 5.5rem);
   transform: translateZ(0);
 }
+
+/* The pull gesture has to acknowledge itself before the server can answer.
+   Fixed positioning keeps the indicator independent from the page being
+   replaced by a loading skeleton. */
+.pos-pull-indicator {
+  position: fixed;
+  z-index: 60;
+  top: calc(env(safe-area-inset-top) + 0.45rem);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  box-shadow: var(--shadow-lift);
+  font-size: 0.68rem;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% + var(--pos-pull-distance, 0px)));
+  transition: opacity 120ms ease, transform 120ms ease;
+  backdrop-filter: blur(14px);
+}
+
+.pos-pull-indicator.is-visible { opacity: 1; }
+.pos-pull-glyph { display: inline-grid; width: 1rem; place-items: center; color: var(--moss); font-size: 0.9rem; }
+.pos-pull-indicator.is-refreshing .pos-pull-glyph { animation: pos-pull-spin 700ms linear infinite; }
+
+@keyframes pos-pull-spin { to { transform: rotate(360deg); } }
 
 /* Numbers, times, counts and dates. This is an operating system; its readings
    should look like readings. Tabular figures keep columns from jittering as

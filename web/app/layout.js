@@ -4,6 +4,7 @@ import "./globals.css";
 import TabBar from "./TabBar.js";
 import GraphButton from "./GraphButton.js";
 import AppFrame from "./AppFrame.js";
+import PullToRefresh from "./PullToRefresh.js";
 import { showcaseSession } from "../lib/demo.js";
 
 // Three roles, not three decorations. Bricolage carries headings and the
@@ -208,6 +209,7 @@ export default async function RootLayout({ children }) {
             bar rides along inside it so it sits within the framed screen. */}
         <AppFrame showFixtureBar={showFixtureBar}>{children}</AppFrame>
 
+        <PullToRefresh />
         <GraphButton />
         <TabBar />
       </body>
