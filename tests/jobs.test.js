@@ -221,12 +221,14 @@ test("every input is at least 16px, or iOS zooms the page on focus", () => {
 });
 
 
-test("a page is always at least a screen tall, so the fixed tab bar cannot drift", () => {
+test("the app owns one stable viewport, so the fixed tab bar cannot drift", () => {
 
-  // A short loading skeleton made the document unscrollable mid-navigation,
-  // which expands mobile Safari's toolbar, shrinks the visual viewport and
-  // lifts anything anchored to the bottom of it.
-  assert.match(read("web/app/ui.js"), /min-h-\[100svh\]/);
+  // A short loading skeleton used to change the document height mid-navigation.
+  // The frame now owns the viewport and pages fill its one internal scroller.
+  const frame = read("web/app/AppFrame.js");
+  assert.match(frame, /h-\[100dvh\]/);
+  assert.match(frame, /id="pos-app-scroll"/);
+  assert.doesNotMatch(read("web/app/ui.js"), /min-h-\[100svh\]/);
 
 });
 

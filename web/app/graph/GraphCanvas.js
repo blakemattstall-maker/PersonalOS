@@ -971,7 +971,7 @@ export default function GraphCanvas({ nodes, links, focus = null, failed = false
       {/* World controls, tucked above the tab bar. Hidden while a selection
           card is up — the card owns that space. */}
       {!selected && (
-        <div className="absolute bottom-[6rem] right-3 flex flex-col items-end gap-2">
+        <div className="absolute bottom-[calc(var(--pos-tab-bottom)+6rem)] right-3 flex flex-col items-end gap-2">
 
           <button
             onClick={mode === "flat" ? enterSphere : enterFlat}
@@ -1019,7 +1019,7 @@ export default function GraphCanvas({ nodes, links, focus = null, failed = false
       {/* Compact on purpose — the first version took 42% of the screen and
           hid the graph it was describing. A quarter, scrollable inside. */}
       {selected && (
-        <div className="absolute inset-x-3 bottom-[5.5rem] mx-auto max-w-[26rem]">
+        <div className="absolute inset-x-3 bottom-[calc(var(--pos-tab-bottom)+5.5rem)] mx-auto max-w-[26rem]">
           <div className="max-h-[26vh] overflow-y-auto rounded-card bg-card/95 p-3 shadow-lift backdrop-blur-xl">
 
             <div className="flex items-start justify-between gap-3">

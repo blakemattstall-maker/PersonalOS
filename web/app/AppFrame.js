@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
 // How the app frames itself on a wide screen.
@@ -20,6 +21,16 @@ import { usePathname } from "next/navigation";
 export default function AppFrame({ showFixtureBar, children }) {
 
   const pathname = usePathname();
+
+  // Next normally restores the document's scroll position. Signed-in routes
+  // use the app's own stable scroller instead, so reset that surface whenever
+  // the route changes. Keeping this element mounted is what prevents loading
+  // screens and short pages from changing the mobile viewport underneath the
+  // fixed navigation.
+  useEffect(() => {
+    const scroller = document.getElementById("pos-app-scroll");
+    if (scroller) scroller.scrollTop = 0;
+  }, [pathname]);
 
   // Fixture mode makes the dashboard look completely real. Say so, so nobody
   // reads invented spending figures as their own. Fires for the local preview
@@ -53,9 +64,14 @@ export default function AppFrame({ showFixtureBar, children }) {
       {/* The app column: full width on a phone, held to the frame width and
           centred on the desk on a wide screen. The demo bar lives inside it so
           it reads as part of the screen rather than a banner across the desk. */}
-      <div className="flex min-h-[100svh] flex-1 flex-col lg:mx-auto lg:w-[26rem]">
+      <div className="flex h-[100dvh] min-h-0 flex-none flex-col overflow-hidden lg:mx-auto lg:w-[26rem]">
         {bar}
-        {children}
+        <div
+          id="pos-app-scroll"
+          className="pos-app-scroll min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
+        >
+          {children}
+        </div>
       </div>
     </>
   );

@@ -32,6 +32,9 @@ function PullToRefreshController({ pathname }) {
   useEffect(() => {
     if (excluded) return undefined;
 
+    const scroller = document.getElementById("pos-app-scroll");
+    const atTop = () => !scroller || scroller.scrollTop <= 0;
+
     const reset = () => {
       startY.current = null;
       peak.current = 0;
@@ -40,14 +43,14 @@ function PullToRefreshController({ pathname }) {
     };
 
     const onStart = (event) => {
-      if (phaseRef.current !== "idle" || window.scrollY > 0 || event.touches.length !== 1) return;
+      if (phaseRef.current !== "idle" || !atTop() || event.touches.length !== 1) return;
       startY.current = event.touches[0].clientY;
       peak.current = 0;
     };
 
     const onMove = (event) => {
       if (startY.current == null || event.touches.length !== 1) return;
-      if (window.scrollY > 0) return reset();
+      if (!atTop()) return reset();
 
       const raw = Math.max(0, event.touches[0].clientY - startY.current);
       peak.current = Math.max(peak.current, raw);
