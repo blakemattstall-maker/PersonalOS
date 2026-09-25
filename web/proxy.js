@@ -50,5 +50,5 @@ export function proxy(request) {
 // LOCATION_INGEST_KEY, which are the right kind of credential for a caller
 // that cannot log in.
 export const config = {
-  matcher: ["/((?!api|login|welcome|showcase|_next/static|_next/image|favicon.ico|sw.js|manifest.json|icon.svg|opengraph-image).*)"]
+  matcher: ["/((?!api|login|welcome|showcase|_next/static|_next/image|favicon.ico|sw.js|manifest.json|icon.svg|icon-orbit-v2.svg|opengraph-image).*)"]
 };

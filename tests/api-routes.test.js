@@ -278,7 +278,7 @@ test("the passphrase gate still covers every real page", () => {
 
   // …and still lets the installable-app files through, or push registration
   // fails with no useful error.
-  for (const url of ["/login", "/sw.js", "/manifest.json", "/icon.svg"]) {
+  for (const url of ["/login", "/sw.js", "/manifest.json", "/icon.svg", "/icon-orbit-v2.svg"]) {
     assert.equal(pattern.test(url), false, `${url} must stay reachable without the cookie`);
   }
 
