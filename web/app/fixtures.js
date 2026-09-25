@@ -20,13 +20,13 @@ const BRIEF = {
   success: true,
   hasBrief: true,
   created_at: hoursAgo(3),
-  content: `You've got three classes today and the marketing group project is due Friday — nobody has touched the shared deck since Sunday.
+  content: `The Coastal Rebrand review is Thursday at 2:00 PM. Marisol has answered the positioning comments; the open decision is whether the photo library can wait until after launch.
 
-Spending is running hot: $312 in the last seven days against a normal week of about $180, almost all of it food. That's the third week in a row.
+You spent $448 on project supplies in the last 30 days. $360 is tied directly to sample prints and framing, so it is visible in the project graph instead of being mistaken for ordinary shopping.
 
-You told me in March you wanted to read twelve books this year. You're on two, and the last note about one was six weeks ago.
+Your latest weigh-in is 177.8 lbs, down 4.6 since the start of this eight-week block and moving at roughly 0.6 lbs per week.
 
-Rain from noon, so if the run is happening it's happening this morning.`
+One thing needs you: approve the final typeface before tomorrow's review. Nothing else is urgent.`
 };
 
 
@@ -34,38 +34,38 @@ const DEEP_THOUGHTS = {
   thoughts: [
     {
       id: "fx-thought-1",
-      topic: "Should I quit the internship to focus on the startup idea?",
+      topic: "Should the Coastal Rebrand launch before the photo library is final?",
       status: "ready",
       thread_status: "ready_to_build",
       created_at: hoursAgo(5),
       content: JSON.stringify({
-        verdict: "Don't quit yet — set a decision date and a test that can actually fail.",
+        verdict: "Launch the core identity on schedule and stage the photo library as a dated second release.",
         reasoning:
-          "You have eleven weeks left on the internship and no revenue on the other thing. Quitting now converts a known, paid, resume-legible position into unstructured time you have not yet proven you use well. The honest read is that the internship is boring, not that it is blocking you — you have had four free evenings a week for a month and shipped nothing.",
+          "The positioning, type system and launch page are ready. Waiting for every photo would move the launch three weeks and block work that does not depend on them. The risk is a thin first impression, so the launch needs a deliberately limited image set and a public date for the full library.",
         pros: [
-          "Full attention on the idea while you have no dependants and no rent risk",
-          "The internship's reference value is already banked at three months"
+          "The client can start using the new system on schedule",
+          "A smaller first release creates a real feedback checkpoint"
         ],
         cons: [
-          "No revenue, no users, and no dated plan yet",
-          "You have quit two side projects at roughly this same point before"
+          "The first launch will not show the complete visual range",
+          "The second release needs an owner and a date or it will drift"
         ],
         open_questions: [
-          "What would have to be true by October for this to obviously be worth it?",
-          "Who have you actually shown the idea to, outside your own head?"
+          "Which five images are enough to make the launch feel intentional?",
+          "Can Marisol own the remaining selects by next Friday?"
         ]
       }),
       turns: [
         {
           id: "fx-turn-1",
           role: "user",
-          message: "Fair. But I genuinely think I'd move faster with the whole day free."
+          message: "I worry the smaller library will make the identity look unfinished."
         },
         {
           id: "fx-turn-2",
           role: "assistant",
           message:
-            "Maybe. Test it cheaply first: take the four evenings you already have this week and ship one thing a stranger can use. If that happens, the full-day argument is real. If it doesn't, the internship was never what was stopping you."
+            "Then make the limitation explicit in the art direction: one restrained image family at launch, followed by the broader library next Friday. A narrow system can look deliberate; an unexplained gap looks unfinished."
         }
       ]
     }
@@ -78,9 +78,9 @@ const NUDGES = {
     {
       id: "fx-nudge-1",
       message:
-        "The group deck is due Friday and hasn't moved since Sunday. You're the one who set the Wednesday check-in.",
+        "The type decision is blocking the deck, launch page and print order. You said you wanted it closed before Thursday's review.",
       created_at: hoursAgo(11),
-      intentions: { content: "Stop being the person who does group work at 2am" }
+      intentions: { content: "Ship the Coastal Rebrand before the end of the quarter" }
     }
   ]
 };
@@ -92,15 +92,15 @@ const PROMPTS = {
       id: "fx-prompt-1",
       kind: "clarification",
       title: "Which Jordan did you mean?",
-      body: "I found two people named Jordan. Pick the one connected to the Redbird Creative project before I draft the email.",
+      body: "I found two people named Jordan. Pick the client contact connected to Coastal Rebrand before I draft the update.",
       created_at: hoursAgo(2),
       payload: {}
     },
     {
       id: "fx-prompt-2",
       kind: "relationship_checkin",
-      title: "You haven't spoken to Marcus in 3 weeks",
-      body: "You set a two-week cadence for him back in June. Last contact was a text on the 15th.",
+      title: "Marisol's check-in is overdue",
+      body: "You set a monthly cadence. The project has been active, but your last personal check-in was 34 days ago.",
       created_at: hoursAgo(20),
       payload: {}
     },
@@ -108,9 +108,9 @@ const PROMPTS = {
     {
       id: "fx-prompt-3",
       kind: "capture_result",
-      title: "Interview prep is ready",
+      title: "Client review brief is ready",
       body:
-        "I researched the role, compared it with your Redbird Creative work log, created a six-section Google Doc, drafted the email, and added Friday's practice task.\n" +
+        "I researched three comparable launches, compared them with your Coastal Rebrand work log, created a six-section Google Doc, drafted the client email, and added Friday's follow-up task.\n" +
         "https://docs.google.com/document/d/1ALMANACSHOWCASEINTERVIEWPREP1234567890/edit",
       created_at: hoursAgo(1),
       payload: { chained: true }
@@ -130,16 +130,16 @@ const PROMPTS = {
     {
       id: "fx-insight-1",
       kind: "insight",
-      title: "Eating out vs. the cut",
-      body: "You've spent $184 eating out in 30 days while the intention you saved on the 12th was to be lean by winter. That's the second-largest category this month.",
+      title: "The cut is moving without extreme changes",
+      body: "Your last eight weeks moved from 182.4 to 177.8 lbs at roughly 0.6 lbs per week. Eating out fell twice in the same period, so there is no evidence you need a harder intervention.",
       created_at: hoursAgo(6),
       seen: false
     },
     {
       id: "fx-insight-2",
       kind: "insight",
-      title: "The presentation is costing twice",
-      body: "MKT 337 has taken $61 in printing and coffee since Tuesday and it's the same project Marcus is on — the one you haven't replied to in three weeks. The deadline is Thursday.",
+      title: "The rebrand is costing more than it looks",
+      body: "Coastal Rebrand has $448 in tagged supplies and framing plus twelve open tasks. The next expensive order should wait until the type decision closes tomorrow.",
       created_at: hoursAgo(30),
       seen: true
     }
@@ -151,34 +151,34 @@ const PROJECTS = {
   projects: [
     {
       id: "fx-proj-1",
-      name: "MKT 337 group presentation",
+      name: "Coastal Rebrand",
       status: "active",
-      description: "Ten-minute pitch on the Patagonia case, graded on delivery as much as content.",
-      next_action: "Draft your three slides and drop them in the shared deck tonight.",
+      description: "Identity, launch page and client rollout for a fictional coastal hospitality studio.",
+      next_action: "Approve the final typeface before Thursday's 2:00 PM review.",
       tasks: [
-        { id: "t1", title: "Read the case twice, take notes on the supply-chain section", status: "completed", due_date: daysAhead(-2) },
-        { id: "t2", title: "Draft your three slides", status: "pending", due_date: daysAhead(0) },
-        { id: "t3", title: "Send the deck to the group for comments", status: "pending", due_date: daysAhead(1) },
-        { id: "t4", title: "Run through it out loud twice", status: "pending", due_date: daysAhead(2) }
+        { id: "t1", title: "Rewrite the positioning page", status: "completed", due_date: daysAhead(-2) },
+        { id: "t2", title: "Approve the final typeface", status: "pending", due_date: daysAhead(0) },
+        { id: "t3", title: "Send the review deck to Marisol", status: "pending", due_date: daysAhead(1) },
+        { id: "t4", title: "Rehearse the client walkthrough", status: "pending", due_date: daysAhead(2) }
       ],
       materials: [
         {
           id: "m1",
-          title: "What the grader is actually looking for",
+          title: "Comparable launch research",
           content:
-            "The rubric weights delivery at 40%. Most groups lose points on transitions between speakers, not on the analysis."
+            "The strongest comparable launches used one controlled image family first, then expanded the library after the core identity had landed."
         }
       ]
     },
     {
       id: "fx-proj-2",
-      name: "Relocate for the new role",
+      name: "Fall portfolio refresh",
       status: "active",
       description: null,
-      next_action: "Confirm the truck booking — the quote expires Thursday.",
+      next_action: "Write the Coastal Rebrand case-study outcome section.",
       tasks: [
-        { id: "t5", title: "Book the truck", status: "pending", due_date: daysAhead(1) },
-        { id: "t6", title: "Cancel the Washington gym membership", status: "completed", due_date: daysAhead(-4) }
+        { id: "t5", title: "Select six case-study frames", status: "pending", due_date: daysAhead(3) },
+        { id: "t6", title: "Export the mobile prototype", status: "completed", due_date: daysAhead(-4) }
       ],
       materials: []
     }
@@ -318,6 +318,77 @@ const SETTINGS = {
     persisted: true
   },
   levels: ["silent", "digest", "digest_plus_urgent", "everything"]
+};
+
+const HEALTH = {
+  success: true,
+  vitals: {
+    unit: "lbs",
+    start: { weight: 182.4, date: "Jul 30, 2026" },
+    current: { weight: 177.8, date: "Sep 24, 2026" },
+    totalChange: -4.6,
+    daysSinceLast: 0,
+    pacePerWeek: -0.6,
+    count: 19,
+    recent: [
+      "Sep 24, 2026: 177.8 lbs", "Sep 20, 2026: 178.3 lbs",
+      "Sep 16, 2026: 178.7 lbs", "Sep 12, 2026: 179.1 lbs",
+      "Sep 8, 2026: 179.6 lbs", "Sep 3, 2026: 180.0 lbs"
+    ]
+  }
+};
+
+const DATA = {
+  success: true,
+  memories: [
+    { id: "fx-memory-1", type: "preference", importance: 8, content: "Marisol prefers project feedback in Figma comments, not long email threads.", created_at: hoursAgo(24 * 19) },
+    { id: "fx-memory-2", type: "work", importance: 7, content: "Coastal Rebrand launches in two stages: core identity first, expanded photo library the following Friday.", created_at: hoursAgo(12) }
+  ],
+  notes: [
+    { id: "fx-note-1", content: "Return the unused paper roll to Northline Supply after the print review.", created_at: hoursAgo(30) },
+    { id: "fx-note-2", content: "The client reacted best to the quieter type system and the single-image launch direction.", created_at: hoursAgo(8) }
+  ],
+  intentions: [
+    { id: "fx-intention-1", content: "Ship the Coastal Rebrand before the end of the quarter.", status: "active", created_at: hoursAgo(24 * 28) },
+    { id: "fx-intention-2", content: "Lose weight slowly enough that training performance stays stable.", status: "active", created_at: hoursAgo(24 * 56) }
+  ]
+};
+
+const HISTORY = {
+  success: true,
+  thoughts: [],
+  nudges: [
+    { id: "fx-history-n1", message: "The frame order is ready, but the invoice is still unsent.", created_at: hoursAgo(24 * 2), intentions: { content: "Close small project loops the same day" } }
+  ],
+  briefs: [
+    { id: "fx-history-b1", created_at: hoursAgo(24), content: "Yesterday: the launch page moved to review, spending stayed inside the project budget, and no relationship follow-up was urgent." },
+    { id: "fx-history-b2", created_at: hoursAgo(48), content: "Two days ago: Marisol returned the photo selects. The typeface decision became the only blocker shared by the deck, site and print order." }
+  ]
+};
+
+const NEWS = {
+  success: true,
+  items: [
+    { id: "fx-news-1", category: "technology", source: "The Verge", headline: "Design teams are moving more of the review loop into shared prototypes", summary: "New collaboration releases continue to compress the distance between a design decision and client approval.", relevance: "Coastal Rebrand is currently waiting on one type decision across the deck, site and print order—the exact coordination problem these workflows target.", context: "Creative teams have gradually shifted review from exported files toward shared, inspectable systems.", viewpoints: [{ label: "Faster iteration", take: "One source of truth reduces stale exports and repeated feedback." }, { label: "Process risk", take: "Clients can mistake access to the working file for a need to comment on every detail." }], surfaced_at: hoursAgo(4) },
+    { id: "fx-news-2", category: "business", source: "Fast Company", headline: "Small studios are packaging strategy and production into one engagement", summary: "Independent creative teams are selling connected outcomes instead of isolated deliverables.", relevance: "Your portfolio refresh is trying to explain Coastal Rebrand as a system, not a collection of assets.", context: "Buyers increasingly expect positioning, identity and launch execution to arrive as one coherent engagement.", viewpoints: [], surfaced_at: hoursAgo(7) },
+    { id: "fx-news-3", category: "science", source: "Nature Briefing", headline: "Steady behavior changes outperform dramatic short interventions", summary: "A new review adds evidence that adherence matters more than aggressive short-term targets.", relevance: "Your eight-week weight trend is moving at 0.6 lbs per week without a sharp change in routine.", context: "Long-term outcomes often depend on whether a routine remains tolerable after the initial motivation fades.", viewpoints: [], surfaced_at: hoursAgo(10) }
+  ]
+};
+
+const PRACTICE = {
+  success: true,
+  topics: [
+    { id: "fx-topic-1", title: "Should creative work launch before every asset is final?", category: "society", used_count: 1, tension: "Shipping creates feedback and momentum, while incompleteness can weaken the first impression.", context: "Many identity systems now launch in staged releases, but clients still judge the first public version as complete.", side_a: "Launch the finished core system on schedule", side_b: "Wait until the complete asset library is ready" },
+    { id: "fx-topic-2", title: "Should personal software make proactive judgments?", category: "technology", used_count: 2, tension: "Useful assistants need initiative, but initiative can become noise or unwanted influence.", context: "The design problem is less whether software can notice patterns than how often it earns the right to interrupt.", side_a: "A personal system should surface unrequested conclusions", side_b: "It should only respond when explicitly asked" }
+  ]
+};
+
+const PRACTICE_SESSIONS = {
+  success: true,
+  sessions: [
+    { id: "fx-session-1", type: "debate", status: "completed", created_at: hoursAgo(26), debate_topics: { title: "Should personal software make proactive judgments?" } },
+    { id: "fx-session-2", type: "pitch", mode: "explainer", topic: "Explain the Coastal Rebrand strategy in 60 seconds", status: "completed", created_at: hoursAgo(50) }
+  ]
 };
 
 
@@ -581,9 +652,15 @@ function diningFixture(path) {
 const FIXTURES = {
   "/api/brief/latest?peek=true": BRIEF,
   "/api/people": PEOPLE,
+  "/api/health": HEALTH,
+  "/api/data": DATA,
   "/api/deepThoughts": DEEP_THOUGHTS,
   "/api/data?prompts=1": PROMPTS,
   "/api/nudges": NUDGES,
+  "/api/history": HISTORY,
+  "/api/news": NEWS,
+  "/api/practice": PRACTICE,
+  "/api/practice?sessions=1": PRACTICE_SESSIONS,
   "/api/projects": PROJECTS,
   "/api/projects?status=archived": ARCHIVED_PROJECTS,
   "/api/settings": SETTINGS

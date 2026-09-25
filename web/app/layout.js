@@ -49,8 +49,8 @@ export const metadata = {
   // The browser-tab icon is the orbital Almanac mark: a self-contained SVG
   // made from the same primitives the animated wordmark uses.
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-    apple: "/icon.svg"
+    icon: [{ url: "/icon-orbit-v2.svg", type: "image/svg+xml" }],
+    apple: "/icon-orbit-v2.svg"
   },
   openGraph: {
     title: "Almanac",

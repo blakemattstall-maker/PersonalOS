@@ -15,16 +15,16 @@ export default function LaunchPreview() {
           <div><span className={styles.signalLabel}>ACTION BUTTON</span><p>Clipboard attached</p></div>
         </div>
         <blockquote className={styles.voiceLine}>
-          “Research this role, compare it with my work history, build an interview brief, draft the email, and remind me to rehearse Friday.”
+          “Research comparable launches, compare them with my Coastal Rebrand work, build the client brief, draft the email, and remind me Friday.”
         </blockquote>
         <div className={styles.routeLine} aria-hidden="true">
           <span>WEB</span><i /><span>WORK LOG</span><i /><span>DOCS</span><i /><span>GMAIL</span><i /><span>TASKS</span>
         </div>
         <div className={styles.resultStack}>
           <div><span>01</span><strong>Research complete</strong><small>8 current sources checked</small></div>
-          <div><span>02</span><strong>Interview brief created</strong><small>Google Doc · 6 sections</small></div>
+          <div><span>02</span><strong>Client brief created</strong><small>Google Doc · 6 sections</small></div>
           <div><span>03</span><strong>Email drafted</strong><small>Gmail · held for review</small></div>
-          <div><span>04</span><strong>Practice scheduled</strong><small>Friday · Google Tasks</small></div>
+          <div><span>04</span><strong>Follow-up scheduled</strong><small>Friday · Google Tasks</small></div>
         </div>
       </div>
       <div className={styles.filmFooter}>

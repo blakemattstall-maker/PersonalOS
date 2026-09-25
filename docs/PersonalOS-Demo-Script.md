@@ -4,17 +4,19 @@
 
 **Format:** phone screen recording, your voice over it, no slides. Open the private **showcase** at `/showcase` with the owner passphrase so every dashboard figure is fictional and safe to publish — the orange sample-data bar stays in frame. Record vertical.
 
+**Shortcut rule:** do not point the real Almanac Shortcut at the showcase. The production Shortcut writes to the private owner account; the showcase is deliberately read-only and fixture-backed. Duplicate the Shortcut as **Almanac Showcase**, keep its opening capture actions for the shot, then replace its network request with a local **Show Result** reading `Captured for the showcase.` Cut from that confirmation to the pre-populated matching result on the showcase dashboard. Delete the duplicate after filming. This prevents a fake request from entering the real account and keeps the production Shortcut unchanged.
+
 **Rule for the voiceover:** never say "pgvector", "Next.js", "the router", or "the graph database". Say what it *does*. A producer hiring you doesn't care how; they care that you shipped something that thinks.
 
 ---
 
 ## The shots
 
-**0:00–0:10 — The press.** Home screen. Press the Action Button (or tap the capture Shortcut). Speak a real sentence: *"Remind me to send Priya the contract Thursday, and I spent forty bucks at Costco."*
+**0:00–0:10 — The press.** Home screen. Run **Almanac Showcase** and speak the sentence already represented by the sample data: *"Research comparable launches, compare them with my Coastal Rebrand work, build the client brief, draft the email, and remind me to follow up Friday."*
 > VO: "I talk to it like a person."
 
-**0:10–0:22 — It filed itself.** Cut to the phone's notification / the dashboard "needs you" count updating. Show the task now sitting there with a real Thursday date.
-> VO: "One sentence became a task with the right date and a logged expense — it decided which was which. I didn't fill in a form."
+**0:10–0:22 — It acted.** Cut to the pre-populated `Client review brief is ready` result on the showcase dashboard. Expand it to show the research, Doc, email draft and Friday task.
+> VO: "One sentence became current research, a document, an email draft and a scheduled follow-up. I didn't fill in four forms."
 
 **0:22–0:40 — The morning brief.** Open the dashboard. The brief is the first card. Scroll it slowly — the day's schedule, what's overdue, who's gone quiet.
 > VO: "Every morning it writes me one of these. It's not a template — it's reading my actual calendar, my tasks, who I haven't talked to. And every number in it was computed in code, never guessed by the model."
