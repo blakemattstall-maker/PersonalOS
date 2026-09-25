@@ -1,6 +1,6 @@
 import resourceHandler from "./api/[resource]/handler.js";
 import ingestHandler from "./api/ingest/[kind]/handler.js";
-import { DEMO_SESSION } from "../lib/demo.js";
+import { showcaseSession } from "../lib/demo.js";
 
 
 // Who this request belongs to: the owner, the demo, or nobody.
@@ -25,7 +25,7 @@ async function sessionKind() {
     const store = await cookies();
     const value = store.get("pos_session")?.value;
     if (process.env.SITE_PASSPHRASE && value === process.env.SITE_PASSPHRASE) return "owner";
-    if (value === DEMO_SESSION) return "demo";
+    if (value === showcaseSession(process.env.SITE_PASSPHRASE)) return "demo";
     return "none";
   } catch {
     return "none";
@@ -185,7 +185,7 @@ export async function backendGet(path) {
 
   // Two callers get the fictional dashboard instead of the real one: the
   // local design preview (POS_FIXTURES, set only by .claude/launch.json,
-  // dead in every deployed build) and the demo session (lib/demo.js).
+  // dead in every deployed build) and the private showcase session (lib/demo.js).
   const demo = kind === "demo";
 
   if (demo || process.env.POS_FIXTURES === "1") {

@@ -4,7 +4,7 @@ import "./globals.css";
 import TabBar from "./TabBar.js";
 import GraphButton from "./GraphButton.js";
 import AppFrame from "./AppFrame.js";
-import { DEMO_SESSION } from "../lib/demo.js";
+import { showcaseSession } from "../lib/demo.js";
 
 // Three roles, not three decorations. Bricolage carries headings and the
 // greeting — it has enough character to be recognisable at a glance and is
@@ -33,7 +33,7 @@ const dmMono = DM_Mono({
 
 
 const DESCRIPTION =
-  "A quiet system of record for your calendar, tasks, notes, money and people — and a mind that reads across all of it.";
+  "A personal context engine that connects your calendar, tasks, notes, money, health, work and relationships — then acts across them from one request.";
 
 export const metadata = {
   // The public home. Resolves relative URLs (the Open Graph image below,
@@ -46,9 +46,8 @@ export const metadata = {
   description: DESCRIPTION,
   manifest: "/manifest.json",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Almanac" },
-  // The browser-tab icon is the new sun-over-horizon SVG mark (crisp at every
-  // size, supported by every current browser). The old app/favicon.ico — a
-  // stale raster of the pre-rebrand mark — was deleted so it can't win.
+  // The browser-tab icon is the orbital Almanac mark: a self-contained SVG
+  // made from the same primitives the animated wordmark uses.
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     apple: "/icon.svg"
@@ -143,15 +142,13 @@ const BOOT_SCRIPT = `
 export default async function RootLayout({ children }) {
 
   // The "nothing here is real" bar has to fire for BOTH fake-data audiences:
-  // the local design preview (POS_FIXTURES, never set in prod) and the public
-  // demo session, which serves the same fixtures on production to a stranger
-  // who clicked the link. Without the second case the demo shows invented
-  // spending and people with nothing saying they're invented — the honesty the
-  // bar exists for was missing on the one surface a recruiter actually sees.
+  // the local design preview (POS_FIXTURES, never set in prod) and the private
+  // showcase session. Without the second case a recording could show invented
+  // spending and people with nothing saying they are fictional.
   let isDemo = false;
   try {
     const store = await cookies();
-    isDemo = store.get("pos_session")?.value === DEMO_SESSION;
+    isDemo = store.get("pos_session")?.value === showcaseSession(process.env.SITE_PASSPHRASE);
   } catch { /* not in a request scope — neither audience */ }
 
   const showFixtureBar = process.env.POS_FIXTURES === "1" || isDemo;
@@ -199,7 +196,7 @@ export default async function RootLayout({ children }) {
             of every route, including /welcome, which has its own full-screen
             opening sequence right after; a second thing introducing itself
             here would compete with it rather than just being "warming up". */}
-        <div id="pos-boot" aria-hidden="true">
+        <div id="pos-boot" aria-hidden="true" suppressHydrationWarning>
           <span className="pos-dot" />
           <span className="pos-dot" />
           <span className="pos-dot" />

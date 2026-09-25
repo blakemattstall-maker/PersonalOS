@@ -27,7 +27,7 @@ export default function GraphButton() {
 
   const active = pathname.startsWith("/graph");
 
-  if (pathname === "/login" || pathname === "/welcome" || active) return null;
+  if (pathname === "/login" || pathname === "/welcome" || pathname === "/showcase" || active) return null;
 
   return (
     <Link

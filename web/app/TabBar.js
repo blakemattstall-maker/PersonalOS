@@ -138,7 +138,7 @@ export default function TabBar() {
   // Neither of the signed-out pages gets a nav bar. On /login it would offer
   // five destinations that all bounce straight back; on /welcome it would
   // promise a working app to someone who cannot get into one.
-  if (pathname === "/login" || pathname === "/welcome") return null;
+  if (pathname === "/login" || pathname === "/welcome" || pathname === "/showcase") return null;
 
   return (
     <nav

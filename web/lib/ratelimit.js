@@ -4,7 +4,7 @@
 // cookie and no key — anyone on the internet could burn OpenAI tokens on the
 // project's bill. Auth fixes that specific hole (the TTS route now demands a
 // session), but auth alone leaves two doors open: a LEAKED credential can
-// spend without ceiling, and the demo session is deliberately public. This is
+// spend without ceiling, and the showcase still exercises speech. This is
 // the ceiling.
 //
 // It is a fixed window in module-scope memory, which on serverless means

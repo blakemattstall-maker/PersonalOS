@@ -7,7 +7,8 @@ entity graph you can walk — the `/graph` page renders your whole life as an
 Obsidian-style force view, with an optional spinning 3D sphere.
 
 Single-user by design, running on free tiers, at roughly **$7/month all-in**.
-There is a public read-only demo on fictional data: the passphrase is `demo`.
+There is a private, read-only showcase on fictional data at `/showcase`. The
+owner passphrase unlocks it for two hours; it can never read or write owner data.
 
 ---
 
@@ -50,7 +51,8 @@ version control, so those URLs must not change.
 | `web/lib/` | Shared infrastructure: the router, auth, the Supabase client, the model registry, rich-context assembly, diagnostics, schema probing. |
 | `web/tools/` | One file per capability. A tool is a function the LLM can choose to call. |
 | `web/` | The dashboard. Its own package.json, own Vercel project, own env vars. Design system lives in `web/app/globals.css` (tokens) and `web/app/ui.js` (shape vocabulary) — read the comment at the top of each before restyling anything. Motion goes through `web/app/motion.js`, never anime.js directly. |
-| `web/app/welcome/` | The signed-out tour — where the passphrase gate now sends anyone without a session. Prerendered, reads nothing, and must stay that way. |
+| `web/app/welcome/` | The video-first public launch page and waitlist. Prerendered, reads nothing, and must stay that way. |
+| `web/app/showcase/` | The owner-gated entrance to the fictional recording workspace. |
 | `docs/` | Architecture, current state, the pre-mortem, and the `.sql` migrations. |
 | `tests/` | Fast offline suite (`npm test`) plus the routing eval (`npm run test:routing`). |
 | `dev/` | One-off scripts. Not tests — they print and exit. |

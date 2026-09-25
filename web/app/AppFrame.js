@@ -13,7 +13,7 @@ import { usePathname } from "next/navigation";
 // a phone this is an ordinary full-width passthrough with nothing added.
 //
 // The signed-out routes never get the frame. /welcome is a full-bleed marketing
-// page and /login is its own minimal thing; both must render edge to edge, the
+// page; /login and /showcase are minimal gates. All must render edge to edge, the
 // same rule TabBar and GraphButton already follow by returning null there. This
 // is why the frame can't just live in the server layout, which wraps every
 // route alike and has no view of the path.
@@ -23,15 +23,15 @@ export default function AppFrame({ showFixtureBar, children }) {
 
   // Fixture mode makes the dashboard look completely real. Say so, so nobody
   // reads invented spending figures as their own. Fires for the local preview
-  // (POS_FIXTURES) and the public demo session alike.
+  // (POS_FIXTURES) and the private showcase session alike.
   const bar = showFixtureBar ? (
     <div className="bg-ember px-4 py-1 text-center text-[0.7rem] font-medium text-white">
-      Demo — sample data, nothing here is real
+      Showcase — fictional data, nothing here is real
     </div>
   ) : null;
 
   // Full width, no frame: the marketing and login pages own the whole page.
-  if (pathname === "/welcome" || pathname === "/login") {
+  if (pathname === "/welcome" || pathname === "/login" || pathname === "/showcase") {
     return (
       <>
         {bar}

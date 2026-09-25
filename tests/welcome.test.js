@@ -82,9 +82,9 @@ test("the passphrase gate still covers every real page", () => {
   const pages = fs.readdirSync(path.join(ROOT, "web/app"), { withFileTypes: true })
     .filter(entry => entry.isDirectory())
     .filter(entry => !entry.name.startsWith("_") && entry.name !== "api")
-    // The two signed-out routes, which are deliberately outside the gate and
+    // The signed-out routes, which are deliberately outside the gate and
     // are asserted as such by the tests above and below this one.
-    .filter(entry => entry.name !== "login" && entry.name !== "welcome")
+    .filter(entry => !["login", "welcome", "showcase"].includes(entry.name))
     .filter(entry => fs.existsSync(path.join(ROOT, "web/app", entry.name, "page.js")))
     .map(entry => `/${entry.name}`);
 

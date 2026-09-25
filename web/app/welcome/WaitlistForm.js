@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import styles from "./launch.module.css";
 
 
 // The waitlist signup. Client-side only — it posts to /api/waitlist and never
 // reaches live data itself, so the welcome tour stays prerendered and the
 // "nothing here reads data" guarantee holds.
-export default function WaitlistForm() {
+export default function WaitlistForm({ variant = "default" }) {
 
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("idle"); // idle | loading | done | error
@@ -22,10 +23,13 @@ export default function WaitlistForm() {
 
     try {
 
+      const params = new URLSearchParams(window.location.search);
+      const source = params.get("source") || params.get("utm_source") || "welcome";
+
       const res = await fetch("/api/waitlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ email, source })
       });
 
       const data = await res.json().catch(() => ({}));
@@ -47,7 +51,7 @@ export default function WaitlistForm() {
 
   if (status === "done") {
     return (
-      <p className="flex items-center gap-2 text-[0.92rem] font-medium text-[var(--moss)]">
+      <p className={variant === "launch" ? styles.launchMessage : "flex items-center gap-2 text-[0.92rem] font-medium text-[var(--moss)]"}>
         <span aria-hidden="true">✓</span>
         {message}
       </p>
@@ -55,7 +59,7 @@ export default function WaitlistForm() {
   }
 
   return (
-    <form onSubmit={submit} className="flex w-full max-w-[26rem] flex-col gap-2 sm:flex-row">
+    <form onSubmit={submit} className={variant === "launch" ? styles.launchForm : "flex w-full max-w-[26rem] flex-col gap-2 sm:flex-row"}>
       <input
         type="email"
         required
@@ -63,17 +67,17 @@ export default function WaitlistForm() {
         onChange={(e) => setEmail(e.target.value)}
         placeholder="you@email.com"
         aria-label="Email address"
-        className="min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--line)] bg-[var(--sunken)] px-4 py-3 text-[0.9rem] text-ink outline-none placeholder:text-ink-soft focus:border-ink"
+        className={variant === "launch" ? styles.launchInput : "min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--line)] bg-[var(--sunken)] px-4 py-3 text-[0.9rem] text-ink outline-none placeholder:text-ink-soft focus:border-ink"}
       />
       <button
         type="submit"
         disabled={status === "loading"}
-        className="inline-flex items-center justify-center rounded-[var(--r-pill)] border border-[var(--line)] px-5 py-3 text-[0.88rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-60"
+        className={variant === "launch" ? styles.launchButton : "inline-flex items-center justify-center rounded-[var(--r-pill)] border border-[var(--line)] px-5 py-3 text-[0.88rem] font-medium text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-60"}
       >
         {status === "loading" ? "Adding…" : "Join the waitlist"}
       </button>
       {status === "error" && (
-        <p className="w-full text-[0.82rem] text-[var(--ember-ink)] sm:mt-1">{message}</p>
+        <p className={variant === "launch" ? `${styles.launchMessage} ${styles.launchError}` : "w-full text-[0.82rem] text-[var(--ember-ink)] sm:mt-1"}>{message}</p>
       )}
     </form>
   );

@@ -20,6 +20,11 @@ export default async function handler(req, res) {
   if (!enforceLimit(req, res, { name: "waitlist", limit: 10 })) return;
 
   const email = String(req.body?.email || "").trim().toLowerCase();
+  const source = String(req.body?.source || "welcome")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "-")
+    .slice(0, 80) || "welcome";
 
   if (!email || email.length > 200 || !EMAIL.test(email)) {
     return res.status(400).json({ success: false, error: "Enter a valid email address." });
@@ -27,7 +32,7 @@ export default async function handler(req, res) {
 
   const { error } = await supabase
     .from("waitlist")
-    .insert([{ email, source: "welcome" }]);
+    .insert([{ email, source }]);
 
   if (error) {
 

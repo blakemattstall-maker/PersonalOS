@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { DEMO_SESSION } from "../../lib/demo.js";
 
 
 async function login(formData) {
@@ -9,9 +8,6 @@ async function login(formData) {
 
   const passphrase = formData.get("passphrase");
 
-  // The real passphrase is checked FIRST, always — if someone sets
-  // SITE_PASSPHRASE to "demo" the strict-equality branch above this one wins
-  // and they get a real session, never a silently degraded one.
   if (passphrase === process.env.SITE_PASSPHRASE) {
 
     const cookieStore = await cookies();
@@ -22,28 +18,6 @@ async function login(formData) {
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * 180
-    });
-
-    redirect("/");
-  }
-
-  // "demo", typed or clicked, opens the fictional dashboard: fixtures for
-  // every read, refusal for every write, both enforced in backend.js. A
-  // shorter session than the real one — a demo that expires is a demo that
-  // gets to make its first impression twice.
-  if (String(passphrase || "").trim().toLowerCase() === DEMO_SESSION) {
-
-    const cookieStore = await cookies();
-
-    cookieStore.set("pos_session", DEMO_SESSION, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      path: "/",
-      // An hour: the length of a demo visit, not a standing pass. The proxy
-      // additionally bounces outside arrivals to /welcome, so this only decides
-      // how long in-demo navigation keeps working.
-      maxAge: 60 * 60
     });
 
     redirect("/");
@@ -92,14 +66,6 @@ export default async function LoginPage({ searchParams }) {
           Unlock
         </button>
 
-        {/* The invitation, spelled out. The demo passphrase being public is
-            the point — what it opens is the fictional dashboard, and what
-            keeps that safe lives in backend.js, not in this copy. */}
-        <p className="mt-4 text-center text-[0.82rem] text-ink-soft">
-          Just looking? The passphrase <span className="pos-data text-ink">demo</span> opens
-          a read-only tour with fictional data.
-        </p>
-
         {/* Without this the tour is a one-way door: the only way back from a
             passphrase field you can't fill is the browser's back button. */}
         <p className="mt-5 text-center text-[0.82rem] text-ink-soft">
@@ -107,7 +73,7 @@ export default async function LoginPage({ searchParams }) {
             href="/welcome"
             className="underline decoration-[var(--line)] decoration-1 underline-offset-[3px] transition-colors hover:decoration-[var(--ink)] hover:text-ink"
           >
-            Back to the tour
+            Back to Almanac
           </Link>
         </p>
 

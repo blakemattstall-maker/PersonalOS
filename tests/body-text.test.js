@@ -252,12 +252,12 @@ test("nothing hands a raw body to the speech engine", () => {
 });
 
 
-test("the digest that caused this is in the fixtures, so it renders locally", () => {
+test("a long generated-document URL is in the fixtures, so wrapping renders locally", () => {
 
   const fixtures = read("web/app/fixtures.js");
 
   assert.ok(
-    fixtures.includes("egup.fa.us2.oraclecloud.com"),
+    fixtures.includes("1ALMANACSHOWCASEINTERVIEWPREP1234567890"),
     "the long-URL digest fixture is gone — the regression is no longer one page load away"
   );
 

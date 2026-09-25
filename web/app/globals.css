@@ -169,6 +169,29 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Almanac's portable brand mark. The orbits are separate SVG primitives so a
+   motion pass can choreograph them without replacing the identity. At rest it
+   reads as one connected system around a stable centre; animation is ambient
+   and disappears completely when the OS asks for reduced motion. */
+.launch-mark { overflow: visible; }
+.launch-mark__field { fill: rgba(143, 224, 193, 0.045); stroke: rgba(143, 224, 193, 0.16); stroke-width: 1; }
+.launch-mark__orbit { fill: none; stroke: #8fe0c1; stroke-width: 1.4; transform-origin: 48px 48px; }
+.launch-mark__orbit--a { opacity: 0.78; animation: pos-orbit-a 12s linear infinite; }
+.launch-mark__orbit--b { opacity: 0.48; animation: pos-orbit-b 16s linear infinite reverse; }
+.launch-mark__orbit--c { opacity: 0.34; }
+.launch-mark__core { fill: #f4f3ed; }
+.launch-mark__node { fill: #ff754b; transform-origin: center; animation: pos-node-pulse 3.6s ease-in-out infinite; }
+.launch-mark__node--two { animation-delay: -1.2s; }
+.launch-mark__node--three { animation-delay: -2.4s; }
+.launch-mark.is-compact .launch-mark__field { fill: #10191d; }
+.launch-mark.is-compact .launch-mark__orbit { stroke-width: 2; }
+@keyframes pos-orbit-a { to { transform: rotate(360deg); } }
+@keyframes pos-orbit-b { to { transform: rotate(360deg); } }
+@keyframes pos-node-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .launch-mark__orbit, .launch-mark__node { animation: none; }
+}
+
 /* Display face is set tight and heavy — it does the work the old uppercase
    letter-spaced eyebrows were doing, without shouting. */
 .pos-display {

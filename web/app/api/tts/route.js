@@ -16,7 +16,7 @@
 
 export const maxDuration = 60;
 
-import { DEMO_SESSION } from "../../../lib/demo.js";
+import { showcaseSession } from "../../../lib/demo.js";
 import { rateLimit } from "../../../lib/ratelimit.js";
 
 
@@ -41,7 +41,7 @@ function sessionOf(request) {
   // The Shortcut path: no cookie jar, but it holds the API secret.
   if (process.env.API_SECRET && request.headers.get("x-pos-key") === process.env.API_SECRET) return "owner";
 
-  if (value === DEMO_SESSION) return "demo";
+  if (value === showcaseSession(process.env.SITE_PASSPHRASE)) return "demo";
 
   return null;
 

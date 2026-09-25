@@ -2,7 +2,7 @@
 
 **Goal:** show, in 90 seconds, that this notices things about a life that no single screen could hold. Not architecture. Not a feature tour. One arc: *I speak → it files itself → it connects → it noticed something on its own.*
 
-**Format:** phone screen recording, your voice over it, no slides. Shoot it on the **demo** (passphrase `demo`) so every figure on screen is fictional and safe to publish — the orange "sample data" bar is honest and stays in frame. Record vertical.
+**Format:** phone screen recording, your voice over it, no slides. Open the private **showcase** at `/showcase` with the owner passphrase so every dashboard figure is fictional and safe to publish — the orange sample-data bar stays in frame. Record vertical.
 
 **Rule for the voiceover:** never say "pgvector", "Next.js", "the router", or "the graph database". Say what it *does*. A producer hiring you doesn't care how; they care that you shipped something that thinks.
 

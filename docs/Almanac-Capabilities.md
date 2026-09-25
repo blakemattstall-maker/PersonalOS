@@ -61,7 +61,7 @@ The retired Jarvis desk, laptop-control, and food tools are excluded. Their code
 - **News:** real stories from published RSS feeds, ranked by relevance to your life and interests.
 - **Practice:** adversarial debate sessions plus recorded pitch or teach-back exercises with transcription and feedback.
 - **Settings and diagnostics:** notification level, Calendar coloring, Google connection, schema checks, and automation health. Settings show that internship monitoring is paused.
-- **Demo mode:** a read-only version backed by fixtures instead of personal data.
+- **Private showcase:** an owner-gated, read-only workspace backed by fictional fixtures instead of personal data.
 
 ## Automatic work
 
